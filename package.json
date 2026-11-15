@@ -9,7 +9,8 @@
     "build:renderer": "node scripts/build-renderer.js",
     "pretest": "node scripts/build-renderer.js",
     "test": "node --test test/*.test.js",
-    "build:hakimi": "bash ./build-hakimi.sh"
+    "build:hakimi": "bash ./build-hakimi.sh",
+    "set-icon": "bash ./set-hakimi-icon.sh"
   },
   "keywords": [
     "antigravity",

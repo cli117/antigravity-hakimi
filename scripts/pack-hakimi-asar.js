@@ -88,7 +88,7 @@ function collectAsarEntries(node, prefix = '', dirs = new Set(), files = new Map
   return { dirs, files };
 }
 
-function verifyHeaderMetadataPreserved(srcAsar, destAsar) {
+function verifyHeaderMetadataPreserved(srcAsar, destAsar, skipFiles = new Set(['dist/utils.js', 'dist/preload.js'])) {
   const srcParsed = readAsarHeader(srcAsar);
   const destParsed = readAsarHeader(destAsar);
 
@@ -100,7 +100,7 @@ function verifyHeaderMetadataPreserved(srcAsar, destAsar) {
     if (!destNode) {
       throw new Error(`Missing source file in packed ASAR: ${rel}`);
     }
-    if (rel === 'dist/utils.js' || rel === 'dist/preload.js') {
+    if (skipFiles.has(rel)) {
       continue;
     }
     if (srcNode.link) {

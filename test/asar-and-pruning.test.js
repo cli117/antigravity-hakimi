@@ -12,6 +12,7 @@ const ROOT = path.resolve(__dirname, '..');
 const asarEngine = require(path.join(ROOT, 'payload', 'dist', 'asar-engine.js'));
 const { packHakimiAsar } = require(path.join(ROOT, 'scripts', 'pack-hakimi-asar.js'));
 const { buildMacosIcon } = require(path.join(ROOT, 'scripts', 'build-macos-icon.js'));
+const { replaceAsarIcon } = require(path.join(ROOT, 'scripts', 'replace-asar-icon.js'));
 
 const EXCLUDED_SYMBOLS = [
   'meter-proxy',
@@ -596,6 +597,33 @@ test('buildMacosIcon converts JPEG/PNG/ICNS and packHakimiAsar optionally swaps 
       Buffer.compare(asarEngine.builtinAsar.extractFile(destCustom, 'icon.png'), fs.readFileSync(outPng1)),
       0,
       'Custom iconPng must replace root icon.png inside packed app.asar'
+    );
+
+    // 5. In-place replaceAsarIcon on already-packed destDefault (keeps meter injection untouched)
+    const beforeUtils = asarEngine.builtinAsar.extractFile(destDefault, 'dist/utils.js');
+    const beforePreload = asarEngine.builtinAsar.extractFile(destDefault, 'dist/preload.js');
+    const swapRes = replaceAsarIcon({ asarPath: destDefault, iconPng: outPng2 });
+    assert.equal(swapRes.ok, true);
+    assert.match(swapRes.sha256, /^[0-9a-f]{64}$/);
+    assert.equal(swapRes.sha256, asarEngine.computeAsarHeaderSha256(destDefault));
+    assert.equal(
+      Buffer.compare(asarEngine.builtinAsar.extractFile(destDefault, 'icon.png'), fs.readFileSync(outPng2)),
+      0,
+      'replaceAsarIcon must swap icon.png in place'
+    );
+    assert.equal(
+      Buffer.compare(asarEngine.builtinAsar.extractFile(destDefault, 'dist/utils.js'), beforeUtils),
+      0,
+      'replaceAsarIcon must keep injected dist/utils.js intact'
+    );
+    assert.equal(
+      Buffer.compare(asarEngine.builtinAsar.extractFile(destDefault, 'dist/preload.js'), beforePreload),
+      0,
+      'replaceAsarIcon must keep injected dist/preload.js intact'
+    );
+    assert.throws(
+      () => replaceAsarIcon({ asarPath: '/Applications/Antigravity.app/Contents/Resources/app.asar', iconPng: outPng2 }),
+      /Refusing to replace icon in ASAR official Antigravity\.app/
     );
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });

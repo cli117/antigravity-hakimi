@@ -57,7 +57,22 @@ bash ./build-hakimi.sh --force --icon ~/Pictures/hakimi.jpg
 open "/Applications/哈基米.app"
 ```
 
-### 2. 构建参数说明
+### 2. 为已构建的 `哈基米.app` 快速换图标（免重跑完整 Build）
+
+如果 `/Applications/哈基米.app` 已经打包好，只想更换图标或恢复默认图标，可直接运行 `set-hakimi-icon.sh`（耗时约 1~2 秒，不重新复制/修改 205MB `language_server`，保留全部解锁与汉化配置）：
+
+```bash
+# 直接替换图标（需先 Cmd+Q 退出 哈基米.app，或加上 --restart 自动退出并重开）
+bash ./set-hakimi-icon.sh ~/Pictures/new-icon.png --restart
+
+# 传入自定义图标且不自动加圆角遮罩
+bash ./set-hakimi-icon.sh --icon ~/Pictures/logo.png --raw-icon
+
+# 还原为默认官方图标（从官方 app 只读提取）
+bash ./set-hakimi-icon.sh --restore --restart
+```
+
+### 3. 构建参数说明
 
 ```text
 ./build-hakimi.sh [选项]
@@ -90,7 +105,9 @@ npm test
 ## 目录结构
 
 - `build-hakimi.sh`：一键复制、自定义图标处理、双阶段二进制补丁、ASAR 重打包、`ElectronAsarIntegrity` 更新与 `codesign` 签名脚本
+- `set-hakimi-icon.sh`：对已构建 `哈基米.app` 原位秒级替换应用图标 / 还原默认图标的轻量脚本（无需重跑完整构建）
 - `scripts/build-macos-icon.js`：将本地图片转换为标准 macOS `.icns` 与 `512x512` Dock 图标 PNG（自适应圆角留白遮罩）
+- `scripts/replace-asar-icon.js`：仅替换已打包 `app.asar` 内根目录 `icon.png` 并保留全部钩子与元数据
 - `scripts/build-renderer.js`：将 `src/renderer/*` 编译为 `payload/dist/meter-renderer.js`
 - `scripts/pack-hakimi-asar.js`：解包官方只读 `app.asar`、清理并注入 4 处 `dist/utils.js` 钩子与 `dist/preload.js`、支持替换内置 `icon.png` 并计算头摘要 SHA-256
 - `payload/dist/`：主进程监听、上下文解锁引擎、中文标题引擎、统计存储与汉化词库运行时
