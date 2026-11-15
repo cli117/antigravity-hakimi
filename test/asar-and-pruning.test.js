@@ -810,19 +810,21 @@ test('checkAppVersionSync detects version mismatch and renderer exposes quick ac
   const renderedJs = fs.readFileSync(path.join(ROOT, 'payload', 'dist', 'meter-renderer.js'), 'utf8');
   for (const marker of [
     'version-sync-banner',
-    'btn-session-compact',
-    'btn-session-raise-limit',
     'btn-topbar-compact',
-    'btn-topbar-raise-limit',
+    'btn-topbar-window',
+    'topbar-window-popover',
+    'session-ctx-preset-bar',
     'topbar-action-tooltip',
     'cli-unlock-card',
   ]) {
     assert.ok(tpl.includes(marker), `Missing ${marker} in template.html`);
     assert.ok(renderedJs.includes(marker), `Missing ${marker} in meter-renderer.js`);
   }
-  assert.equal(tpl.includes('ctx-breakdown-card'), false, 'ctx-breakdown-card should be removed from template.html');
-  assert.equal(renderedJs.includes('ctx-breakdown-card'), false, 'ctx-breakdown-card should be removed from meter-renderer.js');
-  for (const btnId of ['btn-topbar-compact', 'btn-topbar-raise-limit']) {
+  for (const removed of ['ctx-breakdown-card', 'btn-session-compact', 'btn-session-raise-limit', 'btn-topbar-raise-limit']) {
+    assert.equal(tpl.includes(removed), false, `${removed} should be removed from template.html`);
+    assert.equal(renderedJs.includes(removed), false, `${removed} should be removed from meter-renderer.js`);
+  }
+  for (const btnId of ['btn-topbar-compact', 'btn-topbar-window']) {
     const match = tpl.match(new RegExp(`<button\\s+id="${btnId}"[^>]*>([\\s\\S]*?)<\\/button>`));
     assert.ok(match, `Missing <button id="${btnId}"> element in template.html`);
     assert.ok(match[1].includes('<svg'), `${btnId} must render an <svg> icon`);
@@ -830,8 +832,8 @@ test('checkAppVersionSync detects version mismatch and renderer exposes quick ac
     assert.equal(visibleText, '', `${btnId} on primary top bar must be icon-only with no visible text`);
   }
   assert.ok(renderedJs.includes('GetSlashCommands'), 'Missing GetSlashCommands in meter-renderer.js');
-  assert.ok(renderedJs.includes('resolveSessionRaiseAction'), 'Missing resolveSessionRaiseAction in meter-renderer.js');
-  assert.ok(renderedJs.includes('triggerSessionRaiseLimit'), 'Missing triggerSessionRaiseLimit in meter-renderer.js');
+  assert.ok(renderedJs.includes('applyQuickContextPreset'), 'Missing applyQuickContextPreset in meter-renderer.js');
+  assert.ok(renderedJs.includes('resolveQuickContextTarget'), 'Missing resolveQuickContextTarget in meter-renderer.js');
 });
 
 test('build-hakimi.sh and set-hakimi-icon.sh escalate to SIGKILL on stuck processes, clean stale SingletonLock, and use open -n', async () => {

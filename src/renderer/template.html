@@ -10,15 +10,16 @@
     <span id="hover-wrap" class="sr-only"><span id="hover-extra"></span></span>
   </button>
 
-  <!-- 顶部快捷操作: 一键 Compact 与上调上下文上限（仅图标，悬停气泡说明） -->
+  <!-- 顶部快捷操作: 一键 Compact 与上下文窗口快速调节（仅图标，悬停气泡说明） -->
   <button id="btn-topbar-compact" class="ag-unit ag-unit-quick" type="button" hidden aria-label="Compact 压缩上下文" data-i18n-aria="topbar.quick.compactTitle" aria-describedby="topbar-action-tooltip">
     <svg class="topbar-quick-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <path d="M8 1.75v3.75M5.75 3.75L8 5.75l2.25-2M3 8h10M8 14.25v-3.75M5.75 12.25L8 10.25l2.25 2"></path>
     </svg>
   </button>
-  <button id="btn-topbar-raise-limit" class="ag-unit ag-unit-quick ag-unit-quick-raise" type="button" hidden aria-label="上调上下文上限" data-i18n-aria="session.quick.raiseLimit" aria-describedby="topbar-action-tooltip">
-    <svg class="topbar-quick-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M3 2.75h10M8 13.75V5.5M4.75 8.5L8 5.25 11.25 8.5"></path>
+  <button id="btn-topbar-window" class="ag-unit ag-unit-quick ag-unit-quick-window" type="button" aria-label="调整上下文窗口上限" data-i18n-aria="twp.aria" aria-describedby="topbar-action-tooltip" aria-expanded="false">
+    <svg class="topbar-quick-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="1.75" y="3" width="12.5" height="10" rx="2"></rect>
+      <path d="M5.25 8h5.5M9 6.25L10.75 8 9 9.75M7 6.25L5.25 8 7 9.75"></path>
     </svg>
   </button>
 
@@ -56,6 +57,22 @@
   <div id="topbar-action-tooltip" role="tooltip" data-visible="false" data-placement="bottom" data-tone="default">
     <div id="topbar-tip-title" class="topbar-tip-title"></div>
     <div id="topbar-tip-desc" class="topbar-tip-desc"></div>
+  </div>
+
+  <!-- 顶部上下文窗口快速调节微浮层（方案A做法1） -->
+  <div id="topbar-window-popover" class="topbar-window-popover" hidden role="dialog" aria-label="快速调整上下文窗口上限" data-i18n-aria="twp.aria">
+    <div class="twp-header">
+      <span id="twp-scope-label" class="twp-scope-label">—</span>
+      <button id="btn-twp-toggle-scope" class="twp-scope-toggle-btn" type="button"></button>
+    </div>
+    <div id="twp-preset-grid" class="twp-preset-grid" role="group" aria-label="上下文长度预设" data-i18n-aria="models.preset.aria">
+      <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="256000">256K</button>
+      <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="512000">512K</button>
+      <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="1000000">1M</button>
+      <button type="button" class="twp-preset-btn" data-qctx-mode="dynamic" data-qctx-limit="" data-i18n="twp.preset.dynamic">动态</button>
+    </div>
+    <div id="twp-status-note" class="twp-status-note" hidden></div>
+    <button id="btn-twp-open-models" class="twp-more-btn" type="button" data-i18n="twp.moreModels">⚙️ 自定义数值 / 管理全部模型 ›</button>
   </div>
 
   <!-- 窄屏溢出菜单 -->
@@ -114,11 +131,6 @@
           <div class="key-bar-track"><div id="key-bar-fill" class="key-bar-fill"></div></div>
           <div class="key-stats"><div class="key-stat"><div class="key-stat-label" data-i18n="session.stat.used">当前已用</div><div id="key-used" class="key-stat-val">—</div></div><div class="key-stat"><div class="key-stat-label" data-i18n="session.stat.limit">预算上限</div><div id="key-limit" class="key-stat-val">—</div></div><div class="key-stat"><div class="key-stat-label" data-i18n="session.stat.remaining">剩余可用</div><div id="key-remaining" class="key-stat-val">—</div></div></div>
           <div id="key-takeaway" class="key-takeaway" data-i18n="session.keyTakeaway.loading">正在计算核心指标…</div>
-          <div id="key-quick-actions" class="key-quick-actions">
-            <button id="btn-session-compact" class="unlock-btn unlock-btn-secondary key-quick-btn" type="button" data-i18n="session.quick.compact">🗜️ Compact 压缩上下文</button>
-            <button id="btn-session-raise-limit" class="unlock-btn unlock-btn-primary key-quick-btn" type="button" hidden data-i18n="session.quick.raiseLimit">⬆️ 上调上下文上限</button>
-          </div>
-          <div id="key-quick-feedback" class="key-quick-feedback" hidden></div>
         </div>
 
         <!-- 卡片 2: 输出速度与延迟速览 -->
@@ -148,16 +160,27 @@
           <div id="speed-takeaway" class="key-takeaway" data-i18n="session.speed.wait">等待首次模型输出产生速度统计…</div>
         </div>
 
-        <!-- 紧凑上下文设置入口卡片 -->
+        <!-- 紧凑上下文设置入口卡片（支持直接点选常用档位） -->
         <div id="ctx-compact-card" class="ctx-compact-card">
-          <div class="ctx-compact-info">
-            <div class="ctx-compact-title" data-i18n="session.compact.title">上下文设置</div>
-            <div class="ctx-compact-meta">
-              <span><span data-i18n="session.compact.savedLabel">本模型已保存：</span><strong id="ctx-compact-saved">未单独设置（使用默认）</strong></span>
-              <span><span data-i18n="session.compact.clientLabel">客户端当前使用：</span><strong id="ctx-compact-client">状态读取中…</strong></span>
+          <div class="ctx-compact-top">
+            <div class="ctx-compact-info">
+              <div class="ctx-compact-title-row">
+                <span id="ctx-compact-scope-title" class="ctx-compact-title" data-i18n="session.compact.title">上下文设置</span>
+                <span id="ctx-compact-saved" class="key-pill pill-muted">—</span>
+              </div>
+              <div class="ctx-compact-meta">
+                <span><span data-i18n="session.compact.clientLabel">客户端当前使用：</span><strong id="ctx-compact-client">状态读取中…</strong></span>
+              </div>
             </div>
+            <button id="btn-goto-model-settings" class="ctx-compact-link-btn" type="button" data-i18n="session.compact.gotoModels">管理全部模型 ›</button>
           </div>
-          <button id="btn-goto-model-settings" class="ctx-compact-link-btn" type="button" data-i18n="session.compact.gotoModels">去模型设置 ›</button>
+          <div id="session-ctx-preset-bar" class="twp-preset-grid session-ctx-preset-bar" role="group" aria-label="上下文长度预设" data-i18n-aria="models.preset.aria">
+            <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="256000">256K</button>
+            <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="512000">512K</button>
+            <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="1000000">1M</button>
+            <button type="button" class="twp-preset-btn" data-qctx-mode="dynamic" data-qctx-limit="" data-i18n="twp.preset.dynamic">动态</button>
+          </div>
+          <div id="ctx-compact-feedback" class="twp-status-note" hidden></div>
         </div>
 
         <!-- 底层技术参数与附件审计 -->
@@ -242,7 +265,60 @@
         <!-- 4. 模型列表（按厂商分组，仅在分别设置模式下呈现） -->
         <div id="ctx-model-list" class="ctx-model-list" aria-label="按厂商分组的模型产品列表" data-i18n-aria="models.list.aria" hidden></div>
 
-        <!-- 5. 选中模型的大卡片（主视图只展示当前模式、当前模型、当前使用长度；详细信息折叠至抽屉） -->
+        <!-- 5. 核心操作区（前置到首屏，点选预设即时生效） -->
+        <div class="ctx-adjust-box" id="ctx-adjust-box">
+          <div class="ctx-preset-grid" id="ctx-preset-grid" role="group" aria-label="上下文长度预设" data-i18n-aria="models.preset.aria">
+            <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="256000">
+              <span class="ctx-preset-title">256,000 (256K)</span>
+              <span class="ctx-preset-sub" data-i18n="models.preset.p256Sub">反重力默认 · 256,000 tokens</span>
+            </button>
+            <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="512000">
+              <span class="ctx-preset-title">512,000 (512K)</span>
+              <span class="ctx-preset-sub" data-i18n="models.preset.p512Sub">进阶预设 · 512,000 tokens</span>
+            </button>
+            <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="1000000">
+              <span class="ctx-preset-title">1,000,000 (1M)</span>
+              <span class="ctx-preset-sub" data-i18n="models.preset.p1mSub">1M 满血窗口 · 自动预留输出</span>
+            </button>
+            <button type="button" class="ctx-preset-btn" data-ctx-mode="dynamic" data-ctx-limit="">
+              <span class="ctx-preset-title" data-i18n="models.preset.dynamic">动态跟随</span>
+              <span class="ctx-preset-sub" data-i18n="models.preset.dynamicSub">不固定数值，按底座动态计算</span>
+            </button>
+          </div>
+
+          <div class="ctx-custom-row">
+            <label for="ctx-custom-limit-input" class="ctx-small-label" data-i18n="models.custom.label">自定义长度</label>
+            <div class="ctx-custom-input-wrap">
+              <input id="ctx-custom-limit-input" class="ctx-custom-input" type="text" inputmode="numeric" placeholder="输入整数，例如 300000" data-i18n-placeholder="models.custom.placeholder" autocomplete="off">
+              <span class="ctx-input-unit">tokens</span>
+            </div>
+          </div>
+          <div id="ctx-limit-validation" class="ctx-validation-msg" data-i18n="models.validation.defaultRange">可设置范围：16,384 – 2,097,152 tokens。</div>
+
+          <div class="ctx-pref-actions">
+            <button id="btn-save-model-ctx" class="unlock-btn unlock-btn-secondary" type="button" data-i18n="models.btn.save">保存自定义</button>
+            <button id="btn-apply-unlock" class="unlock-btn unlock-btn-primary" type="button" hidden data-i18n="models.btn.saveApply">保存并应用</button>
+            <button id="btn-reset-model-ctx" class="ctx-text-action-btn" type="button" data-i18n="models.btn.reset">恢复默认</button>
+          </div>
+
+          <div id="ctx-reset-notice" class="ctx-reset-notice" hidden></div>
+
+          <div class="ctx-plain-help">
+            <div data-i18n="models.help.line1">点击预设即时生效；自定义整数请填写后点「保存自定义」（底座在动态跟随解锁后逐模型生效）。</div>
+            <div data-i18n="models.help.line2">各模型根据保存的设置独立生效，多会话与模型切换互不干扰。</div>
+          </div>
+
+          <div id="unlock-result-box" class="unlock-result-box" style="display:none;">
+            <div id="unlock-result-text" class="unlock-result-text"></div>
+            <div id="unlock-result-actions" class="unlock-result-actions" hidden>
+              <button id="btn-unlock-result-restart" class="unlock-btn unlock-btn-primary" type="button" hidden data-i18n="models.restartBtn">重启客户端使设置生效</button>
+              <button id="btn-unlock-result-retry" class="unlock-btn unlock-btn-secondary" type="button" hidden data-i18n="models.btn.retryApply">重新检测并应用</button>
+            </div>
+            <div id="unlock-result-manual" class="ctx-result-manual-note" hidden data-i18n="models.manualRestart">请手动重启：关闭所有 Antigravity 窗口（包括托盘图标里的“退出”），再重新打开 Antigravity。</div>
+          </div>
+        </div>
+
+        <!-- 6. 选中模型摘要卡片（详细信息与能力参考默认折叠） -->
         <div id="ctx-model-card" class="ctx-detail-card">
           <div id="ctx-conflict-banner" class="ctx-conflict-banner" hidden>
             <div class="ctx-conflict-title" data-i18n="models.conflict.title">这个模型的不同档位保存过不同长度，请选一个统一值。</div>
@@ -280,53 +356,53 @@
             </div>
           </div>
 
-          <!-- 模型能力与当前生效参考（紧邻预算设置区，不隐藏） -->
-          <div class="ctx-cap-ref-card" id="ctx-capability-ref">
-            <div class="ctx-cap-ref-grid">
-              <div class="ctx-cap-item">
-                <span class="ctx-cap-lbl" data-i18n="models.cap.window">模型总窗口</span>
-                <span class="ctx-cap-val" id="ctx-cap-window">—</span>
-              </div>
-              <div class="ctx-cap-item">
-                <span class="ctx-cap-lbl" data-i18n="models.cap.output">最大输出</span>
-                <span class="ctx-cap-val" id="ctx-cap-output">—</span>
-              </div>
-              <div class="ctx-cap-item">
-                <span class="ctx-cap-lbl" data-i18n="models.cap.modelMax">模型理论输入上限</span>
-                <span class="ctx-cap-val" id="ctx-cap-model-max">—</span>
-              </div>
-              <div class="ctx-cap-item">
-                <span class="ctx-cap-lbl" data-i18n="models.cap.clientPolicy">当前客户端限制</span>
-                <span class="ctx-cap-val" id="ctx-cap-client-policy">—</span>
-              </div>
-              <div class="ctx-cap-item">
-                <span class="ctx-cap-lbl" data-i18n="models.cap.defaultCap">当前策略默认预算</span>
-                <span class="ctx-cap-val" id="ctx-cap-default">—</span>
-              </div>
-              <div class="ctx-cap-item">
-                <span class="ctx-cap-lbl" data-i18n="models.cap.range">当前可采纳输入范围</span>
-                <span class="ctx-cap-val" id="ctx-cap-range">16,384 – 2,097,152</span>
-              </div>
-              <div class="ctx-cap-item ctx-cap-item-wide">
-                <span class="ctx-cap-lbl" data-i18n="models.cap.formulaLbl">来源与计算说明</span>
-                <span class="ctx-cap-sub" id="ctx-cap-formula">等待读取模型元数据…</span>
-              </div>
-            </div>
-            <div class="ctx-cap-verify-strip" id="ctx-cap-verify-strip">
-              <span class="ctx-cap-v-cell"><em data-i18n="models.cap.saved">已保存</em> <strong id="ctx-ref-saved">—</strong></span>
-              <span class="ctx-cap-v-cell"><em data-i18n="models.cap.sent">最近请求携带</em> <strong id="ctx-ref-sent">尚无本次验证</strong></span>
-              <span class="ctx-cap-v-cell"><em data-i18n="models.cap.adopted">后端实际采用</em> <strong id="ctx-ref-adopted">尚无本次验证</strong></span>
-            </div>
-            <div class="ctx-unified-proj" id="ctx-unified-projection" hidden></div>
-          </div>
-
-          <!-- 折叠抽屉：详细信息（配置来源、请求参数、底座状态、实测预算） -->
+          <!-- 折叠抽屉：详细信息（模型能力参考、配置来源、请求参数、底座状态、实测预算） -->
           <div class="ctx-card-details-drawer">
             <button id="btn-toggle-card-details" class="drawer-trigger ctx-card-drawer-trigger" aria-expanded="false" type="button">
-              <span class="drawer-trigger-left" data-i18n="models.card.detailsToggle">详细信息（配置来源、请求参数与预算验证）</span>
+              <span class="drawer-trigger-left" data-i18n="models.card.detailsToggle">详细信息（能力参考、请求参数与预算验证）</span>
               <span id="ctx-card-drawer-arrow" class="drawer-arrow" data-i18n="session.techDrawer.expand">▼ 点击展开明细</span>
             </button>
             <div id="ctx-card-drawer-body" class="drawer-body ctx-card-drawer-body" style="display:none;">
+              <!-- 模型能力与当前生效参考 -->
+              <div class="ctx-cap-ref-card" id="ctx-capability-ref">
+                <div class="ctx-cap-ref-grid">
+                  <div class="ctx-cap-item">
+                    <span class="ctx-cap-lbl" data-i18n="models.cap.window">模型总窗口</span>
+                    <span class="ctx-cap-val" id="ctx-cap-window">—</span>
+                  </div>
+                  <div class="ctx-cap-item">
+                    <span class="ctx-cap-lbl" data-i18n="models.cap.output">最大输出</span>
+                    <span class="ctx-cap-val" id="ctx-cap-output">—</span>
+                  </div>
+                  <div class="ctx-cap-item">
+                    <span class="ctx-cap-lbl" data-i18n="models.cap.modelMax">模型理论输入上限</span>
+                    <span class="ctx-cap-val" id="ctx-cap-model-max">—</span>
+                  </div>
+                  <div class="ctx-cap-item">
+                    <span class="ctx-cap-lbl" data-i18n="models.cap.clientPolicy">当前客户端限制</span>
+                    <span class="ctx-cap-val" id="ctx-cap-client-policy">—</span>
+                  </div>
+                  <div class="ctx-cap-item">
+                    <span class="ctx-cap-lbl" data-i18n="models.cap.defaultCap">当前策略默认预算</span>
+                    <span class="ctx-cap-val" id="ctx-cap-default">—</span>
+                  </div>
+                  <div class="ctx-cap-item">
+                    <span class="ctx-cap-lbl" data-i18n="models.cap.range">当前可采纳输入范围</span>
+                    <span class="ctx-cap-val" id="ctx-cap-range">16,384 – 2,097,152</span>
+                  </div>
+                  <div class="ctx-cap-item ctx-cap-item-wide">
+                    <span class="ctx-cap-lbl" data-i18n="models.cap.formulaLbl">来源与计算说明</span>
+                    <span class="ctx-cap-sub" id="ctx-cap-formula">等待读取模型元数据…</span>
+                  </div>
+                </div>
+                <div class="ctx-cap-verify-strip" id="ctx-cap-verify-strip">
+                  <span class="ctx-cap-v-cell"><em data-i18n="models.cap.saved">已保存</em> <strong id="ctx-ref-saved">—</strong></span>
+                  <span class="ctx-cap-v-cell"><em data-i18n="models.cap.sent">最近请求携带</em> <strong id="ctx-ref-sent">尚无本次验证</strong></span>
+                  <span class="ctx-cap-v-cell"><em data-i18n="models.cap.adopted">后端实际采用</em> <strong id="ctx-ref-adopted">尚无本次验证</strong></span>
+                </div>
+                <div class="ctx-unified-proj" id="ctx-unified-projection" hidden></div>
+              </div>
+
               <div class="ctx-card-metrics">
                 <div class="ctx-metric-row ctx-metric-saved">
                   <span class="ctx-metric-label" data-i18n="models.card.saved">已保存</span>
@@ -381,67 +457,6 @@
               </div>
               <div id="ctx-card-hints" class="ctx-card-hints" hidden></div>
             </div>
-          </div>
-        </div>
-
-        <!-- 4. 设置操作区 -->
-        <div class="ctx-adjust-box" id="ctx-adjust-box">
-          <div class="ctx-preset-grid" id="ctx-preset-grid" role="group" aria-label="上下文长度预设" data-i18n-aria="models.preset.aria">
-            <button type="button" class="ctx-preset-btn" data-ctx-mode="default" data-ctx-limit="">
-              <span class="ctx-preset-title" data-i18n="models.preset.default">恢复客户端默认</span>
-              <span class="ctx-preset-sub" data-i18n="models.preset.defaultSub">清除请求覆盖，由当前底座策略决定</span>
-            </button>
-            <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="256000">
-              <span class="ctx-preset-title">256,000</span>
-              <span class="ctx-preset-sub" data-i18n="models.preset.p256Sub">反重力默认 · 256,000 tokens</span>
-            </button>
-            <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="512000">
-              <span class="ctx-preset-title">512,000</span>
-              <span class="ctx-preset-sub" data-i18n="models.preset.p512Sub">进阶预设 · 512,000 tokens</span>
-            </button>
-            <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="1000000">
-              <span class="ctx-preset-title">1,000,000</span>
-              <span class="ctx-preset-sub" data-i18n="models.preset.p1mSub">1M 满血窗口 · 自动预留输出</span>
-            </button>
-            <button type="button" class="ctx-preset-btn" data-ctx-mode="model_max" data-ctx-limit="">
-              <span class="ctx-preset-title" data-i18n="models.preset.modelMax">按模型最大可用</span>
-              <span class="ctx-preset-sub" id="ctx-preset-modelmax-sub" data-i18n="models.preset.modelMaxSub">总窗口 - 最大输出（需元数据）</span>
-            </button>
-            <button type="button" class="ctx-preset-btn" data-ctx-mode="dynamic" data-ctx-limit="">
-              <span class="ctx-preset-title" data-i18n="models.preset.dynamic">动态跟随</span>
-              <span class="ctx-preset-sub" data-i18n="models.preset.dynamicSub">不固定数值，按底座动态计算</span>
-            </button>
-          </div>
-
-          <div class="ctx-custom-row">
-            <label for="ctx-custom-limit-input" class="ctx-small-label" data-i18n="models.custom.label">自定义长度</label>
-            <div class="ctx-custom-input-wrap">
-              <input id="ctx-custom-limit-input" class="ctx-custom-input" type="text" inputmode="numeric" placeholder="输入整数，例如 300000" data-i18n-placeholder="models.custom.placeholder" autocomplete="off">
-              <span class="ctx-input-unit">tokens</span>
-            </div>
-          </div>
-          <div id="ctx-limit-validation" class="ctx-validation-msg" data-i18n="models.validation.defaultRange">可设置范围：16,384 – 2,097,152 tokens。</div>
-
-          <div class="ctx-pref-actions">
-            <button id="btn-save-model-ctx" class="unlock-btn unlock-btn-secondary" type="button" data-i18n="models.btn.save">保存</button>
-            <button id="btn-apply-unlock" class="unlock-btn unlock-btn-primary" type="button" data-i18n="models.btn.saveApply">保存并应用</button>
-            <button id="btn-reset-model-ctx" class="ctx-text-action-btn" type="button" data-i18n="models.btn.reset">恢复默认</button>
-          </div>
-
-          <div id="ctx-reset-notice" class="ctx-reset-notice" hidden></div>
-
-          <div class="ctx-plain-help">
-            <div data-i18n="models.help.line1">保存：记住当前模型的设置。底座引擎：一次性解除 256K 限制并启用动态跟随。</div>
-            <div data-i18n="models.help.line2">各模型根据保存的设置独立生效，多会话与模型切换互不干扰。</div>
-          </div>
-
-          <div id="unlock-result-box" class="unlock-result-box" style="display:none;">
-            <div id="unlock-result-text" class="unlock-result-text"></div>
-            <div id="unlock-result-actions" class="unlock-result-actions" hidden>
-              <button id="btn-unlock-result-restart" class="unlock-btn unlock-btn-primary" type="button" hidden data-i18n="models.restartBtn">重启客户端使设置生效</button>
-              <button id="btn-unlock-result-retry" class="unlock-btn unlock-btn-secondary" type="button" hidden data-i18n="models.btn.retryApply">重新检测并应用</button>
-            </div>
-            <div id="unlock-result-manual" class="ctx-result-manual-note" hidden data-i18n="models.manualRestart">请手动重启：关闭所有 Antigravity 窗口（包括托盘图标里的“退出”），再重新打开 Antigravity。</div>
           </div>
         </div>
 

@@ -329,17 +329,22 @@
     :host([data-occupancy="danger"]) #btn-topbar-compact:focus-visible{
       background:rgba(239,68,68,0.20);
     }
-    :host([data-occupancy="danger"]) #btn-topbar-raise-limit{
+    :host([data-occupancy="danger"]) #btn-topbar-window{
       color:#60a5fa;
       background:rgba(37,99,235,0.16);
       border-color:rgba(59,130,246,0.38);
     }
-    :host([data-occupancy="danger"]) #btn-topbar-raise-limit:hover,
-    :host([data-occupancy="danger"]) #btn-topbar-raise-limit:focus-visible{
+    :host([data-occupancy="danger"]) #btn-topbar-window:hover,
+    :host([data-occupancy="danger"]) #btn-topbar-window:focus-visible,
+    #btn-topbar-window[aria-expanded="true"]{
       background:rgba(37,99,235,0.24);
+      border-color:rgba(59,130,246,0.45);
+      color:#60a5fa;
     }
-    :host([data-theme="light"][data-occupancy="danger"]) #btn-topbar-raise-limit,
-    :host([data-panel-tone="light"][data-occupancy="danger"]) #btn-topbar-raise-limit{
+    :host([data-theme="light"][data-occupancy="danger"]) #btn-topbar-window,
+    :host([data-panel-tone="light"][data-occupancy="danger"]) #btn-topbar-window,
+    :host([data-theme="light"]) #btn-topbar-window[aria-expanded="true"],
+    :host([data-panel-tone="light"]) #btn-topbar-window[aria-expanded="true"]{
       color:#2563eb;
     }
 
@@ -519,6 +524,48 @@
     .topbar-tip-desc[hidden]{
       display:none!important;
     }
+
+    /* 顶部上下文窗口快速调节微浮层（方案A做法1） */
+    .topbar-window-popover{
+      position:fixed;top:36px;right:12px;z-index:2147483550;
+      width:232px;padding:9px 10px;border-radius:10px;
+      border:1px solid var(--ag-float-border);
+      background:var(--ag-float-bg);color:var(--ag-text-primary);
+      box-shadow:var(--ag-float-shadow);
+      display:flex;flex-direction:column;gap:7px;
+    }
+    .topbar-window-popover[hidden]{display:none!important}
+    .twp-header{display:flex;align-items:center;justify-content:space-between;gap:6px}
+    .twp-scope-label{font-size:11px;font-weight:600;color:var(--ag-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+    .twp-scope-toggle-btn{
+      font-size:10px;font-weight:500;padding:2px 6px;border-radius:4px;
+      background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);
+      color:var(--ag-text-secondary);cursor:pointer;flex-shrink:0;white-space:nowrap;
+      transition:background-color .12s ease,color .12s ease,border-color .12s ease;
+    }
+    .twp-scope-toggle-btn:hover{background:var(--ag-btn-hover);color:var(--ag-text-primary);border-color:var(--ag-btn-border-hover)}
+    .twp-preset-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+    .twp-preset-btn{
+      display:flex;align-items:center;justify-content:center;
+      height:26px;padding:0 4px;border-radius:6px;
+      background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);
+      color:var(--ag-text-secondary);font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;
+      cursor:pointer;white-space:nowrap;transition:all .14s ease;
+    }
+    .twp-preset-btn:hover:not(:disabled){background:var(--ag-btn-hover);color:var(--ag-text-primary);border-color:var(--ag-btn-border-hover)}
+    .twp-preset-btn.is-active{border-color:#2563eb;background:rgba(37,99,235,0.16);color:var(--ag-text-primary);box-shadow:inset 0 0 0 1px rgba(37,99,235,0.35)}
+    .twp-preset-btn:disabled{opacity:0.45;cursor:not-allowed;border-style:dashed}
+    .twp-status-note{font-size:10.5px;line-height:1.35;color:var(--ag-text-muted)}
+    .twp-status-note.is-success{color:#22c55e}
+    .twp-status-note.is-error{color:#ef4444}
+    .twp-status-note[hidden]{display:none!important}
+    .twp-more-btn{
+      width:100%;text-align:left;padding:5px 7px;border-radius:5px;
+      font-size:10.5px;font-weight:500;color:var(--ag-text-secondary);
+      background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);
+      cursor:pointer;transition:background-color .12s ease,color .12s ease;
+    }
+    .twp-more-btn:hover{background:var(--ag-btn-hover);color:var(--ag-text-primary)}
 
     /* 窄屏溢出菜单浮层 */
     #overflow-menu{
@@ -951,14 +998,6 @@
       background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);
     }
 
-    .key-quick-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
-    .key-quick-btn{flex:1 1 auto;justify-content:center;font-size:11px;padding:5px 8px}
-    .key-quick-btn[hidden]{display:none!important}
-    .key-quick-feedback{margin-top:6px;font-size:10.5px;line-height:1.35;color:var(--ag-text-secondary)}
-    .key-quick-feedback.is-error{color:#ef4444}
-    .key-quick-feedback.is-success{color:#22c55e}
-    .key-quick-feedback[hidden]{display:none!important}
-
     #status{padding:7px 10px;border:0;border-left:2.5px solid var(--tone,#666);border-radius:4px;background:var(--ag-bg-status);color:var(--ag-text-status);font-weight:500;font-size:11.5px}
     #model{overflow-wrap:anywhere;font-size:11.5px;color:var(--ag-text-muted)}
     #note,#coverage,#updated{font-size:11px;color:var(--ag-text-muted)}
@@ -1206,6 +1245,7 @@
     .unlock-notice-list strong{color:var(--ag-text-primary)}
     .unlock-actions-row{display:flex;gap:8px;align-items:center;margin-top:2px;flex-wrap:wrap}
     .unlock-btn{display:inline-flex;align-items:center;justify-content:center;padding:5px 11px;border-radius:5px;font-size:11px;font-weight:500;cursor:pointer;transition:all .15s ease;white-space:nowrap}
+    .unlock-btn[hidden]{display:none!important}
     .unlock-btn:disabled{opacity:0.5;cursor:not-allowed}
     .unlock-btn-primary{background:#2563eb;color:#fff;border:1px solid #1d4ed8}
     .unlock-btn-primary:hover:not(:disabled){background:#1d4ed8}
@@ -1273,13 +1313,16 @@
     .ctx-tab-pane[hidden]{display:none!important}
 
     /* 当前会话紧凑卡片 */
-    .ctx-compact-card{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--ag-bg-card);border:1px solid var(--ag-border-card);border-radius:8px;padding:9px 11px;margin:8px 0 4px}
-    .ctx-compact-info{min-width:0;display:flex;flex-direction:column;gap:3px}
+    .ctx-compact-card{display:flex;flex-direction:column;align-items:stretch;gap:7px;background:var(--ag-bg-card);border:1px solid var(--ag-border-card);border-radius:8px;padding:9px 11px;margin:8px 0 4px}
+    .ctx-compact-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .ctx-compact-info{min-width:0;display:flex;flex-direction:column;gap:3px;flex:1}
+    .ctx-compact-title-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
     .ctx-compact-title{font-size:11.5px;font-weight:600;color:var(--ag-text-primary)}
     .ctx-compact-meta{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:10.5px;color:var(--ag-text-secondary)}
     .ctx-compact-meta strong{color:var(--ag-text-primary);font-weight:600}
     .ctx-compact-link-btn{background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);color:var(--ag-text-primary);border-radius:5px;padding:4px 9px;font-size:11px;font-weight:500;cursor:pointer;white-space:nowrap;flex-shrink:0}
     .ctx-compact-link-btn:hover{background:var(--ag-btn-hover);border-color:var(--ag-btn-border-hover)}
+    .session-ctx-preset-bar{margin-top:1px}
 
     /* 模型设置页：全局状态条 */
     .ctx-status-bar{background:var(--ag-bg-card);border:1px solid var(--ag-border-card);border-radius:8px;padding:8px 10px;margin-bottom:8px;display:flex;flex-direction:column;gap:6px}
@@ -1371,10 +1414,10 @@
     .ctx-card-hint-item{padding:4px 7px;background:var(--ag-bg-subcard);border-radius:4px;border-left:2px solid var(--ag-ring-warn,#f59e0b)}
 
     /* 设置操作区 */
-    .ctx-adjust-box{background:var(--ag-bg-card);border:1px solid var(--ag-border-card);border-radius:8px;padding:9px 10px;display:flex;flex-direction:column;gap:7px}
+    .ctx-adjust-box{background:var(--ag-bg-card);border:1px solid var(--ag-border-card);border-radius:8px;padding:9px 10px;margin-bottom:8px;display:flex;flex-direction:column;gap:7px}
     .ctx-small-label{font-size:10.5px;color:var(--ag-text-muted)}
     .ctx-model-select{background:var(--ag-bg-card);color:var(--ag-text-primary);border:1px solid var(--ag-border-subcard);border-radius:4px;padding:3px 6px;font-size:10.5px;width:100%;outline:none}
-    .ctx-preset-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+    .ctx-preset-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
     .ctx-preset-btn{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);border-radius:5px;padding:6px 8px;cursor:pointer;transition:all .15s ease;color:var(--ag-text-primary)}
     .ctx-preset-btn:hover:not(:disabled){background:var(--ag-bg-card-hover);border-color:var(--ag-text-muted)}
     .ctx-preset-btn.active{border-color:#2563eb;background:rgba(37,99,235,0.14);box-shadow:inset 0 0 0 1px rgba(37,99,235,0.35)}
@@ -1524,15 +1567,16 @@
     <span id="hover-wrap" class="sr-only"><span id="hover-extra"></span></span>
   </button>
 
-  <!-- 顶部快捷操作: 一键 Compact 与上调上下文上限（仅图标，悬停气泡说明） -->
+  <!-- 顶部快捷操作: 一键 Compact 与上下文窗口快速调节（仅图标，悬停气泡说明） -->
   <button id="btn-topbar-compact" class="ag-unit ag-unit-quick" type="button" hidden aria-label="Compact 压缩上下文" data-i18n-aria="topbar.quick.compactTitle" aria-describedby="topbar-action-tooltip">
     <svg class="topbar-quick-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <path d="M8 1.75v3.75M5.75 3.75L8 5.75l2.25-2M3 8h10M8 14.25v-3.75M5.75 12.25L8 10.25l2.25 2"></path>
     </svg>
   </button>
-  <button id="btn-topbar-raise-limit" class="ag-unit ag-unit-quick ag-unit-quick-raise" type="button" hidden aria-label="上调上下文上限" data-i18n-aria="session.quick.raiseLimit" aria-describedby="topbar-action-tooltip">
-    <svg class="topbar-quick-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M3 2.75h10M8 13.75V5.5M4.75 8.5L8 5.25 11.25 8.5"></path>
+  <button id="btn-topbar-window" class="ag-unit ag-unit-quick ag-unit-quick-window" type="button" aria-label="调整上下文窗口上限" data-i18n-aria="twp.aria" aria-describedby="topbar-action-tooltip" aria-expanded="false">
+    <svg class="topbar-quick-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="1.75" y="3" width="12.5" height="10" rx="2"></rect>
+      <path d="M5.25 8h5.5M9 6.25L10.75 8 9 9.75M7 6.25L5.25 8 7 9.75"></path>
     </svg>
   </button>
 
@@ -1570,6 +1614,22 @@
   <div id="topbar-action-tooltip" role="tooltip" data-visible="false" data-placement="bottom" data-tone="default">
     <div id="topbar-tip-title" class="topbar-tip-title"></div>
     <div id="topbar-tip-desc" class="topbar-tip-desc"></div>
+  </div>
+
+  <!-- 顶部上下文窗口快速调节微浮层（方案A做法1） -->
+  <div id="topbar-window-popover" class="topbar-window-popover" hidden role="dialog" aria-label="快速调整上下文窗口上限" data-i18n-aria="twp.aria">
+    <div class="twp-header">
+      <span id="twp-scope-label" class="twp-scope-label">—</span>
+      <button id="btn-twp-toggle-scope" class="twp-scope-toggle-btn" type="button"></button>
+    </div>
+    <div id="twp-preset-grid" class="twp-preset-grid" role="group" aria-label="上下文长度预设" data-i18n-aria="models.preset.aria">
+      <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="256000">256K</button>
+      <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="512000">512K</button>
+      <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="1000000">1M</button>
+      <button type="button" class="twp-preset-btn" data-qctx-mode="dynamic" data-qctx-limit="" data-i18n="twp.preset.dynamic">动态</button>
+    </div>
+    <div id="twp-status-note" class="twp-status-note" hidden></div>
+    <button id="btn-twp-open-models" class="twp-more-btn" type="button" data-i18n="twp.moreModels">⚙️ 自定义数值 / 管理全部模型 ›</button>
   </div>
 
   <!-- 窄屏溢出菜单 -->
@@ -1628,11 +1688,6 @@
           <div class="key-bar-track"><div id="key-bar-fill" class="key-bar-fill"></div></div>
           <div class="key-stats"><div class="key-stat"><div class="key-stat-label" data-i18n="session.stat.used">当前已用</div><div id="key-used" class="key-stat-val">—</div></div><div class="key-stat"><div class="key-stat-label" data-i18n="session.stat.limit">预算上限</div><div id="key-limit" class="key-stat-val">—</div></div><div class="key-stat"><div class="key-stat-label" data-i18n="session.stat.remaining">剩余可用</div><div id="key-remaining" class="key-stat-val">—</div></div></div>
           <div id="key-takeaway" class="key-takeaway" data-i18n="session.keyTakeaway.loading">正在计算核心指标…</div>
-          <div id="key-quick-actions" class="key-quick-actions">
-            <button id="btn-session-compact" class="unlock-btn unlock-btn-secondary key-quick-btn" type="button" data-i18n="session.quick.compact">🗜️ Compact 压缩上下文</button>
-            <button id="btn-session-raise-limit" class="unlock-btn unlock-btn-primary key-quick-btn" type="button" hidden data-i18n="session.quick.raiseLimit">⬆️ 上调上下文上限</button>
-          </div>
-          <div id="key-quick-feedback" class="key-quick-feedback" hidden></div>
         </div>
 
         <!-- 卡片 2: 输出速度与延迟速览 -->
@@ -1662,16 +1717,27 @@
           <div id="speed-takeaway" class="key-takeaway" data-i18n="session.speed.wait">等待首次模型输出产生速度统计…</div>
         </div>
 
-        <!-- 紧凑上下文设置入口卡片 -->
+        <!-- 紧凑上下文设置入口卡片（支持直接点选常用档位） -->
         <div id="ctx-compact-card" class="ctx-compact-card">
-          <div class="ctx-compact-info">
-            <div class="ctx-compact-title" data-i18n="session.compact.title">上下文设置</div>
-            <div class="ctx-compact-meta">
-              <span><span data-i18n="session.compact.savedLabel">本模型已保存：</span><strong id="ctx-compact-saved">未单独设置（使用默认）</strong></span>
-              <span><span data-i18n="session.compact.clientLabel">客户端当前使用：</span><strong id="ctx-compact-client">状态读取中…</strong></span>
+          <div class="ctx-compact-top">
+            <div class="ctx-compact-info">
+              <div class="ctx-compact-title-row">
+                <span id="ctx-compact-scope-title" class="ctx-compact-title" data-i18n="session.compact.title">上下文设置</span>
+                <span id="ctx-compact-saved" class="key-pill pill-muted">—</span>
+              </div>
+              <div class="ctx-compact-meta">
+                <span><span data-i18n="session.compact.clientLabel">客户端当前使用：</span><strong id="ctx-compact-client">状态读取中…</strong></span>
+              </div>
             </div>
+            <button id="btn-goto-model-settings" class="ctx-compact-link-btn" type="button" data-i18n="session.compact.gotoModels">管理全部模型 ›</button>
           </div>
-          <button id="btn-goto-model-settings" class="ctx-compact-link-btn" type="button" data-i18n="session.compact.gotoModels">去模型设置 ›</button>
+          <div id="session-ctx-preset-bar" class="twp-preset-grid session-ctx-preset-bar" role="group" aria-label="上下文长度预设" data-i18n-aria="models.preset.aria">
+            <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="256000">256K</button>
+            <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="512000">512K</button>
+            <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="1000000">1M</button>
+            <button type="button" class="twp-preset-btn" data-qctx-mode="dynamic" data-qctx-limit="" data-i18n="twp.preset.dynamic">动态</button>
+          </div>
+          <div id="ctx-compact-feedback" class="twp-status-note" hidden></div>
         </div>
 
         <!-- 底层技术参数与附件审计 -->
@@ -1756,7 +1822,60 @@
         <!-- 4. 模型列表（按厂商分组，仅在分别设置模式下呈现） -->
         <div id="ctx-model-list" class="ctx-model-list" aria-label="按厂商分组的模型产品列表" data-i18n-aria="models.list.aria" hidden></div>
 
-        <!-- 5. 选中模型的大卡片（主视图只展示当前模式、当前模型、当前使用长度；详细信息折叠至抽屉） -->
+        <!-- 5. 核心操作区（前置到首屏，点选预设即时生效） -->
+        <div class="ctx-adjust-box" id="ctx-adjust-box">
+          <div class="ctx-preset-grid" id="ctx-preset-grid" role="group" aria-label="上下文长度预设" data-i18n-aria="models.preset.aria">
+            <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="256000">
+              <span class="ctx-preset-title">256,000 (256K)</span>
+              <span class="ctx-preset-sub" data-i18n="models.preset.p256Sub">反重力默认 · 256,000 tokens</span>
+            </button>
+            <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="512000">
+              <span class="ctx-preset-title">512,000 (512K)</span>
+              <span class="ctx-preset-sub" data-i18n="models.preset.p512Sub">进阶预设 · 512,000 tokens</span>
+            </button>
+            <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="1000000">
+              <span class="ctx-preset-title">1,000,000 (1M)</span>
+              <span class="ctx-preset-sub" data-i18n="models.preset.p1mSub">1M 满血窗口 · 自动预留输出</span>
+            </button>
+            <button type="button" class="ctx-preset-btn" data-ctx-mode="dynamic" data-ctx-limit="">
+              <span class="ctx-preset-title" data-i18n="models.preset.dynamic">动态跟随</span>
+              <span class="ctx-preset-sub" data-i18n="models.preset.dynamicSub">不固定数值，按底座动态计算</span>
+            </button>
+          </div>
+
+          <div class="ctx-custom-row">
+            <label for="ctx-custom-limit-input" class="ctx-small-label" data-i18n="models.custom.label">自定义长度</label>
+            <div class="ctx-custom-input-wrap">
+              <input id="ctx-custom-limit-input" class="ctx-custom-input" type="text" inputmode="numeric" placeholder="输入整数，例如 300000" data-i18n-placeholder="models.custom.placeholder" autocomplete="off">
+              <span class="ctx-input-unit">tokens</span>
+            </div>
+          </div>
+          <div id="ctx-limit-validation" class="ctx-validation-msg" data-i18n="models.validation.defaultRange">可设置范围：16,384 – 2,097,152 tokens。</div>
+
+          <div class="ctx-pref-actions">
+            <button id="btn-save-model-ctx" class="unlock-btn unlock-btn-secondary" type="button" data-i18n="models.btn.save">保存自定义</button>
+            <button id="btn-apply-unlock" class="unlock-btn unlock-btn-primary" type="button" hidden data-i18n="models.btn.saveApply">保存并应用</button>
+            <button id="btn-reset-model-ctx" class="ctx-text-action-btn" type="button" data-i18n="models.btn.reset">恢复默认</button>
+          </div>
+
+          <div id="ctx-reset-notice" class="ctx-reset-notice" hidden></div>
+
+          <div class="ctx-plain-help">
+            <div data-i18n="models.help.line1">点击预设即时生效；自定义整数请填写后点「保存自定义」（底座在动态跟随解锁后逐模型生效）。</div>
+            <div data-i18n="models.help.line2">各模型根据保存的设置独立生效，多会话与模型切换互不干扰。</div>
+          </div>
+
+          <div id="unlock-result-box" class="unlock-result-box" style="display:none;">
+            <div id="unlock-result-text" class="unlock-result-text"></div>
+            <div id="unlock-result-actions" class="unlock-result-actions" hidden>
+              <button id="btn-unlock-result-restart" class="unlock-btn unlock-btn-primary" type="button" hidden data-i18n="models.restartBtn">重启客户端使设置生效</button>
+              <button id="btn-unlock-result-retry" class="unlock-btn unlock-btn-secondary" type="button" hidden data-i18n="models.btn.retryApply">重新检测并应用</button>
+            </div>
+            <div id="unlock-result-manual" class="ctx-result-manual-note" hidden data-i18n="models.manualRestart">请手动重启：关闭所有 Antigravity 窗口（包括托盘图标里的“退出”），再重新打开 Antigravity。</div>
+          </div>
+        </div>
+
+        <!-- 6. 选中模型摘要卡片（详细信息与能力参考默认折叠） -->
         <div id="ctx-model-card" class="ctx-detail-card">
           <div id="ctx-conflict-banner" class="ctx-conflict-banner" hidden>
             <div class="ctx-conflict-title" data-i18n="models.conflict.title">这个模型的不同档位保存过不同长度，请选一个统一值。</div>
@@ -1794,53 +1913,53 @@
             </div>
           </div>
 
-          <!-- 模型能力与当前生效参考（紧邻预算设置区，不隐藏） -->
-          <div class="ctx-cap-ref-card" id="ctx-capability-ref">
-            <div class="ctx-cap-ref-grid">
-              <div class="ctx-cap-item">
-                <span class="ctx-cap-lbl" data-i18n="models.cap.window">模型总窗口</span>
-                <span class="ctx-cap-val" id="ctx-cap-window">—</span>
-              </div>
-              <div class="ctx-cap-item">
-                <span class="ctx-cap-lbl" data-i18n="models.cap.output">最大输出</span>
-                <span class="ctx-cap-val" id="ctx-cap-output">—</span>
-              </div>
-              <div class="ctx-cap-item">
-                <span class="ctx-cap-lbl" data-i18n="models.cap.modelMax">模型理论输入上限</span>
-                <span class="ctx-cap-val" id="ctx-cap-model-max">—</span>
-              </div>
-              <div class="ctx-cap-item">
-                <span class="ctx-cap-lbl" data-i18n="models.cap.clientPolicy">当前客户端限制</span>
-                <span class="ctx-cap-val" id="ctx-cap-client-policy">—</span>
-              </div>
-              <div class="ctx-cap-item">
-                <span class="ctx-cap-lbl" data-i18n="models.cap.defaultCap">当前策略默认预算</span>
-                <span class="ctx-cap-val" id="ctx-cap-default">—</span>
-              </div>
-              <div class="ctx-cap-item">
-                <span class="ctx-cap-lbl" data-i18n="models.cap.range">当前可采纳输入范围</span>
-                <span class="ctx-cap-val" id="ctx-cap-range">16,384 – 2,097,152</span>
-              </div>
-              <div class="ctx-cap-item ctx-cap-item-wide">
-                <span class="ctx-cap-lbl" data-i18n="models.cap.formulaLbl">来源与计算说明</span>
-                <span class="ctx-cap-sub" id="ctx-cap-formula">等待读取模型元数据…</span>
-              </div>
-            </div>
-            <div class="ctx-cap-verify-strip" id="ctx-cap-verify-strip">
-              <span class="ctx-cap-v-cell"><em data-i18n="models.cap.saved">已保存</em> <strong id="ctx-ref-saved">—</strong></span>
-              <span class="ctx-cap-v-cell"><em data-i18n="models.cap.sent">最近请求携带</em> <strong id="ctx-ref-sent">尚无本次验证</strong></span>
-              <span class="ctx-cap-v-cell"><em data-i18n="models.cap.adopted">后端实际采用</em> <strong id="ctx-ref-adopted">尚无本次验证</strong></span>
-            </div>
-            <div class="ctx-unified-proj" id="ctx-unified-projection" hidden></div>
-          </div>
-
-          <!-- 折叠抽屉：详细信息（配置来源、请求参数、底座状态、实测预算） -->
+          <!-- 折叠抽屉：详细信息（模型能力参考、配置来源、请求参数、底座状态、实测预算） -->
           <div class="ctx-card-details-drawer">
             <button id="btn-toggle-card-details" class="drawer-trigger ctx-card-drawer-trigger" aria-expanded="false" type="button">
-              <span class="drawer-trigger-left" data-i18n="models.card.detailsToggle">详细信息（配置来源、请求参数与预算验证）</span>
+              <span class="drawer-trigger-left" data-i18n="models.card.detailsToggle">详细信息（能力参考、请求参数与预算验证）</span>
               <span id="ctx-card-drawer-arrow" class="drawer-arrow" data-i18n="session.techDrawer.expand">▼ 点击展开明细</span>
             </button>
             <div id="ctx-card-drawer-body" class="drawer-body ctx-card-drawer-body" style="display:none;">
+              <!-- 模型能力与当前生效参考 -->
+              <div class="ctx-cap-ref-card" id="ctx-capability-ref">
+                <div class="ctx-cap-ref-grid">
+                  <div class="ctx-cap-item">
+                    <span class="ctx-cap-lbl" data-i18n="models.cap.window">模型总窗口</span>
+                    <span class="ctx-cap-val" id="ctx-cap-window">—</span>
+                  </div>
+                  <div class="ctx-cap-item">
+                    <span class="ctx-cap-lbl" data-i18n="models.cap.output">最大输出</span>
+                    <span class="ctx-cap-val" id="ctx-cap-output">—</span>
+                  </div>
+                  <div class="ctx-cap-item">
+                    <span class="ctx-cap-lbl" data-i18n="models.cap.modelMax">模型理论输入上限</span>
+                    <span class="ctx-cap-val" id="ctx-cap-model-max">—</span>
+                  </div>
+                  <div class="ctx-cap-item">
+                    <span class="ctx-cap-lbl" data-i18n="models.cap.clientPolicy">当前客户端限制</span>
+                    <span class="ctx-cap-val" id="ctx-cap-client-policy">—</span>
+                  </div>
+                  <div class="ctx-cap-item">
+                    <span class="ctx-cap-lbl" data-i18n="models.cap.defaultCap">当前策略默认预算</span>
+                    <span class="ctx-cap-val" id="ctx-cap-default">—</span>
+                  </div>
+                  <div class="ctx-cap-item">
+                    <span class="ctx-cap-lbl" data-i18n="models.cap.range">当前可采纳输入范围</span>
+                    <span class="ctx-cap-val" id="ctx-cap-range">16,384 – 2,097,152</span>
+                  </div>
+                  <div class="ctx-cap-item ctx-cap-item-wide">
+                    <span class="ctx-cap-lbl" data-i18n="models.cap.formulaLbl">来源与计算说明</span>
+                    <span class="ctx-cap-sub" id="ctx-cap-formula">等待读取模型元数据…</span>
+                  </div>
+                </div>
+                <div class="ctx-cap-verify-strip" id="ctx-cap-verify-strip">
+                  <span class="ctx-cap-v-cell"><em data-i18n="models.cap.saved">已保存</em> <strong id="ctx-ref-saved">—</strong></span>
+                  <span class="ctx-cap-v-cell"><em data-i18n="models.cap.sent">最近请求携带</em> <strong id="ctx-ref-sent">尚无本次验证</strong></span>
+                  <span class="ctx-cap-v-cell"><em data-i18n="models.cap.adopted">后端实际采用</em> <strong id="ctx-ref-adopted">尚无本次验证</strong></span>
+                </div>
+                <div class="ctx-unified-proj" id="ctx-unified-projection" hidden></div>
+              </div>
+
               <div class="ctx-card-metrics">
                 <div class="ctx-metric-row ctx-metric-saved">
                   <span class="ctx-metric-label" data-i18n="models.card.saved">已保存</span>
@@ -1895,67 +2014,6 @@
               </div>
               <div id="ctx-card-hints" class="ctx-card-hints" hidden></div>
             </div>
-          </div>
-        </div>
-
-        <!-- 4. 设置操作区 -->
-        <div class="ctx-adjust-box" id="ctx-adjust-box">
-          <div class="ctx-preset-grid" id="ctx-preset-grid" role="group" aria-label="上下文长度预设" data-i18n-aria="models.preset.aria">
-            <button type="button" class="ctx-preset-btn" data-ctx-mode="default" data-ctx-limit="">
-              <span class="ctx-preset-title" data-i18n="models.preset.default">恢复客户端默认</span>
-              <span class="ctx-preset-sub" data-i18n="models.preset.defaultSub">清除请求覆盖，由当前底座策略决定</span>
-            </button>
-            <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="256000">
-              <span class="ctx-preset-title">256,000</span>
-              <span class="ctx-preset-sub" data-i18n="models.preset.p256Sub">反重力默认 · 256,000 tokens</span>
-            </button>
-            <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="512000">
-              <span class="ctx-preset-title">512,000</span>
-              <span class="ctx-preset-sub" data-i18n="models.preset.p512Sub">进阶预设 · 512,000 tokens</span>
-            </button>
-            <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="1000000">
-              <span class="ctx-preset-title">1,000,000</span>
-              <span class="ctx-preset-sub" data-i18n="models.preset.p1mSub">1M 满血窗口 · 自动预留输出</span>
-            </button>
-            <button type="button" class="ctx-preset-btn" data-ctx-mode="model_max" data-ctx-limit="">
-              <span class="ctx-preset-title" data-i18n="models.preset.modelMax">按模型最大可用</span>
-              <span class="ctx-preset-sub" id="ctx-preset-modelmax-sub" data-i18n="models.preset.modelMaxSub">总窗口 - 最大输出（需元数据）</span>
-            </button>
-            <button type="button" class="ctx-preset-btn" data-ctx-mode="dynamic" data-ctx-limit="">
-              <span class="ctx-preset-title" data-i18n="models.preset.dynamic">动态跟随</span>
-              <span class="ctx-preset-sub" data-i18n="models.preset.dynamicSub">不固定数值，按底座动态计算</span>
-            </button>
-          </div>
-
-          <div class="ctx-custom-row">
-            <label for="ctx-custom-limit-input" class="ctx-small-label" data-i18n="models.custom.label">自定义长度</label>
-            <div class="ctx-custom-input-wrap">
-              <input id="ctx-custom-limit-input" class="ctx-custom-input" type="text" inputmode="numeric" placeholder="输入整数，例如 300000" data-i18n-placeholder="models.custom.placeholder" autocomplete="off">
-              <span class="ctx-input-unit">tokens</span>
-            </div>
-          </div>
-          <div id="ctx-limit-validation" class="ctx-validation-msg" data-i18n="models.validation.defaultRange">可设置范围：16,384 – 2,097,152 tokens。</div>
-
-          <div class="ctx-pref-actions">
-            <button id="btn-save-model-ctx" class="unlock-btn unlock-btn-secondary" type="button" data-i18n="models.btn.save">保存</button>
-            <button id="btn-apply-unlock" class="unlock-btn unlock-btn-primary" type="button" data-i18n="models.btn.saveApply">保存并应用</button>
-            <button id="btn-reset-model-ctx" class="ctx-text-action-btn" type="button" data-i18n="models.btn.reset">恢复默认</button>
-          </div>
-
-          <div id="ctx-reset-notice" class="ctx-reset-notice" hidden></div>
-
-          <div class="ctx-plain-help">
-            <div data-i18n="models.help.line1">保存：记住当前模型的设置。底座引擎：一次性解除 256K 限制并启用动态跟随。</div>
-            <div data-i18n="models.help.line2">各模型根据保存的设置独立生效，多会话与模型切换互不干扰。</div>
-          </div>
-
-          <div id="unlock-result-box" class="unlock-result-box" style="display:none;">
-            <div id="unlock-result-text" class="unlock-result-text"></div>
-            <div id="unlock-result-actions" class="unlock-result-actions" hidden>
-              <button id="btn-unlock-result-restart" class="unlock-btn unlock-btn-primary" type="button" hidden data-i18n="models.restartBtn">重启客户端使设置生效</button>
-              <button id="btn-unlock-result-retry" class="unlock-btn unlock-btn-secondary" type="button" hidden data-i18n="models.btn.retryApply">重新检测并应用</button>
-            </div>
-            <div id="unlock-result-manual" class="ctx-result-manual-note" hidden data-i18n="models.manualRestart">请手动重启：关闭所有 Antigravity 窗口（包括托盘图标里的“退出”），再重新打开 Antigravity。</div>
           </div>
         </div>
 
@@ -2706,22 +2764,30 @@
 
     // 分页 1: 当前会话与版本同步提示
     'versionSync.mismatch': { 'zh-CN': '⚠️ 检测到官方 Antigravity 已更新至 v{officialVer}（当前哈基米基于 v{hakimiVer}）。如需同步新版底座，请运行：bash ./build-hakimi.sh --force --restart', 'zh-TW': '⚠️ 偵測到官方 Antigravity 已更新至 v{officialVer}（目前哈基米基於 v{hakimiVer}）。如需同步新版底座，請執行：bash ./build-hakimi.sh --force --restart', en: '⚠️ Official Antigravity updated to v{officialVer} (Hakimi is on v{hakimiVer}). Rebuild with: bash ./build-hakimi.sh --force --restart' },
-    'session.quick.compact': { 'zh-CN': '🗜️ Compact 压缩上下文', 'zh-TW': '🗜️ Compact 壓縮上下文', en: '🗜️ Compact Context' },
     'session.quick.compactBusy': { 'zh-CN': '⏳ 正在压缩…', 'zh-TW': '⏳ 正在壓縮…', en: '⏳ Compacting…' },
     'session.quick.compactDone': { 'zh-CN': '✔ 已向当前会话发送 /compact 指令，上下文即将更新。', 'zh-TW': '✔ 已向目前工作階段發送 /compact 指令，上下文即將更新。', en: '✔ Sent /compact command to active chat; context will refresh shortly.' },
     'session.quick.compactFail': { 'zh-CN': '✖ 触发压缩失败：{err}', 'zh-TW': '✖ 觸發壓縮失敗：{err}', en: '✖ Failed to trigger compact: {err}' },
     'session.quick.compactNoSession': { 'zh-CN': '请先打开一个对话会话并确保后台已就绪。', 'zh-TW': '請先開啟一個對話工作階段並確保後台已就緒。', en: 'Open an active chat and wait until backend is ready.' },
-    'session.quick.raiseLimit': { 'zh-CN': '⬆️ 上调上下文上限', 'zh-TW': '⬆️ 上調上下文上限', en: '⬆️ Raise Context Limit' },
-    'session.quick.raiseTarget': { 'zh-CN': '⬆️ 上调上限至 {target}', 'zh-TW': '⬆️ 上調上限至 {target}', en: '⬆️ Raise limit to {target}' },
-    'session.quick.raiseDone': { 'zh-CN': '✔ 已将上下文上限调整为 {target}，下一条消息生效。', 'zh-TW': '✔ 已將上下文上限調整為 {target}，下一則訊息生效。', en: '✔ Raised context limit to {target}; applies on next message.' },
-    'session.quick.raiseNeedRestart': { 'zh-CN': '✔ 目标已设为 {target} 并解锁底座动态跟随，请重启客户端生效。', 'zh-TW': '✔ 目標已設為 {target} 並解鎖底座動態跟隨，請重啟用戶端生效。', en: '✔ Target set to {target} and dynamic unlock applied. Restart client to take effect.' },
-    'session.quick.raiseFail': { 'zh-CN': '✖ 上调上限失败：{err}', 'zh-TW': '✖ 上調上限失敗：{err}', en: '✖ Failed to raise limit: {err}' },
     'topbar.quick.compactTitle': { 'zh-CN': 'Compact 压缩上下文', 'zh-TW': 'Compact 壓縮上下文', en: 'Compact Context' },
     'topbar.quick.compactDesc': { 'zh-CN': '向当前会话发送 /compact，清理历史冗余释放空间', 'zh-TW': '向目前對話發送 /compact，清理歷史冗餘釋放空間', en: 'Send /compact to summarize chat history and free space' },
     'topbar.quick.compactBusyDesc': { 'zh-CN': '正在向当前会话发送 /compact 指令…', 'zh-TW': '正在向目前對話發送 /compact 指令…', en: 'Sending /compact command to active chat…' },
-    'topbar.quick.raiseTitle': { 'zh-CN': '上调上下文上限至 {target}', 'zh-TW': '上調上下文上限至 {target}', en: 'Raise Context Limit to {target}' },
-    'topbar.quick.raiseDesc': { 'zh-CN': '一键扩容当前上下文预算上限（下一条消息生效）', 'zh-TW': '一鍵擴容目前上下文預算上限（下一則訊息生效）', en: 'Expand context budget limit in one click (applies on next message)' },
-    'topbar.quick.raiseBusyTitle': { 'zh-CN': '正在上调上限至 {target}…', 'zh-TW': '正在上調上限至 {target}…', en: 'Raising limit to {target}…' },
+    'twp.aria': { 'zh-CN': '调整上下文窗口上限', 'zh-TW': '調整上下文視窗上限', en: 'Adjust context window limit' },
+    'twp.tipTitle': { 'zh-CN': '上下文窗口（{cur}）', 'zh-TW': '上下文視窗（{cur}）', en: 'Context Window ({cur})' },
+    'twp.tipDescUnified': { 'zh-CN': '全局统一 · 点击切换 256K / 512K / 1M / 动态', 'zh-TW': '全域統一 · 點擊切換 256K / 512K / 1M / 動態', en: 'All models · Click to switch 256K / 512K / 1M / Dynamic' },
+    'twp.tipDescModel': { 'zh-CN': '{model} · 点击切换 256K / 512K / 1M / 动态', 'zh-TW': '{model} · 點擊切換 256K / 512K / 1M / 動態', en: '{model} · Click to switch 256K / 512K / 1M / Dynamic' },
+    'twp.scopeUnified': { 'zh-CN': '作用域：全部模型统一', 'zh-TW': '作用域：全部模型統一', en: 'Scope: All Models' },
+    'twp.scopeModel': { 'zh-CN': '当前：{model}', 'zh-TW': '目前：{model}', en: 'Model: {model}' },
+    'twp.scopeModelPending': { 'zh-CN': '当前模型：待识别', 'zh-TW': '目前模型：待識別', en: 'Current Model: Detecting…' },
+    'twp.switchToPerModel': { 'zh-CN': '切分模型', 'zh-TW': '切分模型', en: 'Per-Model' },
+    'twp.switchToUnified': { 'zh-CN': '切统一', 'zh-TW': '切統一', en: 'Unified' },
+    'twp.preset.dynamic': { 'zh-CN': '动态', 'zh-TW': '動態', en: 'Auto' },
+    'twp.moreModels': { 'zh-CN': '⚙️ 自定义数值 / 管理全部模型 ›', 'zh-TW': '⚙️ 自訂數值 / 管理全部模型 ›', en: '⚙️ Custom Limit / All Models ›' },
+    'twp.unconfirmedHint': { 'zh-CN': '暂未识别当前聊天模型，请先打开对话或点击下方管理全部模型。', 'zh-TW': '暫未識別目前聊天模型，請先開啟對話或點擊下方管理全部模型。', en: 'Active model not detected yet; open a chat or manage all models below.' },
+    'twp.customActiveNote': { 'zh-CN': '当前自定义上限：{val}', 'zh-TW': '目前自訂上限：{val}', en: 'Custom limit active: {val}' },
+    'twp.savedDone': { 'zh-CN': '✔ 已设为 {target}（下一条消息生效）', 'zh-TW': '✔ 已設為 {target}（下一則訊息生效）', en: '✔ Set to {target} (applies on next message)' },
+    'twp.savedNeedRestart': { 'zh-CN': '✔ 已设为 {target} 并解锁底座，请重启客户端生效', 'zh-TW': '✔ 已設為 {target} 並解鎖底座，請重啟用戶端生效', en: '✔ Set to {target} & unlocked backend; restart client to apply' },
+    'twp.saveFail': { 'zh-CN': '✖ 调整上限失败：{err}', 'zh-TW': '✖ 調整上限失敗：{err}', en: '✖ Failed to update limit: {err}' },
+    'key.limitNextTip': { 'zh-CN': '当前轮次预算 {cur}，下一条消息将按 {next} 生效', 'zh-TW': '目前輪次預算 {cur}，下一則訊息將按 {next} 生效', en: 'Current turn budget {cur}; next message will use {next}' },
     'session.keySummary.title': { 'zh-CN': '⭐ 核心用量速览', 'zh-TW': '⭐ 核心用量速覽', en: '⭐ Context Summary' },
     'session.badge.reading': { 'zh-CN': '读取中', 'zh-TW': '讀取中', en: 'Loading' },
     'session.stat.used': { 'zh-CN': '当前已用', 'zh-TW': '目前已用', en: 'Used' },
@@ -2736,9 +2802,11 @@
     'session.speed.tokens': { 'zh-CN': '本次输出', 'zh-TW': '本次輸出', en: 'Output' },
     'session.speed.wait': { 'zh-CN': '等待首次模型输出产生速度统计…', 'zh-TW': '等待首次模型輸出產生速度統計…', en: 'Waiting for the first model response…' },
     'session.compact.title': { 'zh-CN': '上下文设置', 'zh-TW': '上下文設定', en: 'Context Settings' },
+    'session.compact.scopeUnified': { 'zh-CN': '上下文上限 · 全局统一', 'zh-TW': '上下文上限 · 全域統一', en: 'Context Limit · All Models' },
+    'session.compact.scopeModel': { 'zh-CN': '上下文上限 · {model}', 'zh-TW': '上下文上限 · {model}', en: 'Context Limit · {model}' },
     'session.compact.savedLabel': { 'zh-CN': '本模型已保存：', 'zh-TW': '本模型已儲存：', en: 'Saved for model: ' },
     'session.compact.clientLabel': { 'zh-CN': '客户端当前使用：', 'zh-TW': '用戶端目前使用：', en: 'Client active: ' },
-    'session.compact.gotoModels': { 'zh-CN': '去模型设置 ›', 'zh-TW': '前往模型設定 ›', en: 'Model settings ›' },
+    'session.compact.gotoModels': { 'zh-CN': '管理全部模型 ›', 'zh-TW': '管理全部模型 ›', en: 'All Models ›' },
     'session.techDrawer.title': { 'zh-CN': '📋 底层技术参数与附件审计', 'zh-TW': '📋 底層技術參數與附件稽核', en: '📋 Technical Metrics & Attachment Audit' },
     'session.techDrawer.expand': { 'zh-CN': '▼ 点击展开明细', 'zh-TW': '▼ 點擊展開明細', en: '▼ Show details' },
     'session.techDrawer.collapse': { 'zh-CN': '▲ 点击收起明细', 'zh-TW': '▲ 點擊收起明細', en: '▲ Hide details' },
@@ -2812,7 +2880,7 @@
     'models.summary.pendingRestart': { 'zh-CN': '待重启生效', 'zh-TW': '待重啟生效', en: 'Pending Restart' },
     'models.summary.modelDefault': { 'zh-CN': '使用模型默认值', 'zh-TW': '使用模型預設值', en: 'Use model default' },
     'models.summary.unifiedTarget': { 'zh-CN': '所有模型（统一生效）', 'zh-TW': '所有模型（統一生效）', en: 'All models (unified)' },
-    'models.card.detailsToggle': { 'zh-CN': '详细信息（配置来源、请求参数与预算验证）', 'zh-TW': '詳細資訊（設定來源、請求參數與預算驗證）', en: 'Details (Source, request params & budget)' },
+    'models.card.detailsToggle': { 'zh-CN': '详细信息（能力参考、请求参数与预算验证）', 'zh-TW': '詳細資訊（能力參考、請求參數與預算驗證）', en: 'Details (Capabilities, request & budget)' },
     'models.card.requestSide': { 'zh-CN': '本次请求发送给底座的参数', 'zh-TW': '本次請求發送給底座的參數', en: 'Limit sent in request' },
     'models.card.client': { 'zh-CN': '底座引擎', 'zh-TW': '底座引擎', en: 'Base Engine' },
     'models.card.clientSide': { 'zh-CN': '底座透传与门禁状态', 'zh-TW': '底座透傳與門禁狀態', en: 'Pass-through & gate status' },
@@ -2849,10 +2917,10 @@
     'models.validation.empty': { 'zh-CN': '请输入 16,384 到 2,097,152 之间的整数。', 'zh-TW': '請輸入 16,384 到 2,097,152 之間的整數。', en: 'Enter an integer between 16,384 and 2,097,152.' },
     'models.validation.int': { 'zh-CN': '请输入整数（不要带小数或单位）。', 'zh-TW': '請輸入整數（不要帶小數或單位）。', en: 'Enter a whole integer without decimals or units.' },
     'models.validation.range': { 'zh-CN': '数值必须在 16,384 – 2,097,152 tokens 之间。', 'zh-TW': '數值必須在 16,384 – 2,097,152 tokens 之間。', en: 'Value must be between 16,384 and 2,097,152 tokens.' },
-    'models.btn.save': { 'zh-CN': '保存', 'zh-TW': '儲存', en: 'Save' },
+    'models.btn.save': { 'zh-CN': '保存自定义', 'zh-TW': '儲存自訂', en: 'Save Custom' },
     'models.btn.saveApply': { 'zh-CN': '保存并应用', 'zh-TW': '儲存並套用', en: 'Save & Apply' },
     'models.btn.reset': { 'zh-CN': '恢复默认', 'zh-TW': '恢復預設', en: 'Reset to Default' },
-    'models.help.line1': { 'zh-CN': '保存：记住当前模型的设置。底座引擎：一次性解除 256K 限制并启用动态跟随。', 'zh-TW': '儲存：記住目前模型的設定。底座引擎：一次性解除 256K 限制並啟用動態跟隨。', en: 'Save: record limit for this model. Engine: unlock 256K limit and enable dynamic follow.' },
+    'models.help.line1': { 'zh-CN': '点击预设即时生效；自定义整数请填写后点「保存自定义」（底座在动态跟随解锁后逐模型生效）。', 'zh-TW': '點擊預設即時生效；自訂整數請填寫後點「儲存自訂」（底座在動態跟隨解鎖後逐模型生效）。', en: 'Presets apply on click; enter custom integer and click Save Custom (dynamic backend routes per model).' },
     'models.help.line2': { 'zh-CN': '各模型根据保存的设置独立生效，多会话与模型切换互不干扰。', 'zh-TW': '各模型依儲存的設定獨立生效，多工作階段與模型切換互不干擾。', en: 'Each model applies its saved setting independently without crosstalk across sessions or switches.' },
     'models.details.title': { 'zh-CN': '详细说明', 'zh-TW': '詳細說明', en: 'Details & Notes' },
     'models.details.li1': { 'zh-CN': '<strong>设置存在哪里</strong>：模型设置保存在插件的本地设置文件里，按模型产品记录。「应用」会把一种设置写入客户端的语言服务，重启后由新进程读取。', 'zh-TW': '<strong>設定儲存在哪裡</strong>：模型設定儲存在外掛的本機設定檔中，依模型產品記錄。「套用」會將設定寫入用戶端語言服務，重新啟動後由新行程讀取。', en: '<strong>Where settings live</strong>: Per-model preferences are stored in local plugin settings. "Apply" writes the selected limit to the client language server for the next restart.' },
@@ -7030,12 +7098,11 @@
   }
 
   function getTopbarVisibleQuickWidth() {
-    if (!state.route) return 0;
     let count = 0;
     const btnCompact = el('btn-topbar-compact');
-    const btnRaise = el('btn-topbar-raise-limit');
+    const btnWindow = el('btn-topbar-window');
     if (btnCompact && !btnCompact.hidden) count++;
-    if (btnRaise && !btnRaise.hidden) count++;
+    if (btnWindow && !btnWindow.hidden) count++;
     return count * 28;
   }
 
@@ -7047,10 +7114,10 @@
     applyLayoutMode(nextMode);
     if (state.tooltipOpen) positionContextTooltip();
     if (el('topbar-action-tooltip')?.getAttribute('data-visible') === 'true') {
-      const anchor = activeTopbarTipKind === 'raise' ? el('btn-topbar-raise-limit') : el('btn-topbar-compact');
+      const anchor = activeTopbarTipKind === 'window' ? el('btn-topbar-window') : el('btn-topbar-compact');
       positionTopbarActionTooltip(anchor);
     }
-    if (isAnyPanelOpen() || !el('overflow-menu')?.hidden) positionFloatingPanels();
+    if (isAnyPanelOpen() || !el('overflow-menu')?.hidden || !el('topbar-window-popover')?.hidden) positionFloatingPanels();
   }
 
   function scheduleLayoutSync() {
@@ -7125,7 +7192,7 @@
     const tip = el('topbar-action-tooltip');
     const target = (anchorEl && !anchorEl.hidden)
       ? anchorEl
-      : (el('btn-topbar-compact') && !el('btn-topbar-compact').hidden ? el('btn-topbar-compact') : el('badge'));
+      : (el('btn-topbar-window') && !el('btn-topbar-window').hidden ? el('btn-topbar-window') : el('badge'));
     if (!tip || !target || !target.getBoundingClientRect) return;
     try {
       const bRect = target.getBoundingClientRect();
@@ -7167,14 +7234,17 @@
       titleEl.textContent = isQuickCompactBusy ? t('session.quick.compactBusy') : t('topbar.quick.compactTitle');
       descEl.textContent = isQuickCompactBusy ? t('topbar.quick.compactBusyDesc') : t('topbar.quick.compactDesc');
       descEl.hidden = false;
-    } else if (kind === 'raise') {
-      const act = resolveSessionRaiseAction();
-      const targetLbl = act.targetLabel || '1M';
-      titleEl.textContent = isQuickRaiseBusy
-        ? t('topbar.quick.raiseBusyTitle', { target: targetLbl })
-        : t('topbar.quick.raiseTitle', { target: targetLbl });
-      descEl.textContent = t('topbar.quick.raiseDesc');
-      descEl.hidden = Boolean(isQuickRaiseBusy);
+    } else if (kind === 'window') {
+      const info = typeof resolveQuickContextTarget === 'function' ? resolveQuickContextTarget() : { scopeMode: 'unified', ready: true, currentShortLabel: '—' };
+      const curLbl = info.currentShortLabel || t('status.savedShortDefault');
+      titleEl.textContent = t('twp.tipTitle', { cur: curLbl });
+      if (info.scopeMode === 'unified') {
+        descEl.textContent = t('twp.tipDescUnified');
+      } else {
+        const modelLbl = info.prod?.productLabel || t('models.summary.unconfirmed');
+        descEl.textContent = t('twp.tipDescModel', { model: modelLbl });
+      }
+      descEl.hidden = false;
     }
   }
 
@@ -7295,6 +7365,7 @@
       placePanel(el('panel'), 472, el('badge'));
       placePanel(el('panel-tokens'), 730, el('badge-tokens'));
       placePanel(el('overflow-menu'), 220, el('badge-overflow'));
+      placePanel(el('topbar-window-popover'), 232, el('btn-topbar-window'));
       positionColorPickerPopover();
     } catch {}
   }
@@ -7361,6 +7432,33 @@
     return !el('panel').hidden || !el('panel-tokens').hidden;
   }
 
+  function closeTopbarWindowPopover() {
+    const pop = el('topbar-window-popover');
+    if (pop) pop.hidden = true;
+    el('btn-topbar-window')?.setAttribute('aria-expanded', 'false');
+    if (!isAnyPanelOpen() && el('overflow-menu')?.hidden !== false) {
+      syncHostStackingElevation(false);
+    }
+  }
+
+  function toggleTopbarWindowPopover() {
+    const pop = el('topbar-window-popover');
+    if (!pop) return;
+    const willOpen = Boolean(pop.hidden);
+    showPanel('none');
+    hideContextTooltip();
+    hideTopbarActionTooltip(true);
+    if (willOpen) {
+      pop.hidden = false;
+      el('btn-topbar-window')?.setAttribute('aria-expanded', 'true');
+      if (typeof renderQuickContextControls === 'function') renderQuickContextControls();
+      syncHostStackingElevation(true);
+      positionFloatingPanels();
+    } else {
+      closeTopbarWindowPopover();
+    }
+  }
+
   function showPanel(target) {
     const pContext = el('panel');
     const pTokens = el('panel-tokens');
@@ -7374,6 +7472,7 @@
     bOverflow?.setAttribute('aria-expanded', 'false');
 
     if (target === 'tokens') {
+      closeTopbarWindowPopover();
       hideContextTooltip();
       hideTopbarActionTooltip(true);
       closeColorPicker();
@@ -7387,6 +7486,7 @@
       void syncTokenHistoryFromHost(false);
       renderActiveHeatView(true);
     } else if (target === 'context') {
+      closeTopbarWindowPopover();
       hideContextTooltip();
       hideTopbarActionTooltip(true);
       closeColorPicker();
@@ -7444,6 +7544,7 @@
     if (!pOverflow) return;
     const willOpen = pOverflow.hidden;
     showPanel('none');
+    closeTopbarWindowPopover();
     hideContextTooltip();
     hideTopbarActionTooltip(true);
     pOverflow.hidden = !willOpen;
@@ -7930,44 +8031,80 @@
     hideContextTooltip();
   });
 
-  // 顶部快捷操作（仅图标）：悬停/聚焦展示说明气泡，点击直接触发动作并反馈
+  // 顶部快捷操作（仅图标）：悬停/聚焦展示说明气泡，点击直接触发动作或弹出快速调节浮层
   el('btn-topbar-compact')?.addEventListener('mouseenter', () => {
-    if (!isAnyPanelOpen()) showTopbarActionTooltip('compact', el('btn-topbar-compact'));
+    if (!isAnyPanelOpen() && el('topbar-window-popover')?.hidden !== false) showTopbarActionTooltip('compact', el('btn-topbar-compact'));
   });
   el('btn-topbar-compact')?.addEventListener('mouseleave', () => {
     hideTopbarActionTooltip(false);
   });
   el('btn-topbar-compact')?.addEventListener('focus', () => {
-    if (!isAnyPanelOpen()) showTopbarActionTooltip('compact', el('btn-topbar-compact'));
+    if (!isAnyPanelOpen() && el('topbar-window-popover')?.hidden !== false) showTopbarActionTooltip('compact', el('btn-topbar-compact'));
   });
   el('btn-topbar-compact')?.addEventListener('blur', () => {
     hideTopbarActionTooltip(false);
   });
   el('btn-topbar-compact')?.addEventListener('click', () => {
+    closeTopbarWindowPopover();
     void triggerSessionCompact('topbar');
   });
 
-  el('btn-topbar-raise-limit')?.addEventListener('mouseenter', () => {
-    if (!isAnyPanelOpen()) showTopbarActionTooltip('raise', el('btn-topbar-raise-limit'));
+  el('btn-topbar-window')?.addEventListener('mouseenter', () => {
+    if (!isAnyPanelOpen() && el('topbar-window-popover')?.hidden !== false) showTopbarActionTooltip('window', el('btn-topbar-window'));
   });
-  el('btn-topbar-raise-limit')?.addEventListener('mouseleave', () => {
+  el('btn-topbar-window')?.addEventListener('mouseleave', () => {
     hideTopbarActionTooltip(false);
   });
-  el('btn-topbar-raise-limit')?.addEventListener('focus', () => {
-    if (!isAnyPanelOpen()) showTopbarActionTooltip('raise', el('btn-topbar-raise-limit'));
+  el('btn-topbar-window')?.addEventListener('focus', () => {
+    if (!isAnyPanelOpen() && el('topbar-window-popover')?.hidden !== false) showTopbarActionTooltip('window', el('btn-topbar-window'));
   });
-  el('btn-topbar-raise-limit')?.addEventListener('blur', () => {
+  el('btn-topbar-window')?.addEventListener('blur', () => {
     hideTopbarActionTooltip(false);
   });
-  el('btn-topbar-raise-limit')?.addEventListener('click', () => {
-    void triggerSessionRaiseLimit('topbar');
+  el('btn-topbar-window')?.addEventListener('click', () => {
+    toggleTopbarWindowPopover();
+  });
+
+  el('btn-twp-toggle-scope')?.addEventListener('click', () => {
+    setScopeMode(getContextScopeMode() === 'unified' ? 'per_model' : 'unified');
+  });
+
+  el('btn-twp-open-models')?.addEventListener('click', () => {
+    closeTopbarWindowPopover();
+    isContextSettingsView = false;
+    if (activeSessionProductKey) {
+      selectedProductKey = activeSessionProductKey;
+      selectedEditModelKey = activeSessionModelKey || activeSessionProductKey;
+      manualModelSelection = false;
+      ctxDraftDirty = false;
+    }
+    showPanel('context');
+    switchContextTab('models');
+  });
+
+  el('twp-preset-grid')?.addEventListener('click', (e) => {
+    const btn = e?.target?.closest?.('.twp-preset-btn');
+    if (!btn || btn.disabled) return;
+    const mode = btn.getAttribute('data-qctx-mode') || 'fixed';
+    const rawLim = btn.getAttribute('data-qctx-limit');
+    const lim = rawLim ? Number(rawLim) : null;
+    void applyQuickContextPreset(mode, lim, { source: 'popover' });
+  });
+
+  el('session-ctx-preset-bar')?.addEventListener('click', (e) => {
+    const btn = e?.target?.closest?.('.twp-preset-btn');
+    if (!btn || btn.disabled) return;
+    const mode = btn.getAttribute('data-qctx-mode') || 'fixed';
+    const rawLim = btn.getAttribute('data-qctx-limit');
+    const lim = rawLim ? Number(rawLim) : null;
+    void applyQuickContextPreset(mode, lim, { source: 'session_card' });
   });
 
   el('theme-toggle')?.addEventListener('click', cycleTheme);
   el('theme-toggle-tokens')?.addEventListener('click', cycleTheme);
   el('badge').addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
   el('btn-topbar-compact')?.addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
-  el('btn-topbar-raise-limit')?.addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
+  el('btn-topbar-window')?.addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
   el('badge-tokens').addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
   el('badge-speed')?.addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
 
@@ -9415,16 +9552,28 @@
 
   function renderCompactSessionCard() {
     const scopeMode = getContextScopeMode();
+    const scopeTitleEl = el('ctx-compact-scope-title');
+    if (scopeTitleEl) {
+      if (scopeMode === 'unified') {
+        scopeTitleEl.textContent = t('session.compact.scopeUnified');
+      } else if (activeSessionModelConfirmed && activeSessionProductKey) {
+        const products = getKnownModelProducts();
+        const targetProd = products.find(p => p.productKey === activeSessionProductKey) || null;
+        scopeTitleEl.textContent = t('session.compact.scopeModel', { model: targetProd?.productLabel || activeSessionProductKey });
+      } else {
+        scopeTitleEl.textContent = t('session.compact.title');
+      }
+    }
     if (ctxCompactSavedEl) {
       if (scopeMode === 'unified') {
-        ctxCompactSavedEl.textContent = formatSavedPrefLabel(contextUnifiedPreference);
+        ctxCompactSavedEl.textContent = formatPrefShortPill(contextUnifiedPreference);
       } else if (!activeSessionModelConfirmed || !activeSessionProductKey) {
-        ctxCompactSavedEl.textContent = t('panel.ctx.currentModelUnconfirmed') || '当前模型待确认';
+        ctxCompactSavedEl.textContent = t('models.summary.unconfirmed');
       } else {
         const products = getKnownModelProducts();
         const targetProd = products.find(p => p.productKey === activeSessionProductKey) || null;
         const pState = resolveProductPreferenceState(targetProd);
-        ctxCompactSavedEl.textContent = pState.pref == null && pState.status === 'none' ? t('status.savedDefault') : pState.displayText;
+        ctxCompactSavedEl.textContent = pState.pref == null && pState.status === 'none' ? t('status.savedShortDefault') : pState.shortText;
       }
     }
     const statusInfo = mapUnlockDisplayStatus(currentUnlockStatus);
@@ -9439,6 +9588,7 @@
         ctxCompactClientEl.textContent = `${describeClientModeValue(currentUnlockStatus)}（${statusInfo.badge}）`;
       }
     }
+    if (typeof renderQuickContextControls === 'function') renderQuickContextControls();
   }
 
   function renderClientStatusBar() {
@@ -10617,6 +10767,7 @@
     }
     renderHeaderModelDropdown();
     renderCompactSessionCard();
+    if (typeof renderQuickContextControls === 'function') renderQuickContextControls();
     if (!isContextSettingsView && activeContextTab === 'models') {
       renderModelSettingsTab();
     } else if (!isContextSettingsView && activeContextTab === 'speed') {
@@ -10624,7 +10775,7 @@
     }
   }
 
-  ctxPresetGrid?.addEventListener('click', (e) => {
+  ctxPresetGrid?.addEventListener('click', async (e) => {
     const btn = e?.target?.closest?.('.ctx-preset-btn');
     if (!btn || btn.disabled) return;
     const mode = btn.getAttribute?.('data-ctx-mode') || btn.dataset?.ctxMode || 'default';
@@ -10634,14 +10785,6 @@
       ctxDraft = { mode: 'dynamic', limitTokens: null };
     } else if (mode === 'default') {
       ctxDraft = { mode: 'default', limitTokens: null };
-    } else if (mode === 'model_max') {
-      const prod = contextScopeMode === 'unified' ? null : getSelectedProductObj();
-      const cap = prod ? getProductCapabilitySummary(prod) : null;
-      if (!cap || !cap.runtimePolicy?.policyKnown || cap.maxAdjustableTokens == null) {
-        updateValidationMessageUI();
-        return;
-      }
-      ctxDraft = { mode: 'fixed', limitTokens: cap.maxAdjustableTokens };
     } else {
       const lim = Number(rawLim || 512000);
       ctxDraft = { mode: 'fixed', limitTokens: lim };
@@ -10651,6 +10794,46 @@
     }
     if (ctxResetNoticeEl) ctxResetNoticeEl.hidden = true;
     renderPresetSelectionUI();
+
+    const saved = await saveCurrentProductDraft();
+    if (saved.stale) return;
+    if (!saved.ok) {
+      showUnlockResultBox(false, saved.error);
+      return;
+    }
+
+    let needsRestart = false;
+    const needBackendUnlock = (ctxDraft.mode === 'dynamic' || Number(ctxDraft.limitTokens) > 256000)
+      && (!currentUnlockStatus || currentUnlockStatus.status === 'not_patched');
+    if (needBackendUnlock) {
+      try {
+        const uRes = await invokeUnlockApi('apply', {
+          mode: 'dynamic',
+          limitTokens: null,
+          serviceLimit: state.latest?.serviceLimit || undefined
+        });
+        if (!uRes || !uRes.ok) {
+          showUnlockResultBox(false, buildFriendlyWriteError(uRes?.error), { showRetry: true });
+          return;
+        }
+        needsRestart = Boolean(uRes.needsRestart);
+        if (needsRestart) needsRestartAfterApply = true;
+        await refreshUnlockStatus();
+      } catch (err) {
+        showUnlockResultBox(false, buildFriendlyWriteError(err?.message), { showRetry: true });
+        return;
+      }
+    }
+
+    const targetLbl = ctxDraft.mode === 'dynamic'
+      ? t('twp.preset.dynamic')
+      : formatKShort(ctxDraft.limitTokens || 256000);
+    const doneMsg = saved.notice
+      || (needsRestart ? t('twp.savedNeedRestart', { target: targetLbl }) : t('twp.savedDone', { target: targetLbl }));
+    showUnlockResultBox(true, doneMsg, { needsRestart });
+    if (typeof renderQuickContextControls === 'function') renderQuickContextControls();
+    renderCompactSessionCard();
+    render();
   });
 
   ctxCustomInput?.addEventListener('input', () => {
@@ -10668,6 +10851,12 @@
       limitTokens: val.ok ? val.limitTokens : null
     };
     renderPresetSelectionUI();
+  });
+  ctxCustomInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      btnSaveModelCtx?.click?.();
+    }
   });
 
   async function saveSettingsPayloadBridge(payload = {}) {
@@ -10818,6 +11007,9 @@
       return;
     }
     showUnlockResultBox(true, res.notice || t('models.status.savedPendingDispatch') || '已保存，下一次发送时尝试应用');
+    if (typeof renderQuickContextControls === 'function') renderQuickContextControls();
+    renderCompactSessionCard();
+    render();
   });
 
   btnResetModelCtx?.addEventListener('click', async () => {
@@ -10872,6 +11064,8 @@
     renderHeaderModelDropdown();
     renderModelSettingsTab();
     renderPresetSelectionUI();
+    if (typeof renderQuickContextControls === 'function') renderQuickContextControls();
+    render();
 
     if (ctxResetNoticeEl) {
       const clientUsingSame = oldSavedPref && currentUnlockStatus && (
@@ -10912,6 +11106,9 @@
     loadDraftFromSelectedModel(true);
     const prod = getSelectedProductObj();
     if (prod) renderModelDetailCard(prod);
+    renderCompactSessionCard();
+    if (typeof renderQuickContextControls === 'function') renderQuickContextControls();
+    render();
   }
 
   btnModeUnified?.addEventListener('click', () => setScopeMode('unified'));
@@ -11078,15 +11275,19 @@
         if (writableStatuses.has(data.status) && (!data.arch || data.arch === 'arm64' || data.arch === 'x86-64')) {
           btnApplyUnlock.disabled = false;
           btnApplyUnlock.textContent = t('models.btn.saveApply');
+          btnApplyUnlock.hidden = (data.status === 'patched_loaded' && !needsRestartAfterApply);
         } else if (data.status === 'partial_match') {
           btnApplyUnlock.disabled = true;
           btnApplyUnlock.textContent = t('models.btn.partialBlocked');
+          btnApplyUnlock.hidden = false;
         } else if (data.status === 'failed') {
           btnApplyUnlock.disabled = false;
           btnApplyUnlock.textContent = t('models.btn.retryApply');
+          btnApplyUnlock.hidden = false;
         } else {
           btnApplyUnlock.disabled = true;
           btnApplyUnlock.textContent = t('models.btn.unsupported');
+          btnApplyUnlock.hidden = true;
         }
       }
 
@@ -11113,14 +11314,14 @@
         renderClientStatusBar();
         if (!isContextSettingsView && activeContextTab === 'models') renderModelSettingsTab();
       }
-      renderSessionQuickActions();
+      if (typeof renderQuickContextControls === 'function') renderQuickContextControls();
     } catch {
       if (thisSeq !== unlockReqSeq) return;
       unlockStatusFetchError = true;
       currentUnlockStatus = null;
       renderCompactSessionCard();
       renderClientStatusBar();
-      renderSessionQuickActions();
+      if (typeof renderQuickContextControls === 'function') renderQuickContextControls();
     }
   }
 
@@ -12984,8 +13185,10 @@
   const outside = e => {
     const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
     const pop = el('color-picker-popover');
+    const twpPop = el('topbar-window-popover');
     if (!path.includes(host)) {
       closeColorPicker(true);
+      closeTopbarWindowPopover();
       toggle(false);
       hideContextTooltip();
       hideTopbarActionTooltip(true);
@@ -12993,6 +13196,9 @@
       if (om) om.hidden = true;
       syncHostStackingElevation(false);
       return;
+    }
+    if (twpPop && !twpPop.hidden && !path.includes(twpPop) && !path.includes(el('btn-topbar-window'))) {
+      closeTopbarWindowPopover();
     }
     const isClosingNow = pop?.classList ? pop.classList.contains('is-closing') : pop?.getAttribute('data-closing') === 'true';
     if (pop && !pop.hidden && !isClosingNow) {
@@ -13005,6 +13211,12 @@
   };
   const escape = e => {
     if (e.key === 'Escape') {
+      const twpPop = el('topbar-window-popover');
+      if (twpPop && !twpPop.hidden) {
+        closeTopbarWindowPopover();
+        el('btn-topbar-window')?.focus?.();
+        return;
+      }
       const pop = el('color-picker-popover');
       const isEscClosing = pop?.classList ? pop.classList.contains('is-closing') : pop?.getAttribute('data-closing') === 'true';
       if (pop && !pop.hidden && !isEscClosing) {
@@ -13460,7 +13672,7 @@
         renderHeaderModelDropdown();
         if (!ctxDraftDirty) loadDraftFromSelectedModel(true);
         else renderCompactSessionCard();
-        renderSessionQuickActions();
+        if (typeof renderQuickContextControls === 'function') renderQuickContextControls();
         const savedView = settingsRes.savedHeatView || settingsRes.uiPreferences?.savedHeatView;
         if (savedView && ['daily', 'weekly', 'monthly', 'yearly', 'cum'].includes(savedView)) {
           switchHeatView(savedView, false);
@@ -14399,154 +14611,362 @@
   }
 
   let isQuickCompactBusy = false;
-  let isQuickRaiseBusy = false;
-  let quickFeedbackTimer = null;
+  let isQuickPresetSaving = false;
+  let twpFeedbackTimer = null;
+  let sessionCardFeedbackTimer = null;
 
-  function showKeyQuickFeedback(ok, msg) {
-    const fb = el('key-quick-feedback');
-    if (!fb) return;
-    if (quickFeedbackTimer) {
-      clearTimeout(quickFeedbackTimer);
-      quickFeedbackTimer = null;
+  function resolveQuickContextTarget() {
+    const scopeMode = getContextScopeMode();
+    if (scopeMode === 'unified') {
+      const pref = getContextUnifiedPreference();
+      const rp = resolveRuntimeUnlockPolicyClient();
+      const effectiveShort = (pref && pref.mode && pref.mode !== 'default')
+        ? formatPrefShortPill(pref)
+        : (rp?.runtimeMode === 'dynamic' ? t('twp.preset.dynamic') : formatKShort(rp?.currentClientLimitTokens || 256000));
+      return {
+        scopeMode: 'unified',
+        ready: true,
+        prod: null,
+        pref,
+        rawWindowMax: null,
+        capSummary: null,
+        currentShortLabel: effectiveShort
+      };
     }
-    if (!msg) {
-      fb.textContent = '';
-      fb.hidden = true;
-      fb.className = 'key-quick-feedback';
+
+    const products = getKnownModelProducts();
+    const hostSelected = extractHostSelectedModel();
+    let prod = null;
+    if (hostSelected && hostSelected.productKey) {
+      prod = products.find(p => p.productKey === hostSelected.productKey) || {
+        productKey: hostSelected.productKey,
+        productLabel: hostSelected.label || hostSelected.productKey,
+        vendor: hostSelected.vendor || '其他',
+        members: []
+      };
+    } else if (activeSessionModelConfirmed && activeSessionProductKey) {
+      prod = products.find(p => p.productKey === activeSessionProductKey) || null;
+    }
+
+    if (!prod) {
+      return {
+        scopeMode: 'per_model',
+        ready: false,
+        prod: null,
+        pref: null,
+        rawWindowMax: null,
+        capSummary: null,
+        currentShortLabel: t('models.summary.unconfirmed')
+      };
+    }
+
+    const pState = resolveProductPreferenceState(prod);
+    const capSummary = getProductCapabilitySummary(prod);
+    const rawWindowMax = capSummary?.maxTokens ? Number(capSummary.maxTokens) : (capSummary?.modelTheoreticalMaxTokens ? Number(capSummary.modelTheoreticalMaxTokens) : null);
+    const rp = capSummary?.runtimePolicy || resolveRuntimeUnlockPolicyClient();
+    const pref = pState?.pref || null;
+    const effectiveShort = (pref && pref.mode && pref.mode !== 'default')
+      ? formatPrefShortPill(pref)
+      : (rp?.runtimeMode === 'dynamic' ? t('twp.preset.dynamic') : formatKShort(rp?.currentClientLimitTokens || 256000));
+    return {
+      scopeMode: 'per_model',
+      ready: true,
+      prod,
+      pState,
+      pref,
+      capSummary,
+      rawWindowMax,
+      currentShortLabel: effectiveShort
+    };
+  }
+
+  function resolvePendingSessionBudgetHint(observedBudget) {
+    const obs = Number(observedBudget || 0);
+    if (!obs || obs <= 0) return null;
+    const target = resolveQuickContextTarget();
+    if (!target.ready || !target.pref) return null;
+    if (target.pref.mode === 'fixed' && Number(target.pref.limitTokens) > 0) {
+      const nextTok = Number(target.pref.limitTokens);
+      if (target.capSummary?.maxTokens && nextTok > Number(target.capSummary.maxTokens)) return null;
+      if (Math.abs(nextTok - obs) >= 1024) {
+        return { nextTokens: nextTok, nextLabel: formatKShort(nextTok) };
+      }
+    }
+    return null;
+  }
+
+  function formatKeyLimitDisplay(elLimit, budgetVal) {
+    if (!elLimit) return;
+    const val = Number(budgetVal || 0);
+    if (!val || val <= 0) {
+      elLimit.textContent = '—';
+      elLimit.title = '';
       return;
     }
-    fb.textContent = msg;
-    fb.className = `key-quick-feedback ${ok ? 'is-success' : 'is-error'}`;
-    fb.hidden = false;
-    if (ok) {
-      quickFeedbackTimer = setTimeout(() => {
-        if (fb) fb.hidden = true;
-        quickFeedbackTimer = null;
-      }, 5000);
+    const baseText = short(val);
+    const pending = resolvePendingSessionBudgetHint(val);
+    if (pending) {
+      elLimit.textContent = `${baseText} → ${pending.nextLabel}`;
+      elLimit.title = t('key.limitNextTip', { cur: baseText, next: pending.nextLabel });
+    } else {
+      elLimit.textContent = baseText;
+      elLimit.title = '';
     }
   }
 
-  function resolveSessionRaiseAction() {
-    const scopeMode = getContextScopeMode();
-    const products = getKnownModelProducts();
-    const prod = (activeSessionProductKey && products.find(p => p.productKey === activeSessionProductKey))
-      || getSelectedProductObj()
-      || null;
-    const capSummary = prod ? getProductCapabilitySummary(prod) : null;
-    const pState = prod ? resolveProductPreferenceState(prod) : null;
-    const activePref = scopeMode === 'unified'
-      ? getContextUnifiedPreference()
-      : (pState?.pref || null);
-    const backendUnlocked = Boolean(
-      currentUnlockStatus &&
-      currentUnlockStatus.status !== 'not_patched' &&
-      currentUnlockStatus.status !== 'unsupported'
-    );
-
-    if (activePref?.mode === 'dynamic' && backendUnlocked) {
-      return { canRaise: false, reason: 'already_dynamic', targetTokens: null, targetLabel: null, prod };
+  function showQuickContextNote(source, ok, msg, autoHideMs = 0) {
+    const targetId = source === 'session_card' ? 'ctx-compact-feedback' : 'twp-status-note';
+    const node = el(targetId);
+    if (!node) return;
+    if (source === 'session_card') {
+      if (sessionCardFeedbackTimer) { clearTimeout(sessionCardFeedbackTimer); sessionCardFeedbackTimer = null; }
+    } else {
+      if (twpFeedbackTimer) { clearTimeout(twpFeedbackTimer); twpFeedbackTimer = null; }
     }
-
-    const obsBudget = Number(state.latest?.budget || 0);
-    let effectiveTokens = 256000;
-    if (activePref?.mode === 'fixed' && Number(activePref.limitTokens) > 0) {
-      effectiveTokens = Number(activePref.limitTokens);
-    } else if (obsBudget > 0) {
-      effectiveTokens = obsBudget;
+    if (!msg) {
+      node.textContent = '';
+      node.hidden = true;
+      node.className = 'twp-status-note';
+      return;
     }
-
-    const rawWin = Number(capSummary?.rawWindowMax || capSummary?.maxTokens || 0);
-    const theoMax = Number(capSummary?.modelTheoreticalMaxTokens || 0);
-
-    if (effectiveTokens >= 1000000) {
-      return { canRaise: false, reason: 'already_1m', targetTokens: null, targetLabel: null, prod };
+    node.textContent = msg;
+    node.className = `twp-status-note ${ok === true ? 'is-success' : (ok === false ? 'is-error' : '')}`.trim();
+    node.hidden = false;
+    if (autoHideMs > 0) {
+      const tid = setTimeout(() => {
+        if (source === 'session_card') sessionCardFeedbackTimer = null;
+        else twpFeedbackTimer = null;
+        if (el(targetId)) el(targetId).hidden = true;
+      }, autoHideMs);
+      if (source === 'session_card') sessionCardFeedbackTimer = tid;
+      else twpFeedbackTimer = tid;
     }
-    if (theoMax > 0 && theoMax <= 1000000 && effectiveTokens >= theoMax) {
-      return { canRaise: false, reason: 'at_model_max', targetTokens: null, targetLabel: null, prod };
-    }
-    if (rawWin > 0 && rawWin < 300000 && effectiveTokens >= rawWin) {
-      return { canRaise: false, reason: 'at_raw_window', targetTokens: null, targetLabel: null, prod };
-    }
-
-    if (effectiveTokens < 512000 && (!rawWin || rawWin >= 512000)) {
-      const capped = (scopeMode === 'per_model' && theoMax > 0 && theoMax < 512000) ? theoMax : 512000;
-      if (capped <= effectiveTokens) {
-        return { canRaise: false, reason: 'at_model_max', targetTokens: null, targetLabel: null, prod };
-      }
-      const targetLabel = capped === 512000 ? '512K' : formatKShort(capped);
-      return { canRaise: true, reason: 'step_512k', targetTokens: capped, targetLabel, prod };
-    }
-
-    const maxTarget = (scopeMode === 'per_model' && theoMax > 0 && theoMax < 1000000) ? theoMax : 1000000;
-    if (maxTarget <= effectiveTokens) {
-      return { canRaise: false, reason: 'at_model_max', targetTokens: null, targetLabel: null, prod };
-    }
-    const targetLabel = maxTarget >= 950000 ? '1M' : formatKShort(maxTarget);
-    return { canRaise: true, reason: 'step_1m', targetTokens: maxTarget, targetLabel, prod };
   }
 
-  function renderSessionQuickActions() {
-    const btnCompact = el('btn-session-compact');
-    const btnRaise = el('btn-session-raise-limit');
+  function syncQuickPresetGrid(gridEl, info) {
+    if (!gridEl) return;
+    const btns = gridEl.querySelectorAll ? gridEl.querySelectorAll('.twp-preset-btn') : [];
+    const rp = info.capSummary?.runtimePolicy || resolveRuntimeUnlockPolicyClient();
+    const effectiveMode = (info.pref?.mode && info.pref.mode !== 'default')
+      ? info.pref.mode
+      : (rp?.runtimeMode === 'dynamic' ? 'dynamic' : 'fixed');
+    const effectiveLimit = (info.pref?.mode === 'fixed' && info.pref.limitTokens)
+      ? Number(info.pref.limitTokens)
+      : (rp?.runtimeMode === 'fixed' && rp.currentClientLimitTokens ? Number(rp.currentClientLimitTokens) : 256000);
+
+    for (const btn of btns) {
+      const bMode = btn.getAttribute('data-qctx-mode') || 'fixed';
+      const bLimRaw = btn.getAttribute('data-qctx-limit');
+      const bLim = bLimRaw ? Number(bLimRaw) : null;
+      const exceedsCap = Boolean(
+        info.ready &&
+        info.scopeMode === 'per_model' &&
+        bMode === 'fixed' &&
+        bLim &&
+        info.rawWindowMax &&
+        bLim > info.rawWindowMax
+      );
+      const disabled = Boolean(isQuickPresetSaving || !info.ready || exceedsCap);
+      btn.disabled = disabled;
+      const isMatched = Boolean(
+        info.ready &&
+        !exceedsCap &&
+        ((bMode === 'dynamic' && effectiveMode === 'dynamic') ||
+          (bMode === 'fixed' && effectiveMode === 'fixed' && bLim === effectiveLimit))
+      );
+      if (isMatched) addClass(btn, 'is-active');
+      else removeClass(btn, 'is-active');
+      btn.setAttribute('aria-pressed', String(isMatched));
+      btn.title = exceedsCap ? `${fmt(bLim)} > ${fmt(info.rawWindowMax)}` : '';
+    }
+  }
+
+  function renderQuickContextControls() {
     const btnTopCompact = el('btn-topbar-compact');
-    const btnTopRaise = el('btn-topbar-raise-limit');
+    const btnTopWindow = el('btn-topbar-window');
     const prevTopCompactHidden = btnTopCompact ? btnTopCompact.hidden : true;
-    const prevTopRaiseHidden = btnTopRaise ? btnTopRaise.hidden : true;
     const hasSession = Boolean(state.route);
 
-    if (btnCompact) {
-      btnCompact.disabled = !hasSession || isQuickCompactBusy;
-      btnCompact.textContent = isQuickCompactBusy ? t('session.quick.compactBusy') : t('session.quick.compact');
-    }
     if (btnTopCompact) {
       btnTopCompact.hidden = !hasSession;
       btnTopCompact.disabled = !hasSession || isQuickCompactBusy;
       btnTopCompact.setAttribute('aria-label', isQuickCompactBusy ? t('session.quick.compactBusy') : t('topbar.quick.compactTitle'));
     }
 
-    const act = hasSession ? resolveSessionRaiseAction() : { canRaise: false };
-    if (!hasSession || !act.canRaise) {
-      if (btnRaise) btnRaise.hidden = true;
-      if (btnTopRaise) btnTopRaise.hidden = true;
-    } else {
-      if (btnRaise) {
-        btnRaise.hidden = false;
-        btnRaise.disabled = isQuickRaiseBusy;
-        btnRaise.textContent = t('session.quick.raiseTarget', { target: act.targetLabel });
+    const info = resolveQuickContextTarget();
+    if (btnTopWindow) {
+      btnTopWindow.hidden = false;
+      btnTopWindow.disabled = isQuickPresetSaving;
+      btnTopWindow.setAttribute('aria-label', t('twp.tipTitle', { cur: info.currentShortLabel || '—' }));
+    }
+
+    const scopeLbl = el('twp-scope-label');
+    const scopeToggle = el('btn-twp-toggle-scope');
+    if (scopeLbl) {
+      if (info.scopeMode === 'unified') {
+        scopeLbl.textContent = t('twp.scopeUnified');
+      } else if (info.ready && info.prod) {
+        scopeLbl.textContent = t('twp.scopeModel', { model: info.prod.productLabel });
+      } else {
+        scopeLbl.textContent = t('twp.scopeModelPending');
       }
-      if (btnTopRaise) {
-        btnTopRaise.hidden = false;
-        btnTopRaise.disabled = isQuickRaiseBusy;
-        btnTopRaise.setAttribute('aria-label', t('topbar.quick.raiseTitle', { target: act.targetLabel }));
+      scopeLbl.title = scopeLbl.textContent;
+    }
+    if (scopeToggle) {
+      scopeToggle.textContent = info.scopeMode === 'unified' ? t('twp.switchToPerModel') : t('twp.switchToUnified');
+    }
+
+    syncQuickPresetGrid(el('twp-preset-grid'), info);
+    syncQuickPresetGrid(el('session-ctx-preset-bar'), info);
+
+    if (!twpFeedbackTimer) {
+      if (info.scopeMode === 'per_model' && !info.ready) {
+        showQuickContextNote('popover', null, t('twp.unconfirmedHint'));
+      } else if (info.pref?.mode === 'fixed' && info.pref.limitTokens && ![256000, 512000, 1000000].includes(Number(info.pref.limitTokens))) {
+        showQuickContextNote('popover', null, t('twp.customActiveNote', { val: formatKShort(info.pref.limitTokens) }));
+      } else {
+        showQuickContextNote('popover', null, '');
+      }
+    }
+    if (!sessionCardFeedbackTimer) {
+      if (info.scopeMode === 'per_model' && !info.ready) {
+        showQuickContextNote('session_card', null, t('twp.unconfirmedHint'));
+      } else if (info.pref?.mode === 'fixed' && info.pref.limitTokens && ![256000, 512000, 1000000].includes(Number(info.pref.limitTokens))) {
+        showQuickContextNote('session_card', null, t('twp.customActiveNote', { val: formatKShort(info.pref.limitTokens) }));
+      } else {
+        showQuickContextNote('session_card', null, '');
       }
     }
 
     if (activeTopbarTipKind && !isTopbarTipFeedback) {
-      if ((activeTopbarTipKind === 'raise' && btnTopRaise?.hidden) || (activeTopbarTipKind === 'compact' && btnTopCompact?.hidden)) {
+      if (activeTopbarTipKind === 'compact' && btnTopCompact?.hidden) {
         hideTopbarActionTooltip(true);
       } else {
         syncTopbarActionTooltipContent(activeTopbarTipKind);
-        positionTopbarActionTooltip(activeTopbarTipKind === 'raise' ? btnTopRaise : btnTopCompact);
+        positionTopbarActionTooltip(activeTopbarTipKind === 'window' ? btnTopWindow : btnTopCompact);
       }
     }
 
-    if (prevTopCompactHidden !== (btnTopCompact ? btnTopCompact.hidden : true) || prevTopRaiseHidden !== (btnTopRaise ? btnTopRaise.hidden : true)) {
+    if (prevTopCompactHidden !== (btnTopCompact ? btnTopCompact.hidden : true)) {
       scheduleLayoutSync();
     }
   }
 
-  async function triggerSessionCompact(source = 'panel') {
+  async function applyQuickContextPreset(mode, limitTokens = null, opts = {}) {
+    const source = opts.source || 'popover';
+    if (isQuickPresetSaving) return { ok: false, busy: true };
+    const info = resolveQuickContextTarget();
+    if (!info.ready) {
+      const msg = t('twp.unconfirmedHint');
+      showQuickContextNote(source, false, msg, 3500);
+      return { ok: false, error: msg };
+    }
+
+    const nextMode = mode === 'dynamic' ? 'dynamic' : 'fixed';
+    const nextTokens = nextMode === 'fixed' ? Number(limitTokens || 256000) : null;
+    const targetLabel = nextMode === 'dynamic' ? t('twp.preset.dynamic') : formatKShort(nextTokens);
+
+    isQuickPresetSaving = true;
+    renderQuickContextControls();
+    try {
+      if (info.scopeMode === 'unified') {
+        const nextPref = {
+          modelId: 'unified',
+          mode: nextMode,
+          limitTokens: nextTokens,
+          updatedAt: new Date().toISOString()
+        };
+        const res = await saveSettingsPayloadBridge({
+          contextUnifiedPreference: nextPref,
+          contextScopeMode: 'unified'
+        });
+        if (!res || !res.ok) {
+          throw new Error(translateBackendText(res?.error) || t('msg.saveFail'));
+        }
+        contextUnifiedPreference = nextPref;
+      } else {
+        const prod = info.prod;
+        const legacyKeys = resolveProductPreferenceState(prod).legacyKeys;
+        const res = await saveSettingsPayloadBridge({
+          contextPreference: {
+            scope: 'product',
+            productKey: prod.productKey,
+            modelId: prod.productKey,
+            label: prod.productLabel,
+            mode: nextMode,
+            limitTokens: nextTokens,
+            clearLegacyKeys: legacyKeys
+          }
+        });
+        if (!res || !res.ok) {
+          throw new Error(translateBackendText(res?.error) || t('msg.saveFail'));
+        }
+        if (res.contextPreferences && typeof res.contextPreferences === 'object') {
+          contextPreferencesMap = { ...res.contextPreferences };
+        } else {
+          for (const lk of legacyKeys) delete contextPreferencesMap[lk];
+          contextPreferencesMap[prod.productKey] = {
+            scope: 'product',
+            productKey: prod.productKey,
+            modelId: prod.productKey,
+            label: prod.productLabel,
+            mode: nextMode,
+            limitTokens: nextTokens,
+            updatedAt: new Date().toISOString()
+          };
+        }
+      }
+      syncContextPreferencesCache(contextPreferencesMap);
+      if (!ctxDraftDirty) loadDraftFromSelectedModel(true);
+
+      let needsRestart = false;
+      const needBackendUnlock = (nextMode === 'dynamic' || (nextTokens && nextTokens > 256000))
+        && (!currentUnlockStatus || currentUnlockStatus.status === 'not_patched');
+      if (needBackendUnlock) {
+        const uRes = await invokeUnlockApi('apply', {
+          mode: 'dynamic',
+          limitTokens: null,
+          serviceLimit: state.latest?.serviceLimit || undefined
+        });
+        if (!uRes || !uRes.ok) {
+          throw new Error(buildFriendlyWriteError(uRes?.error));
+        }
+        needsRestart = Boolean(uRes.needsRestart);
+        if (needsRestart) needsRestartAfterApply = true;
+        await refreshUnlockStatus();
+      } else {
+        renderCompactSessionCard();
+        renderClientStatusBar();
+      }
+      renderHeaderModelDropdown();
+      renderModelSettingsTab();
+      render();
+      const doneMsg = needsRestart
+        ? t('twp.savedNeedRestart', { target: targetLabel })
+        : t('twp.savedDone', { target: targetLabel });
+      showQuickContextNote(source, true, doneMsg, 3200);
+      return { ok: true, targetLabel, needsRestart };
+    } catch (err) {
+      const errMsg = t('twp.saveFail', { err: err?.message || t('msg.unknownErr') });
+      showQuickContextNote(source, false, errMsg, 4200);
+      return { ok: false, error: errMsg };
+    } finally {
+      isQuickPresetSaving = false;
+      renderQuickContextControls();
+    }
+  }
+
+  async function triggerSessionCompact(source = 'topbar') {
     const cascadeId = state.route;
     const csrf = typeof window !== 'undefined' ? window.__APP_CONFIG__?.csrfToken : null;
     if (!cascadeId || !csrf) {
       const noSessMsg = t('session.quick.compactNoSession');
-      showKeyQuickFeedback(false, noSessMsg);
       if (source === 'topbar') showTopbarTransientFeedback(false, noSessMsg, el('btn-topbar-compact'));
       return { ok: false, error: noSessMsg };
     }
     if (isQuickCompactBusy) return { ok: false, busy: true };
     isQuickCompactBusy = true;
-    renderSessionQuickActions();
+    renderQuickContextControls();
     try {
       let compactInfo = { name: 'compact' };
       try {
@@ -14591,129 +15011,19 @@
         throw new Error(errTxt || `HTTP ${sendRes.status}`);
       }
       const doneMsg = t('session.quick.compactDone');
-      showKeyQuickFeedback(true, doneMsg);
       if (source === 'topbar') showTopbarTransientFeedback(true, doneMsg, el('btn-topbar-compact'));
       void requestPoll(state.generation, cascadeId);
       void scan(state.generation, cascadeId, true);
       return { ok: true };
     } catch (err) {
       const msg = t('session.quick.compactFail', { err: translateBackendText(err?.message) || err?.message || t('msg.unknownErr') });
-      showKeyQuickFeedback(false, msg);
       if (source === 'topbar') showTopbarTransientFeedback(false, msg, el('btn-topbar-compact'));
       return { ok: false, error: msg };
     } finally {
       isQuickCompactBusy = false;
-      renderSessionQuickActions();
+      renderQuickContextControls();
     }
   }
-
-  async function triggerSessionRaiseLimit(source = 'panel') {
-    if (isQuickRaiseBusy) return { ok: false, busy: true };
-    const act = resolveSessionRaiseAction();
-    if (!act.canRaise || !act.targetTokens) {
-      renderSessionQuickActions();
-      return { ok: false, reason: act.reason || 'cannot_raise' };
-    }
-    isQuickRaiseBusy = true;
-    renderSessionQuickActions();
-    try {
-      const scopeMode = getContextScopeMode();
-      if (scopeMode === 'unified') {
-        const nextPref = {
-          modelId: 'unified',
-          mode: 'fixed',
-          limitTokens: act.targetTokens,
-          updatedAt: new Date().toISOString()
-        };
-        const res = await saveSettingsPayloadBridge({
-          contextUnifiedPreference: nextPref,
-          contextScopeMode: 'unified'
-        });
-        if (!res || !res.ok) {
-          throw new Error(translateBackendText(res?.error) || t('msg.saveFail'));
-        }
-        contextUnifiedPreference = nextPref;
-      } else {
-        const prod = act.prod || getSelectedProductObj();
-        if (!prod) {
-          throw new Error(t('msg.noModelsDetected'));
-        }
-        const legacyKeys = resolveProductPreferenceState(prod).legacyKeys;
-        const res = await saveSettingsPayloadBridge({
-          contextPreference: {
-            scope: 'product',
-            productKey: prod.productKey,
-            modelId: prod.productKey,
-            label: prod.productLabel,
-            mode: 'fixed',
-            limitTokens: act.targetTokens,
-            clearLegacyKeys: legacyKeys
-          }
-        });
-        if (!res || !res.ok) {
-          throw new Error(translateBackendText(res?.error) || t('msg.saveFail'));
-        }
-        if (res.contextPreferences && typeof res.contextPreferences === 'object') {
-          contextPreferencesMap = { ...res.contextPreferences };
-        } else {
-          for (const lk of legacyKeys) delete contextPreferencesMap[lk];
-          contextPreferencesMap[prod.productKey] = {
-            scope: 'product',
-            productKey: prod.productKey,
-            modelId: prod.productKey,
-            label: prod.productLabel,
-            mode: 'fixed',
-            limitTokens: act.targetTokens,
-            updatedAt: new Date().toISOString()
-          };
-        }
-      }
-      syncContextPreferencesCache(contextPreferencesMap);
-      if (!ctxDraftDirty) loadDraftFromSelectedModel(true);
-
-      let needsRestart = false;
-      if (!currentUnlockStatus || currentUnlockStatus.status === 'not_patched') {
-        const uRes = await invokeUnlockApi('apply', {
-          mode: 'dynamic',
-          limitTokens: null,
-          serviceLimit: state.latest?.serviceLimit || undefined
-        });
-        if (!uRes || !uRes.ok) {
-          throw new Error(buildFriendlyWriteError(uRes?.error));
-        }
-        needsRestart = Boolean(uRes.needsRestart);
-        if (needsRestart) needsRestartAfterApply = true;
-        await refreshUnlockStatus();
-      } else {
-        renderCompactSessionCard();
-        renderClientStatusBar();
-      }
-      renderHeaderModelDropdown();
-      renderModelSettingsTab();
-      const doneMsg = needsRestart
-        ? t('session.quick.raiseNeedRestart', { target: act.targetLabel })
-        : t('session.quick.raiseDone', { target: act.targetLabel });
-      showKeyQuickFeedback(true, doneMsg);
-      if (source === 'topbar') showTopbarTransientFeedback(true, doneMsg, el('btn-topbar-raise-limit'));
-      return { ok: true, targetLabel: act.targetLabel, needsRestart };
-    } catch (err) {
-      const errMsg = t('session.quick.raiseFail', { err: err?.message || t('msg.unknownErr') });
-      showKeyQuickFeedback(false, errMsg);
-      if (source === 'topbar') showTopbarTransientFeedback(false, errMsg, el('btn-topbar-raise-limit'));
-      return { ok: false, error: errMsg };
-    } finally {
-      isQuickRaiseBusy = false;
-      renderSessionQuickActions();
-    }
-  }
-
-  el('btn-session-compact')?.addEventListener('click', () => {
-    void triggerSessionCompact('panel');
-  });
-
-  el('btn-session-raise-limit')?.addEventListener('click', () => {
-    void triggerSessionRaiseLimit('panel');
-  });
 
   // 渲染上下文与全局状态（无论在主页 / 还是会话页 /c/<id>，始终保持插件栏挂载与可用）
   function render() {
@@ -14722,7 +15032,7 @@
     ensureHostDocked();
     if (!state.route) {
       hideContextTooltip();
-      hideTopbarActionTooltip(true);
+      if (activeTopbarTipKind === 'compact') hideTopbarActionTooltip(true);
       const barFill = el('bar-fill');
       if (barFill) barFill.style.width = '0%';
       const badgePctVal = el('badge-pct-val');
@@ -14731,7 +15041,7 @@
       setHoverExtra(t('badge.clickOpen'));
       syncSpeedBadgeText();
       el('badge-tokens').title = t('badge.tokensTitle');
-      renderSessionQuickActions();
+      renderQuickContextControls();
       return;
     }
 
@@ -14854,14 +15164,14 @@
 
         if (disp.isOverflow) {
           if (keyUsed) keyUsed.textContent = d.serviceLimit ? `>${short(d.serviceLimit)}` : t('key.overflowUsed');
-          if (keyLimit) keyLimit.textContent = d.serviceLimit ? short(d.serviceLimit) : short(budgetTokenCount);
+          formatKeyLimitDisplay(keyLimit, d.serviceLimit || budgetTokenCount);
           if (keyRemaining) keyRemaining.textContent = t('key.overflowRem');
         } else {
           // 非超限错误：保留已有上下文用量，标明其状态，不归零、不清空
           if (keyUsed) {
             keyUsed.textContent = usedTokenCount != null ? (d?.actual != null ? `${short(usedTokenCount)}${pct != null ? ` (${pct.toFixed(1)}%)` : ''}` : t('key.estShort', { val: short(usedTokenCount) })) : '—';
           }
-          if (keyLimit) keyLimit.textContent = budgetTokenCount ? short(budgetTokenCount) : '—';
+          formatKeyLimitDisplay(keyLimit, budgetTokenCount);
           if (keyRemaining) {
             if (usedTokenCount != null && budgetTokenCount) {
               const rem = Math.max(0, budgetTokenCount - usedTokenCount);
@@ -14884,7 +15194,7 @@
           else { keyBadge.textContent = t('key.pill.normal'); keyBadge.className = 'key-pill pill-good'; }
         }
         if (keyUsed) keyUsed.textContent = `${short(d.actual)} (${pct.toFixed(1)}%)`;
-        if (keyLimit) keyLimit.textContent = short(limitVal);
+        formatKeyLimitDisplay(keyLimit, limitVal);
         if (keyRemaining) keyRemaining.textContent = `${short(remainVal)} (${remainPct.toFixed(1)}%)`;
         if (keyTakeaway) {
           if (pct >= 90) {
@@ -14898,13 +15208,13 @@
       } else {
         if (keyBadge) { keyBadge.textContent = d?.estimated ? t('key.pill.est') : t('key.pill.reading'); keyBadge.className = 'key-pill pill-muted'; }
         if (keyUsed) keyUsed.textContent = d?.estimate ? t('key.estPrefix', { val: short(d.estimate) }) : (session?.total ? short(session.total.low) : '—');
-        if (keyLimit) keyLimit.textContent = d?.budget ? short(d.budget) : '—';
+        formatKeyLimitDisplay(keyLimit, d?.budget);
         if (keyRemaining) keyRemaining.textContent = t('key.pending');
         if (keyTakeaway) keyTakeaway.textContent = t('key.takeaway.est');
       }
     }
 
-    renderSessionQuickActions();
+    renderQuickContextControls();
 
     if (el('speed-summary')) {
       const spBadge = el('speed-badge');
@@ -15159,7 +15469,7 @@
         reportedFinalCallIds: state.reportedFinalCallIds || new Set(),
         reportedFinalCallOutputs: state.reportedFinalCallOutputs || new Map()
       });
-      showKeyQuickFeedback(true, '');
+      closeTopbarWindowPopover();
       toggle(false); hideContextTooltip(); hideTopbarActionTooltip(true); renderFiles(null); render();
       void syncTokenHistoryFromHost(false);
     }
@@ -15277,9 +15587,9 @@
     refreshUnlockStatusForTest: () => refreshUnlockStatus(),
     refreshCliUnlockForTest: () => refreshCliUnlockDisplay(),
     refreshModulesForTest: () => refreshModulesDisplay(),
-    getSessionRaiseActionForTest: () => resolveSessionRaiseAction(),
+    resolveQuickContextTargetForTest: () => resolveQuickContextTarget(),
+    applyQuickContextPresetForTest: (mode, lim, opts) => applyQuickContextPreset(mode, lim, opts),
     triggerSessionCompactForTest: (src) => triggerSessionCompact(src),
-    triggerSessionRaiseLimitForTest: (src) => triggerSessionRaiseLimit(src),
     refreshEnhanceStatusForTest: () => refreshEnhanceStatus(),
     getEnhanceStateForTest: () => ({
       currentBrandTitle,
@@ -15312,6 +15622,14 @@
       if (topbarTipFeedbackTimer) {
         clearTimeout(topbarTipFeedbackTimer);
         topbarTipFeedbackTimer = null;
+      }
+      if (twpFeedbackTimer) {
+        clearTimeout(twpFeedbackTimer);
+        twpFeedbackTimer = null;
+      }
+      if (sessionCardFeedbackTimer) {
+        clearTimeout(sessionCardFeedbackTimer);
+        sessionCardFeedbackTimer = null;
       }
       if (layoutRaf && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(layoutRaf);
       syncHostStackingElevation(false);
