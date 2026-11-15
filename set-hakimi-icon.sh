@@ -6,7 +6,7 @@
 #     和 Contents/Resources/app.asar 内根目录 icon.png（运行态 Dock 图标），
 #     并更新 Info.plist ASAR 完整性摘要 + 重签外层 bundle。
 #   - 绝不触碰 /Applications/Antigravity.app，也不重新复制/修改 205MB language_server，
-#     原有的地区解锁、上下文窗口解锁、中文标题、汉化配置与登录数据全部保持不变。
+#     原有的地区解锁、上下文窗口解锁、汉化配置与登录数据全部保持不变。
 #
 # 用法:
 #   ./set-hakimi-icon.sh ~/Pictures/my-icon.png

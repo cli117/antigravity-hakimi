@@ -133,14 +133,6 @@ function buildSyntheticArm64MachO() {
   // Sentinel entry for last function's nextEntry
   buf.writeUInt32LE(0x920, pcln + functions.length * 8);
 
-  // __rodata at 0x3000: all 3 Chinese title rules (oldText)
-  let roOff = 0x3000;
-  for (const rule of enhance.CHINESE_TITLE_RULES) {
-    const ruleBuf = Buffer.from(rule.oldText, 'ascii');
-    ruleBuf.copy(buf, roOff);
-    roOff += ruleBuf.length + 4;
-  }
-
   return {
     buf,
     regionBranchFileOff,
@@ -149,7 +141,7 @@ function buildSyntheticArm64MachO() {
   };
 }
 
-test('ARM64 Mach-O context window & Chinese title patches preserve ValidateAndOnboardAccount and native 1M constant across apply/switch/restore', () => {
+test('ARM64 Mach-O context window patches preserve ValidateAndOnboardAccount and native 1M constant across apply/switch/restore', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hakimi-arm64-test-'));
   try {
     const appDir = path.join(tmp, 'FakeHakimi.app');
@@ -171,7 +163,7 @@ test('ARM64 Mach-O context window & Chinese title patches preserve ValidateAndOn
       skipCodesign: true,
     };
 
-    // Initial state: unpatched context window, English titles
+    // Initial state: unpatched context window
     const initialCtx = contextUnlock.analyzeBinary(lsPath, { backupDir, skipProcessCheck: true });
     assert.equal(initialCtx.status, 'not_patched');
     assert.equal(initialCtx.arch, 'arm64');
@@ -181,14 +173,14 @@ test('ARM64 Mach-O context window & Chinese title patches preserve ValidateAndOn
     assert.equal(initialCtx.gate3b.status, 'unpatched');
     assert.equal(initialCtx.gate3b.origHex, '60000037');
 
-    // Apply fixed 512,000 + Chinese titles
+    // Apply fixed 512,000
     const resFixed = enhance.applyEnhancePatch(
-      { chineseTitle: true, contextMode: 'fixed', contextLimitTokens: 512000 },
+      { contextMode: 'fixed', contextLimitTokens: 512000 },
       opts
     );
     assert.equal(resFixed.ok, true);
-    assert.equal(resFixed.status.summary.chineseTitleMode, 'zh');
-    assert.equal(resFixed.status.summary.chineseTitleEnabled, true);
+    assert.equal(resFixed.status.summary.contextUnlock.configuredMode, 'fixed');
+    assert.equal(resFixed.status.summary.contextUnlock.configuredLimitTokens, 512000);
 
     const ctxFixed = contextUnlock.analyzeBinary(lsPath, { backupDir, skipProcessCheck: true });
     assert.equal(ctxFixed.status, 'patched_runtime_unconfirmed');
@@ -220,11 +212,10 @@ test('ARM64 Mach-O context window & Chinese title patches preserve ValidateAndOn
     assert.equal(ctxDyn.gate3a.defaultLimit, 256000);
     assert.equal(ctxDyn.gate3b.status, 'patched');
 
-    // Restore all enhancements (Chinese titles -> en, context -> 256K), preserving Region Unlock
+    // Restore all enhancements (context -> 256K), preserving Region Unlock
     const resRestore = enhance.restoreAllEnhance(opts);
     assert.equal(resRestore.ok, true);
-    assert.equal(resRestore.status.summary.chineseTitleMode, 'en');
-    assert.equal(resRestore.status.summary.chineseTitleEnabled, false);
+    assert.equal(resRestore.status.summary.contextUnlock.status, 'not_patched');
 
     const ctxRestored = contextUnlock.analyzeBinary(lsPath, { backupDir, skipProcessCheck: true });
     assert.equal(ctxRestored.status, 'not_patched');
@@ -273,7 +264,7 @@ test('context-unlock and enhance reject official Antigravity.app targets and enf
   assert.equal(restoreRes.code, 'OFFICIAL_APP_FORBIDDEN');
 
   const enhOfficial = enhance.applyEnhancePatch(
-    { chineseTitle: true, contextMode: 'dynamic' },
+    { contextMode: 'dynamic' },
     {
       targets: [{ id: 'desktop', path: officialLs }],
       skipProcessCheck: true,
@@ -284,14 +275,14 @@ test('context-unlock and enhance reject official Antigravity.app targets and enf
   assert.equal(enhOfficial.code, 'OFFICIAL_APP_FORBIDDEN');
 
   const badTargetKey = enhance.applyEnhancePatch(
-    { chineseTitle: true },
+    { contextMode: 'dynamic' },
     { targetPath: '/Applications/哈基米.app/Contents/Resources/bin/language_server', skipProcessCheck: true }
   );
   assert.equal(badTargetKey.ok, false);
   assert.equal(badTargetKey.code, 'INVALID_TARGET_OPTION');
 
   const missingTargets = enhance.applyEnhancePatch(
-    { chineseTitle: true },
+    { contextMode: 'dynamic' },
     { skipProcessCheck: true, stateDir: os.tmpdir() }
   );
   assert.equal(missingTargets.ok, false);

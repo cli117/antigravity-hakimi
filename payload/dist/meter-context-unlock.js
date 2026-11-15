@@ -3,7 +3,7 @@
  * Context Window Unlock Engine (macOS Apple Silicon ARM64 + cross-arch reader)
  * Based on antigravity-context-viewer v0.8.3, ported to Mach-O ARM64 for 哈基米.app.
  * Strictly guards against touching /Applications/Antigravity.app or .orig, and
- * preserves Region Unlock (ValidateAndOnboardAccount) and Chinese Title patches.
+ * preserves Region Unlock (ValidateAndOnboardAccount) at all times.
  */
 
 const fs = require('fs');
@@ -2053,8 +2053,7 @@ function applyUnlock(options = {}) {
 /**
  * Restore context window limit to stock 256K.
  * Prioritizes SURGICAL restoration of Gate 3A + Gate 3B so Region Unlock
- * (ValidateAndOnboardAccount) and Chinese Title patches in language_server
- * are NEVER reverted.
+ * (ValidateAndOnboardAccount) in language_server is NEVER reverted.
  */
 function restoreUnlock(options = {}) {
   if (process.platform !== 'darwin' && !options.targetPath) {
@@ -2100,7 +2099,7 @@ function restoreUnlock(options = {}) {
     };
   }
 
-  // Priority 1: Surgical Gate 3A + Gate 3B restoration (preserves Region Unlock & Chinese Title!)
+  // Priority 1: Surgical Gate 3A + Gate 3B restoration (preserves Region Unlock!)
   if (
     container.arch === 'arm64' &&
     (analysis.gate3a?.status === 'patched' || analysis.gate3a?.status === 'unpatched') &&
@@ -2133,7 +2132,7 @@ function restoreUnlock(options = {}) {
       needsRestart: true,
       surgical: true,
       syncedConfigs,
-      message: '已原位恢复默认 256K 上下文限制（已保留地区解锁与中文标题补丁）！重启后生效。',
+      message: '已原位恢复默认 256K 上下文限制（已保留地区解锁补丁）！重启后生效。',
     };
   }
 

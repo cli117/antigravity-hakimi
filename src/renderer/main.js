@@ -5172,7 +5172,7 @@
   });
 
   // -------------------------------------------------------------
-  // 模块 3: 推荐配置、客户端品牌与自动中文标题控制器
+  // 模块 3: 推荐配置与客户端品牌控制器
   // -------------------------------------------------------------
   const btnEnhancePresetApply = el('btn-enhance-preset-apply');
   const btnEnhanceRestoreAll = el('btn-enhance-restore-all');
@@ -5188,7 +5188,6 @@
   const btnEnhanceRestartHost = el('btn-enhance-restart-host');
   const btnEnhanceRestartLs = el('btn-enhance-restart-ls');
 
-  const chkPresetTitle = el('chk-rec-title');
   const chkPresetLang = el('chk-rec-lang');
   const chkPresetCtx = el('chk-rec-ctx');
 
@@ -5199,24 +5198,11 @@
     english: el('btn-brand-english')
   };
 
-  const enhancePromptBadge = el('enhance-prompt-badge');
-  const enhanceStatTitle = el('enhance-stat-title');
-  const enhanceStatBackup = el('enhance-stat-backup');
   const btnApplyBrandTitle = el('btn-apply-brand-title');
   const brandApplyFeedback = el('brand-apply-feedback');
-  const enhanceChineseTitleCheck = el('chk-enhance-chinese-title');
-  const btnApplyEnhancePrompt = el('btn-enhance-apply-prompt');
-  const btnRefreshEnhance = el('btn-enhance-refresh');
-  const enhancePromptResult = el('enhance-prompt-result');
-  const enhancePromptResultText = el('enhance-prompt-result-text');
-  const btnToggleEnhanceDetails = el('btn-toggle-enhance-details');
-  const enhanceDetailsBody = el('enhance-details-body');
-  const enhanceDetailsArrow = el('enhance-details-arrow');
-  const enhanceBinaryList = el('enhance-binary-list');
 
   let currentBrandTitle = 'hakimi';
   let currentEnhanceStatus = null;
-  let enhanceTitleDraft = false;
   let pendingEnhanceConfirmMode = null; // 'preset' | 'restore' | null
   let isEnhanceBusy = false;
   let hasPendingLsReload = false;
@@ -5235,54 +5221,22 @@
     syncBrandTitleButtons(currentBrandTitle);
     const data = currentEnhanceStatus;
     const s = data?.summary || data;
-    const hasTitle = Boolean(s?.chineseTitleEnabled);
-    const titleMode = s?.chineseTitleMode || (hasTitle ? 'zh' : 'en');
-    const allBak = Boolean(s?.allBackedUp ?? s?.hasBackup);
-    const targetsList = Array.isArray(data?.binaries) ? data.binaries : (Array.isArray(data?.targets) ? data.targets : []);
+    const ctxUnlock = s?.contextUnlock || null;
+    const isPatched = Boolean(
+      ctxUnlock && ctxUnlock.status && ctxUnlock.status !== 'not_patched' && ctxUnlock.status !== 'unsupported'
+    );
 
     if (enhanceGlobalBadge) {
       if (!data || !data.supported) {
         enhanceGlobalBadge.textContent = t('enhance.status.unread');
         enhanceGlobalBadge.className = 'key-pill pill-muted';
-      } else if (hasTitle) {
+      } else if (isPatched) {
         enhanceGlobalBadge.textContent = t('enhance.status.patchedActive');
         enhanceGlobalBadge.className = 'key-pill pill-ok';
       } else {
         enhanceGlobalBadge.textContent = t('enhance.status.stock');
         enhanceGlobalBadge.className = 'key-pill pill-muted';
       }
-    }
-    if (enhancePromptBadge) {
-      if (!data || !data.supported) {
-        enhancePromptBadge.textContent = t('enhance.status.unread');
-        enhancePromptBadge.className = 'key-pill pill-muted';
-      } else if (titleMode === 'zh' || hasTitle) {
-        enhancePromptBadge.textContent = hasPendingLsReload ? t('enhance.status.pendingRestartLs') : t('enhance.titleState.on');
-        enhancePromptBadge.className = 'key-pill pill-ok';
-      } else if (titleMode === 'mixed') {
-        enhancePromptBadge.textContent = t('enhance.titleState.conflict');
-        enhancePromptBadge.className = 'key-pill pill-warn';
-      } else {
-        enhancePromptBadge.textContent = t('enhance.titleState.off');
-        enhancePromptBadge.className = 'key-pill pill-muted';
-      }
-    }
-    if (enhanceStatTitle) {
-      if (!data || !data.supported) enhanceStatTitle.textContent = t('enhance.status.unread');
-      else if (titleMode === 'zh' || hasTitle) enhanceStatTitle.textContent = hasPendingLsReload ? t('enhance.titleState.onWritten') : t('enhance.titleState.on');
-      else if (titleMode === 'mixed') enhanceStatTitle.textContent = t('enhance.titleState.conflict');
-      else enhanceStatTitle.textContent = t('enhance.titleState.off');
-    }
-    if (enhanceStatBackup) {
-      if (!data || !data.supported) enhanceStatBackup.textContent = t('enhance.status.unread');
-      else enhanceStatBackup.textContent = allBak ? t('enhance.status.backupYes') : t('enhance.status.backupNo');
-    }
-    if (enhanceBinaryList && targetsList.length) {
-      enhanceBinaryList.textContent = targetsList.map(tgt => `${tgt.label || tgt.id || ''}: ${tgt.path || tgt}${tgt.exists === false ? ' (missing)' : ''}`).join(' | ');
-    }
-    if (enhanceDetailsArrow && enhanceDetailsBody) {
-      const open = enhanceDetailsBody.style.display === 'block';
-      enhanceDetailsArrow.textContent = open ? t('drawer.shortCollapse') : t('drawer.shortExpand');
     }
   }
 
@@ -5300,23 +5254,11 @@
     if (enhanceResultActions) enhanceResultActions.hidden = !(needLs || (needHost && canRestartHost));
   }
 
-  function showEnhancePromptResult(ok, message) {
-    if (!enhancePromptResult || !enhancePromptResultText) return;
-    enhancePromptResult.style.display = 'block';
-    enhancePromptResult.className = `unlock-result-box ${ok ? 'result-success' : 'result-error'}`;
-    enhancePromptResultText.textContent = message;
-  }
-
-  async function refreshEnhanceStatus(syncDrafts = true) {
+  async function refreshEnhanceStatus() {
     try {
       const res = await invokeEnhanceApi('status', {});
       if (res && res.ok && res.data) {
         currentEnhanceStatus = res.data;
-        const s = res.data.summary || res.data;
-        if (syncDrafts) {
-          enhanceTitleDraft = Boolean(s.chineseTitleEnabled);
-          if (enhanceChineseTitleCheck) enhanceChineseTitleCheck.checked = enhanceTitleDraft;
-        }
       } else if (res && res.unavailable) {
         currentEnhanceStatus = { supported: false };
       }
@@ -5326,63 +5268,8 @@
     renderEnhanceSectionUI();
   }
 
-  enhanceChineseTitleCheck?.addEventListener('change', (e) => {
-    enhanceTitleDraft = Boolean(e?.target?.checked);
-  });
-
-  btnToggleEnhanceDetails?.addEventListener('click', () => {
-    if (!enhanceDetailsBody) return;
-    const isHidden = enhanceDetailsBody.style.display === 'none' || !enhanceDetailsBody.style.display;
-    enhanceDetailsBody.style.display = isHidden ? 'block' : 'none';
-    btnToggleEnhanceDetails.setAttribute('aria-expanded', String(isHidden));
-    renderEnhanceSectionUI();
-  });
-
-  btnRefreshEnhance?.addEventListener('click', () => {
-    void refreshEnhanceStatus(true);
-  });
-
-  btnApplyEnhancePrompt?.addEventListener('click', async () => {
-    if (isEnhanceBusy) return;
-    isEnhanceBusy = true;
-    const wantTitle = enhanceChineseTitleCheck ? Boolean(enhanceChineseTitleCheck.checked) : enhanceTitleDraft;
-    if (btnApplyEnhancePrompt) {
-      btnApplyEnhancePrompt.disabled = true;
-      btnApplyEnhancePrompt.textContent = t('enhance.btn.applyPromptBusy');
-    }
-    try {
-      const res = await invokeEnhanceApi('apply', {
-        chineseTitle: wantTitle,
-        restartLanguageServer: false
-      });
-      if (!res || !res.ok) {
-        const errMsg = t('enhance.result.fail', { err: translateBackendText(res?.error) || t('msg.unknownErr') });
-        showEnhancePromptResult(false, errMsg);
-        showEnhanceResultBox(false, errMsg);
-      } else {
-        const titleLabel = wantTitle ? t('enhance.titleState.on') : t('enhance.titleState.off');
-        hasPendingLsReload = true;
-        const msg = t('enhance.result.appliedNeedRestartLs', { title: titleLabel });
-        showEnhancePromptResult(true, msg);
-        showEnhanceResultBox(true, msg, { needsLsRestart: true, needsHostRestart: false });
-      }
-      await refreshEnhanceStatus(true);
-    } catch (e) {
-      const errMsg = t('enhance.result.fail', { err: e?.message || t('msg.unknownErr') });
-      showEnhancePromptResult(false, errMsg);
-      showEnhanceResultBox(false, errMsg);
-    } finally {
-      isEnhanceBusy = false;
-      if (btnApplyEnhancePrompt) {
-        btnApplyEnhancePrompt.disabled = false;
-        btnApplyEnhancePrompt.textContent = t('enhance.btn.applyPrompt');
-      }
-    }
-  });
-
   btnEnhancePresetApply?.addEventListener('click', () => {
     const selectedLabels = [];
-    if (chkPresetTitle?.checked) selectedLabels.push(t('enhance.preset.itemTitle'));
     if (chkPresetLang?.checked) selectedLabels.push(t('enhance.preset.itemLang'));
     if (chkPresetCtx?.checked) selectedLabels.push(t('enhance.preset.itemCtx'));
     if (!selectedLabels.length) {
@@ -5419,27 +5306,12 @@
     try {
       const doneParts = [];
       const failedParts = [];
-      let needsLsRestart = false;
+      const needsLsRestart = false;
       let needsHostRestart = false;
 
       if (mode === 'preset') {
-        const wantTitle = Boolean(chkPresetTitle?.checked);
         const wantLang = Boolean(chkPresetLang?.checked);
         const wantCtx = Boolean(chkPresetCtx?.checked);
-
-        if (wantTitle) {
-          const itemLabel = t('enhance.preset.itemTitle');
-          try {
-            const eRes = await invokeEnhanceApi('apply', { chineseTitle: true });
-            if (!eRes || !eRes.ok) {
-              throw new Error(translateBackendText(eRes?.error) || t('msg.unknownErr'));
-            }
-            doneParts.push(itemLabel);
-            if (eRes.needsRestart !== false) needsLsRestart = true;
-          } catch (stepErr) {
-            failedParts.push(`${itemLabel}: ${stepErr?.message || t('msg.unknownErr')}`);
-          }
-        }
 
         if (wantLang) {
           try {
@@ -5470,18 +5342,6 @@
           }
         }
       } else if (mode === 'restore') {
-        const titleLabel = t('enhance.preset.itemTitle');
-        try {
-          const rRes = await invokeEnhanceApi('restore', {});
-          if (!rRes || !rRes.ok) {
-            throw new Error(translateBackendText(rRes?.error) || t('msg.restoreFail'));
-          }
-          doneParts.push(titleLabel);
-          if (rRes.needsRestart) needsLsRestart = true;
-        } catch (stepErr) {
-          failedParts.push(`${titleLabel}: ${stepErr?.message || t('msg.restoreFail')}`);
-        }
-
         try {
           const lRes = await invokeModulesApi('toggle', 'chinese', false, { language: 'en', brandTitle: 'english' });
           if (!lRes || !lRes.ok) {
@@ -5522,7 +5382,7 @@
       } else if (mode === 'restore') {
         showEnhanceResultBox(true, t('enhance.result.restoredDone'), { needsLsRestart, needsHostRestart: true });
       }
-      await Promise.all([refreshEnhanceStatus(true), refreshModulesDisplay(), refreshUnlockStatus()]);
+      await Promise.all([refreshEnhanceStatus(), refreshModulesDisplay(), refreshUnlockStatus()]);
     } catch (e) {
       showEnhanceResultBox(false, t('enhance.result.fail', { err: e?.message || t('msg.unknownErr') }));
     } finally {
@@ -7921,7 +7781,6 @@
     refreshEnhanceStatusForTest: () => refreshEnhanceStatus(),
     getEnhanceStateForTest: () => ({
       currentBrandTitle,
-      enhanceTitleDraft,
       hasPendingLsReload,
       currentEnhanceStatus: currentEnhanceStatus ? { ...currentEnhanceStatus } : null
     }),

@@ -23,7 +23,11 @@
 3. **禁止直接手改渲染层编译产物**
    - `payload/dist/meter-renderer.js` 是由 `src/renderer/*` 编译生成的单文件产物。所有 UI / 前端逻辑修改必须改在 `src/renderer/` 下，并运行 `npm run build:renderer`（`npm test` 的 `pretest` 钩子也会自动执行）。
 4. **禁止重新引入已裁剪功能符号（`EXCLUDED_SYMBOLS`）**
-   - `test/asar-and-pruning.test.js` 会扫描 `payload/dist/*.js` 与 `src/renderer/*` 的全文（包括注释）。**绝对不要**重新引入任何已在 `EXCLUDED_SYMBOLS` 中列出的标识符（已裁剪范围：免 TUN 代理、一键开 CLI 按钮、GitHub 自动更新器、提示词精简档位，以及 API 参考计价/汇率/订阅费用统计）。
+   - `test/asar-and-pruning.test.js` 会扫描 `payload/dist/*.js` 与 `src/renderer/*` 的全文（包括注释）。**绝对不要**重新引入任何已在 `EXCLUDED_SYMBOLS` 中列出的标识符（已裁剪范围：免 TUN 代理、一键开 CLI 按钮、GitHub 自动更新器、提示词精简档位、自动中文会话/章节标题提示词补丁，以及 API 参考计价/汇率/订阅费用统计）。
+5. **严禁修改、注入或影响任何系统提示词（System Prompt）及内置指令提示词**
+   - 任何与官方默认不一致的 Prompt（包括主 Agent System Prompt、子代理提示词、工具定义，以及会话主标题 / 章节标题生成指令等后台模型提示词）均存在极高的账号封禁 / 风控风险。
+   - **绝对禁止**在 `language_server`、`agy` CLI 二进制、`app.asar` 主进程/预加载脚本或渲染层请求拦截器（`fetch` / `WebSocket` / `XMLHttpRequest` / `sendUserCascadeMessage`）中修改、重写、追加、裁剪或翻译任何提示词字符串、系统指令、工具声明或用户/助手消息正文。
+   - 桌面端汉化运行时（`payload/dist/i18n/i18n-runtime.js`）必须严格限定于本地 Electron DOM 界面渲染，不得触碰发往模型或后端的任何请求载荷；外发请求拦截器（`src/renderer/context-budget-engine.js`）仅允许读取上下文标识并读写 `SendUserCascadeMessage` 中的数值型 `checkpointConfig.maxTokenLimit` 字段。
 
 ---
 
@@ -70,7 +74,7 @@ npm run unlock:cli
   - `modular-installer.js` / `modules-config.js`：`app.asar` 注入配置管理与 `~/.antigravity-context-meter/` 持久化工具（含 `cleanupStaleSingletonLock()`）。
   - `meter-region-unlock.js`：自适应 Mach-O `__TEXT` + Go `.gopclntab`（`0xFFFFFFF1` / `0xFFFFFFF0`）符号解析器，定位 `authclient.ValidateAndOnboardAccount` 并自适应修补 `"free-tier"` 分支（不依赖写死二进制 SHA-256 或固定偏移）。
   - `meter-context-unlock.js`：ARM64 Gate 3A（`CLAMP_256K_ARM64` / `DEF_ORIG_ARM64`）与 Gate 3B（`config.applyFeatureProviderCheckpointOverrideConfig`）双门上下文窗口补丁引擎，支持 `default` (256K) / `fixed` (`16384..2097152`) / `dynamic`；包含 `restoreUnlock()`。
-  - `meter-enhance.js`：`language_server` 中文会话主标题 & 章节标题等长可逆 ASCII 补丁引擎；包含 `restoreAllEnhance()`。
+  - `meter-enhance.js`：`language_server` 进程检测/重启与上下文窗口补丁委托封装（包含 `restoreAllEnhance()`；严禁包含任何提示词或标题改写逻辑）。
   - `meter-cli-unlock.js`（与 `unlock/agy-cli/agy-patch.py`）：`agy` CLI 机型白名单绕过与 `AGY_CLI_AUTO_COMPACT_OVERRIDE` 修复补丁及配置同步。
   - `meter-main.js` / `local-api.js` / `meter-collector.js` / `meter-core.js` / `meter-storage.js` / `attachment_scan.py`：主进程 IPC、本地 API、对话轨迹采集、纯 Token 统计分析、历史存储与附件预算估算。
   - `i18n/i18n-runtime.js` & `i18n/zh-CN.json`：桌面端界面全量简体中文运行时与四态品牌标题控制（`hakimi` / `translated` / `hidden` / `english`）。
@@ -84,7 +88,7 @@ npm run unlock:cli
 ## 5. 关键不变量与常见踩坑
 
 1. **补丁顺序与 UI“恢复官方设置”不可回滚地区解锁**
-   - `build-hakimi.sh` 必须先执行 `meter-region-unlock.js`（修补 `ValidateAndOnboardAccount`），再由 `meter-context-unlock.js` / `meter-enhance.js` 生成备份；且 `restoreUnlock()` 与 `restoreAllEnhance()` 仅按精确字节切片还原上下文/中文标题，**绝不会**回滚地区解锁。
+   - `build-hakimi.sh` 必须先执行 `meter-region-unlock.js`（修补 `ValidateAndOnboardAccount`），再由 `meter-context-unlock.js`（经 `meter-enhance.js` 委托）生成备份；且 `restoreUnlock()` 与 `restoreAllEnhance()` 仅按精确字节切片还原上下文窗口门控（Gate 3A / Gate 3B），**绝不会**回滚地区解锁。
 2. **渲染层模板与交互约束（均受自动化单测强制校验）**
    - `src/renderer/template.html` 中 `<div` 与 `</div>` 数量必须**严格相等**。
    - 一级顶栏快捷按钮（`#btn-topbar-compact`、`#btn-topbar-window`）必须保持**纯图标（仅含 `<svg>`），可见文本必须为空**，说明文案仅通过 `aria-label` / `data-tip` 悬停展示。

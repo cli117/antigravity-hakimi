@@ -579,13 +579,6 @@
           <div class="ctx-settings-card-desc" data-i18n="enhance.preset.desc">下方列出推荐增强组合；可按需勾选并预览确认，地区免切锁补丁始终保留不受恢复影响。</div>
           <div class="ctx-preset-checklist">
             <label class="ctx-preset-check-item">
-              <input id="chk-rec-title" type="checkbox" checked>
-              <div class="ctx-preset-check-meta">
-                <strong data-i18n="enhance.preset.itemTitle">自动中文会话标题</strong>
-                <span data-i18n="enhance.preset.itemTitleSub">新会话自动生成简体中文标题（等长替换指令文本，不破坏结构）。</span>
-              </div>
-            </label>
-            <label class="ctx-preset-check-item">
               <input id="chk-rec-lang" type="checkbox" checked>
               <div class="ctx-preset-check-meta">
                 <strong data-i18n="enhance.preset.itemLang">客户端简体中文界面（哈基米）</strong>
@@ -647,62 +640,7 @@
           </div>
         </div>
 
-        <!-- 3. 自动中文会话标题 (macOS ARM64 等长替换) -->
-        <div class="ctx-settings-card" id="enhance-prompt-card">
-          <div class="ctx-settings-card-hdr">
-            <div class="ctx-settings-card-title" data-i18n="enhance.prompt.title">🏷️ 自动简体中文会话标题</div>
-            <span id="enhance-prompt-badge" class="key-pill pill-muted" data-i18n="settings.common.reading">读取中…</span>
-          </div>
-          <div class="ctx-plain-help" style="margin:4px 0 8px 0;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);border-radius:6px;padding:8px 10px;">
-            <div style="font-size:11.5px;line-height:1.55;color:var(--ag-text-primary);" data-i18n="enhance.prompt.plainIntro">
-              等长替换 哈基米.app 语言服务中的 3 处会话与章节命名英文指令，使新对话倾向于生成简短简体中文标题。不修改系统提示词本身，也不影响账号地区解锁。
-            </div>
-          </div>
-          <div class="ctx-enhance-status-grid">
-            <div class="ctx-enhance-stat">
-              <div class="ctx-enhance-stat-lbl" data-i18n="enhance.stat.title">自动中文标题</div>
-              <div id="enhance-stat-title" class="ctx-enhance-stat-val">—</div>
-            </div>
-            <div class="ctx-enhance-stat">
-              <div class="ctx-enhance-stat-lbl" data-i18n="enhance.stat.backup">地区解锁干净备份</div>
-              <div id="enhance-stat-backup" class="ctx-enhance-stat-val">—</div>
-            </div>
-          </div>
-          <label class="ctx-toggle-row">
-            <div class="ctx-toggle-row-text">
-              <span class="ctx-toggle-row-title" data-i18n="enhance.titlePatch.label">自动生成简体中文会话标题</span>
-              <span class="ctx-toggle-row-sub" data-i18n="enhance.titlePatch.sub">等长替换会话命名提示词，不破坏原有长度对齐；支持随时改回官方英文。</span>
-            </div>
-            <input id="chk-enhance-chinese-title" type="checkbox">
-          </label>
-          <div class="ctx-settings-card-actions">
-            <button id="btn-enhance-apply-prompt" class="unlock-btn unlock-btn-primary" type="button" data-i18n="enhance.btn.applyPrompt">应用中文标题设置</button>
-            <button id="btn-enhance-refresh" class="unlock-btn unlock-btn-secondary" type="button" data-i18n="models.btn.refreshStatus">刷新状态</button>
-          </div>
-          <div id="enhance-prompt-result" class="unlock-result-box" style="display:none;">
-            <div id="enhance-prompt-result-text" class="unlock-result-text"></div>
-          </div>
-
-          <div class="tech-drawer" id="enhance-details-drawer" style="margin-top:4px">
-            <button id="btn-toggle-enhance-details" class="drawer-trigger" aria-expanded="false" type="button">
-              <span class="drawer-trigger-left" data-i18n="enhance.details.toggle">详细说明：作用域、热加载与恢复机制</span>
-              <span id="enhance-details-arrow" class="drawer-arrow" data-i18n="drawer.expand">▼ 展开</span>
-            </button>
-            <div id="enhance-details-body" class="drawer-body" style="display:none;">
-              <div class="unlock-panel-content">
-                <div class="unlock-notice">
-                  <div class="unlock-desc" data-i18n="enhance.details.body">仅作用于 /Applications/哈基米.app 内的 language_server，绝不修改官方 /Applications/Antigravity.app；恢复默认时仅还原标题与上下文门控，保留账号地区解锁补丁。</div>
-                </div>
-                <div id="enhance-binary-list" class="unlock-desc" style="margin-top:6px;"></div>
-                <div class="unlock-credit-row">
-                  <span class="unlock-credit-lbl" data-i18n="enhance.details.credit">恢复操作：点击上方按钮可随时还原官方英文会话标题。</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 3.5 agy CLI 上下文联动解锁 -->
+        <!-- 3. agy CLI 上下文联动解锁 -->
         <div class="ctx-settings-card" id="cli-unlock-card">
           <div class="ctx-settings-card-hdr">
             <div class="ctx-settings-card-title" data-i18n="settings.cliUnlock.title">⌨️ agy CLI 上下文联动解锁</div>

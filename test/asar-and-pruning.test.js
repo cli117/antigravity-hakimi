@@ -46,6 +46,15 @@ const EXCLUDED_SYMBOLS = [
   'cost-estimate-card',
   'round-cost-bar',
   'plan-summary-price-badge',
+  'CHINESE_TITLE_RULES',
+  'CHINESE_TITLE_META',
+  'applyChineseTitlePatchToBuffer',
+  'inspectChineseTitleRules',
+  'normalizeChineseTitleMode',
+  'enhance-prompt-card',
+  'chk-enhance-chinese-title',
+  'btn-enhance-apply-prompt',
+  'chk-rec-title',
 ];
 
 function collectJsFiles(dir) {
@@ -469,6 +478,10 @@ test('renamed script and package references have zero stale antigravity-unlock.s
       `Stale antigravity-unlock.sh reference in ${path.relative(ROOT, file)}`
     );
   }
+
+  const buildHakimiSrc = fs.readFileSync(path.join(ROOT, 'build-hakimi.sh'), 'utf8');
+  assert.equal(buildHakimiSrc.includes('--chinese-title'), false, 'build-hakimi.sh must not retain --chinese-title');
+  assert.equal(buildHakimiSrc.includes('CHINESE_TITLE'), false, 'build-hakimi.sh must not retain CHINESE_TITLE');
 });
 
 function writeSyntheticTestImage({ outPath, width, height, format, cornerAlphaZero }) {

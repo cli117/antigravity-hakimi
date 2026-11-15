@@ -2,8 +2,8 @@
 /**
  * 哈基米.app 内核轻量化增强引擎 (meter-enhance.js)
  * 说明：
- * 1. 已移除系统提示词精简/防幻觉重写（0~4 档）；
- * 2. 专注会话与章节自动简体中文标题（3 条等长 ASCII 双向可逆规则）与上下文窗口调整委托；
+ * 1. 已彻底移除系统提示词改写与会话/章节标题提示词改写，绝不修改任何模型 Prompt 字符串；
+ * 2. 专注上下文窗口调整委托及 language_server 进程检测与重启；
  * 3. 严格只操作 哈基米.app 副本的 language_server，绝不修改 /Applications/Antigravity.app。
  */
 
@@ -16,75 +16,6 @@ const {
   assertNotOfficialAntigravityApp,
   isOfficialAntigravityPath,
 } = require('./asar-engine');
-
-const CHINESE_TITLE_RULES = [
-  {
-    id: 'conversation_title',
-    name: '会话主标题生成指令 (Conversation Title)',
-    oldText:
-      "Respond with ONLY a short conversation title (3-5 words, title-cased, no prefix) describing the USER's intent.",
-    newText:
-      "Respond with ONLY a Simplified Chinese title (4-10 Chinese chars, NEVER English) describing the USER's intent.",
-  },
-  {
-    id: 'chapter_sentence',
-    name: '章节标题生成句式 (Chapter Title - 句式)',
-    oldText: 'Reply with only a plain 3 to 6 word title in sentence case',
-    newText: 'Reply with only a concise Simplified Chinese chapter title',
-  },
-  {
-    id: 'chapter_example',
-    name: '章节标题生成示例 (Chapter Title - 示例)',
-    oldText: 'For example: Fixing the login redirect bug, or Planning the websocket rollout.',
-    newText: ' ALWAYS reply in Simplified Chinese (4-10 Chinese chars, NEVER English words).',
-  },
-];
-
-for (const rule of CHINESE_TITLE_RULES) {
-  const oldLen = Buffer.byteLength(rule.oldText, 'ascii');
-  const newLen = Buffer.byteLength(rule.newText, 'ascii');
-  if (oldLen !== newLen) {
-    throw new Error(`中文标题补丁内部等长校验失败 [${rule.id}]: ${oldLen} != ${newLen}`);
-  }
-}
-
-const CHINESE_TITLE_META = {
-  zh: { mode: 'zh', enabled: true, label: '自动中文标题 (4~10字)', shortLabel: '中文标题' },
-  en: { mode: 'en', enabled: false, label: '官方英文标题', shortLabel: '英文标题' },
-  unsupported: { mode: 'unsupported', enabled: false, label: '当前内核无标题特征', shortLabel: '未匹配' },
-};
-
-function normalizeChineseTitleMode(input) {
-  if (input === null || input === undefined || input === '') return null;
-  if (typeof input === 'boolean') return input;
-  const s = String(input).trim().toLowerCase();
-  if (
-    s === 'true' ||
-    s === '1' ||
-    s === 'on' ||
-    s === 'zh' ||
-    s === 'cn' ||
-    s === 'zh-cn' ||
-    s === 'enable' ||
-    s === 'enabled'
-  ) {
-    return true;
-  }
-  if (
-    s === 'false' ||
-    s === '0' ||
-    s === 'off' ||
-    s === 'en' ||
-    s === 'stock' ||
-    s === 'restore' ||
-    s === 'reset' ||
-    s === 'disable' ||
-    s === 'disabled'
-  ) {
-    return false;
-  }
-  return undefined;
-}
 
 function resolveTargetBinaries(options = {}) {
   if (Array.isArray(options.targets)) {
@@ -110,64 +41,6 @@ function resolveTargetBinaries(options = {}) {
     return [{ id: 'desktop', label: '哈基米.app 后端 (language_server_macos_arm)', path: alt }];
   }
   return [{ id: 'desktop', label: '哈基米.app 后端 (language_server)', path: primary }];
-}
-
-function inspectChineseTitleRules(buf) {
-  const details = [];
-  let enCount = 0;
-  let zhCount = 0;
-
-  for (const rule of CHINESE_TITLE_RULES) {
-    const oldBuf = Buffer.from(rule.oldText, 'ascii');
-    const newBuf = Buffer.from(rule.newText, 'ascii');
-    const oldOff = buf.indexOf(oldBuf);
-    const newOff = buf.indexOf(newBuf);
-
-    if (newOff !== -1) {
-      zhCount++;
-      details.push({ id: rule.id, name: rule.name, state: 'zh', offset: newOff });
-    } else if (oldOff !== -1) {
-      enCount++;
-      details.push({ id: rule.id, name: rule.name, state: 'en', offset: oldOff });
-    }
-  }
-
-  let mode = 'unsupported';
-  if (zhCount > 0) mode = 'zh';
-  else if (enCount > 0) mode = 'en';
-
-  return {
-    mode,
-    enabled: mode === 'zh',
-    matchedCount: zhCount + enCount,
-    zhCount,
-    enCount,
-    details,
-  };
-}
-
-function applyChineseTitlePatchToBuffer(buf, enableZh) {
-  const matched = [];
-  for (const rule of CHINESE_TITLE_RULES) {
-    const oldBuf = Buffer.from(rule.oldText, 'ascii');
-    const newBuf = Buffer.from(rule.newText, 'ascii');
-    const src = enableZh ? oldBuf : newBuf;
-    const dst = enableZh ? newBuf : oldBuf;
-
-    let pos = 0;
-    while (true) {
-      const idx = buf.indexOf(src, pos);
-      if (idx === -1) break;
-      dst.copy(buf, idx);
-      matched.push({ id: rule.id, offset: idx, enabled: Boolean(enableZh) });
-      pos = idx + dst.length;
-    }
-
-    if (buf.indexOf(dst) !== -1 && !matched.some((m) => m.id === rule.id)) {
-      matched.push({ id: rule.id, offset: buf.indexOf(dst), enabled: Boolean(enableZh) });
-    }
-  }
-  return matched;
 }
 
 function findMatchingLanguageServerPids(targetPaths) {
@@ -256,17 +129,16 @@ function inspectSingleBinary(target, options = {}) {
       label: target.label,
       path: target.path,
       exists: false,
-      chineseTitleMode: 'unsupported',
-      chineseTitleEnabled: false,
-      chineseTitleLabel: CHINESE_TITLE_META.unsupported.label,
       contextUnlock: null,
       error: null,
     };
   }
 
   let statSig = null;
+  let fileSizeBytes = 0;
   try {
     const st = fs.statSync(target.path);
+    fileSizeBytes = st.size || 0;
     statSig = `${st.size}:${st.mtimeMs}:${st.ino || 0}`;
     const cached = binaryInspectCache.get(cacheKey);
     if (cached && cached.statSig === statSig && options.forceRefresh !== true) {
@@ -277,9 +149,6 @@ function inspectSingleBinary(target, options = {}) {
   if (options.cachedOnly === true) return null;
 
   try {
-    const buf = fs.readFileSync(target.path);
-    const titleInfo = inspectChineseTitleRules(buf);
-
     let unlockSummary = null;
     try {
       const ua = contextUnlock.analyzeBinary(target.path, {
@@ -299,11 +168,7 @@ function inspectSingleBinary(target, options = {}) {
       label: target.label,
       path: target.path,
       exists: true,
-      fileSizeMb: Number((buf.length / (1024 * 1024)).toFixed(1)),
-      chineseTitleMode: titleInfo.mode,
-      chineseTitleEnabled: titleInfo.mode === 'zh',
-      chineseTitleLabel: CHINESE_TITLE_META[titleInfo.mode]?.label || CHINESE_TITLE_META.en.label,
-      chineseTitleMatched: titleInfo.matchedCount,
+      fileSizeMb: Number((fileSizeBytes / (1024 * 1024)).toFixed(1)),
       contextUnlock: unlockSummary,
       error: null,
     };
@@ -315,9 +180,6 @@ function inspectSingleBinary(target, options = {}) {
       label: target.label,
       path: target.path,
       exists: true,
-      chineseTitleMode: 'unsupported',
-      chineseTitleEnabled: false,
-      chineseTitleLabel: '解析失败',
       contextUnlock: null,
       error: err.message,
     };
@@ -333,7 +195,7 @@ function getEnhanceStatus(options = {}) {
       supported: false,
       platform,
       arch,
-      reason: '中文标题与上下文窗口内核补丁当前专注 macOS Apple Silicon (ARM64)',
+      reason: '上下文窗口内核补丁当前专注 macOS Apple Silicon (ARM64)',
       binaries: [],
       summary: null,
     };
@@ -355,8 +217,6 @@ function getEnhanceStatus(options = {}) {
 
   const existing = binaries.filter((b) => b.exists && !b.error);
   const primary = existing.find((b) => b.id === 'desktop') || existing[0] || null;
-  const chineseTitleMode = primary ? primary.chineseTitleMode || 'en' : 'en';
-  const chineseTitleMeta = CHINESE_TITLE_META[chineseTitleMode] || CHINESE_TITLE_META.en;
   const extCfg = contextUnlock.readExternalContextConfig(options);
   const languageServerRunning = options.skipProcessCheck ? false : checkLanguageServerRunning(options);
 
@@ -368,10 +228,6 @@ function getEnhanceStatus(options = {}) {
     binaries,
     summary: {
       installedCount: existing.length,
-      chineseTitleMode,
-      chineseTitleEnabled: chineseTitleMode === 'zh',
-      chineseTitleLabel: chineseTitleMeta.label,
-      chineseTitleShortLabel: chineseTitleMeta.shortLabel,
       contextUnlock: primary?.contextUnlock || null,
       configContextWindow: extCfg.configContextWindow,
       contextModeBridge: extCfg.contextModeBridge,
@@ -387,16 +243,11 @@ function applyEnhancePatch(payload = {}, options = {}) {
     return { ok: false, error: '当前版本专注 macOS Apple Silicon (ARM64) 内核补丁' };
   }
 
-  const chineseTitle = normalizeChineseTitleMode(payload.chineseTitle);
-  if (chineseTitle === undefined) {
-    return { ok: false, error: `无效的中文标题补丁参数: ${payload.chineseTitle}` };
-  }
-
   const hasContextRequest =
     payload.contextMode !== undefined && payload.contextMode !== null && payload.contextMode !== '';
   const restartRequested = payload.restartLanguageServer === true;
-  if (chineseTitle === null && !hasContextRequest && !restartRequested) {
-    return { ok: false, error: '未指定要应用的中文标题或上下文设置' };
+  if (!hasContextRequest && !restartRequested) {
+    return { ok: false, error: '未指定要应用的上下文设置' };
   }
 
   const typoTargetKey = ['targetPath', 'binPath', 'binaryPath', 'filePath', 'target'].find(
@@ -444,33 +295,6 @@ function applyEnhancePatch(payload = {}, options = {}) {
   let needsRestart = false;
 
   try {
-    if (chineseTitle !== null) {
-      for (const target of targets) {
-        assertNotOfficialAntigravityApp(target.path, 'patch Chinese titles');
-        const origDiskBuf = fs.readFileSync(target.path);
-        const nextBuf = Buffer.from(origDiskBuf);
-        const tMatches = applyChineseTitlePatchToBuffer(nextBuf, chineseTitle);
-
-        if (tMatches.length > 0) {
-          logs.push(
-            `[中文标题] ${target.label} -> ${chineseTitle ? '自动中文标题 (4~10字)' : '官方英文标题'} (处理 ${tMatches.length} 条指令)`
-          );
-        } else {
-          logs.push(`[中文标题] ${target.label} 未包含会话标题生成指令（已跳过）`);
-        }
-
-        if (Buffer.compare(origDiskBuf, nextBuf) === 0) {
-          logs.push(`[无变更] ${path.basename(target.path)} 标题规则已处于目标状态`);
-        } else {
-          const writeRes = contextUnlock.atomicWriteBinary(target.path, nextBuf, 'enh', options);
-          invalidateBinaryCache(target.path);
-          if (!writeRes.ok) throw new Error(writeRes.error);
-          needsRestart = true;
-          logs.push(`[写入成功] ${path.basename(target.path)} (新 inode${writeRes.signed ? ' + 重签名' : ''})`);
-        }
-      }
-    }
-
     if (hasContextRequest) {
       const modeStr = String(payload.contextMode).trim().toLowerCase();
       let unlockOpts;
@@ -567,23 +391,18 @@ function applyEnhancePatch(payload = {}, options = {}) {
 }
 
 /**
- * Restore Chinese Title (back to English) + Context Window (back to 256K).
+ * Restore Context Window (back to 256K).
  * NEVER reverts Account Region Unlock (ValidateAndOnboardAccount)!
  */
 function restoreAllEnhance(options = {}) {
   return applyEnhancePatch(
-    { chineseTitle: false, contextMode: 'default', contextRestoreOptional: true },
+    { contextMode: 'default', contextRestoreOptional: true },
     options
   );
 }
 
 module.exports = {
-  CHINESE_TITLE_META,
-  CHINESE_TITLE_RULES,
-  normalizeChineseTitleMode,
   resolveTargetBinaries,
-  inspectChineseTitleRules,
-  applyChineseTitlePatchToBuffer,
   getEnhanceStatus,
   applyEnhancePatch,
   restoreAllEnhance,

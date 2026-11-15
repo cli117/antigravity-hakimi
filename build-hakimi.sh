@@ -7,7 +7,6 @@
 #   3. 内核级与客户端能力整合：
 #      - 账号地区 / Free-tier 检测解锁 (ValidateAndOnboardAccount，UI 还原操作绝不回滚该补丁)
 #      - 上下文窗口解锁 (default 256K / fixed / dynamic) + 发送链路 maxTokenLimit 动态覆写
-#      - 会话主标题 & 章节标题自动简体中文补丁
 #      - 桌面端简体中文界面与 4 态品牌标题 (默认：哈基米 / 反重力 / 隐藏 / Antigravity)
 #      - 实时上下文占用监控、速率监测、8 类错误诊断与 Token 消费历史看板
 #
@@ -27,7 +26,6 @@ STAGE_ONLY=0
 FORCE=0
 CONTEXT_MODE="dynamic"
 CONTEXT_LIMIT=""
-CHINESE_TITLE="on"
 CLIENT_LANG=""
 BRAND=""
 ICON_PATH=""
@@ -54,7 +52,6 @@ usage() {
   --context-limit <tokens>        当 --context-mode fixed 时指定固定 token 上限 (16384 ~ 2097152)
   --patch-cli                     构建完成后联动修补本机 agy CLI 二进制并同步 CLI 上下文配置
   --cli-bin <path>                可选：配合 --patch-cli 指定 agy 二进制路径
-  --chinese-title <on|off>        是否启用会话/章节自动简体中文标题补丁 (默认: on)
   --client-lang <zh-CN|en>        桌面端界面语言 (首次写入配置默认为 zh-CN)
   --brand <hakimi|translated|hidden|english>
                                   左上角品牌标题模式 (首次写入配置默认为 hakimi，即 哈基米)
@@ -109,11 +106,6 @@ while [[ $# -gt 0 ]]; do
       PATCH_CLI=1
       shift 2
       ;;
-    --chinese-title)
-      require_arg "$@"
-      CHINESE_TITLE="$2"
-      shift 2
-      ;;
     --client-lang)
       require_arg "$@"
       CLIENT_LANG="$2"
@@ -164,11 +156,6 @@ if [[ "$CONTEXT_MODE" == "fixed" ]]; then
     exit 2
   fi
 fi
-
-case "$CHINESE_TITLE" in
-  on|off) ;;
-  *) echo "无效 --chinese-title: $CHINESE_TITLE (可选: on | off)" >&2; exit 2 ;;
-esac
 
 if [[ -n "$CLIENT_LANG" ]]; then
   case "$CLIENT_LANG" in
@@ -378,7 +365,7 @@ PLIST
 echo "==> [1/4] 写入地区 / Free-tier 解锁补丁 (authclient.ValidateAndOnboardAccount)"
 node "$SCRIPT_DIR/scripts/region-unlock.js" --apply "$STAGE_LS"
 
-echo "==> [2/4] 写入上下文窗口解锁 (${CONTEXT_MODE}${CONTEXT_LIMIT:+:$CONTEXT_LIMIT}) & 自动中文标题 (${CHINESE_TITLE})"
+echo "==> [2/4] 写入上下文窗口解锁 (${CONTEXT_MODE}${CONTEXT_LIMIT:+:$CONTEXT_LIMIT})"
 node -e '
 const path = require("path");
 const scriptDir = process.argv[1];
@@ -388,7 +375,6 @@ const workDir = process.argv[4];
 const stageOnly = process.argv[5] === "1";
 const contextMode = process.argv[6];
 const contextLimit = process.argv[7];
-const chineseTitle = process.argv[8];
 
 const enhance = require(path.join(scriptDir, "payload", "dist", "meter-enhance.js"));
 const contextUnlock = require(path.join(scriptDir, "payload", "dist", "meter-context-unlock.js"));
@@ -416,7 +402,6 @@ if (stageOnly) {
 }
 
 const payload = {
-  chineseTitle: chineseTitle === "on",
   contextMode,
   ...(contextLimit ? { contextLimitTokens: Number(contextLimit) } : {}),
 };
@@ -439,7 +424,7 @@ if (!stageOnly) {
     syncCliConfigs: true,
   });
 }
-' "$SCRIPT_DIR" "$STAGE_LS" "$APP" "$WORK" "$STAGE_ONLY" "$CONTEXT_MODE" "$CONTEXT_LIMIT" "$CHINESE_TITLE"
+' "$SCRIPT_DIR" "$STAGE_LS" "$APP" "$WORK" "$STAGE_ONLY" "$CONTEXT_MODE" "$CONTEXT_LIMIT"
 
 echo "==> [3/4] 重新打包 app.asar (Context Meter + 客户端汉化)"
 PACK_ARGS=(

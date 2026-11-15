@@ -1446,10 +1446,6 @@
     .ctx-selector-hint{font-size:10px;color:var(--ag-text-muted);line-height:1.35;margin-top:4px}
 
     .ctx-settings-card-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px}
-    .ctx-enhance-status-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:2px 0}
-    .ctx-enhance-stat{background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);border-radius:6px;padding:6px 8px;min-width:0}
-    .ctx-enhance-stat-lbl{font-size:10px;color:var(--ag-text-muted);margin-bottom:2px}
-    .ctx-enhance-stat-val{font-size:11px;font-weight:600;color:var(--ag-text-primary);overflow-wrap:anywhere}
 
     .ctx-tier-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}
     .ctx-tier-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 4px;border-radius:6px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);color:var(--ag-text-secondary);cursor:pointer;text-align:center;min-width:0;transition:all .14s ease}
@@ -1486,7 +1482,6 @@
     @media (max-width:440px){
       .ctx-preset-grid{grid-template-columns:1fr}
       .ctx-tier-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
-      .ctx-enhance-status-grid{grid-template-columns:1fr}
       .color-grid{grid-template-columns:1fr}
     }
     @media (prefers-reduced-motion: reduce){
