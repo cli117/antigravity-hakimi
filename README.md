@@ -1,79 +1,99 @@
-# Antigravity Unlock
+# antigravity-hakimi (`哈基米.app`)
 
-用于解决中国区 Google 账号登录 Google Antigravity 时遇到的地区资格限制问题，例如：
+> 专注 **macOS Apple Silicon (ARM64)**，基于只读官方 `/Applications/Antigravity.app` 复制并构建完全独立的增强版客户端 **`/Applications/哈基米.app`**，与官方客户端共享 Google 登录状态、历史对话与设置，同时**绝对不修改官方原版 `/Applications/Antigravity.app`（及 `.orig`）任何文件**。
 
-> Sorry, this account is ineligible to use Antigravity
+---
 
-脚本调整客户端对 `free-tier` 不可用结果的处理，生成独立的 **Antigravity Patched.app**，保留原版应用。仓库用于持续维护和适配新的 Antigravity 客户端构建。
+## 核心特性
 
-## 当前支持
+1. **账号地区 / Free-tier 限制永久解锁**
+   - 在拷贝出的 `language_server` Mach-O ARM64 二进制中，对 `authclient.ValidateAndOnboardAccount` 执行只读核验后打入无条件跳转补丁。
+   - **不可回滚保证**：脚本先应用地区解锁再由引擎生成备份，且 UI 内“恢复官方设置”仅原位还原上下文与中文标题字节，**绝不会回滚地区解锁**。
+2. **上下文窗口解锁（256K → 动态透传 / 固定上限）**
+   - 原生支持 `default` (256K)、`fixed` (`16384 ~ 2097152`) 与 `dynamic`（默认启用，跟随模型原生上限透传），通过 ARM64 Gate 3A (`CLAMP_256K_ARM64` / `DEF_ORIG_ARM64`) 与 Gate 3B (`applyFeatureProviderCheckpointOverrideConfig`) 双重修补生效。
+   - 配合渲染层 Hook，在发送 `SendUserCascadeMessage` 请求时按当前配置动态覆写 `checkpointConfig.maxTokenLimit`。
+   - 另附独立 CLI 补丁脚本 [`unlock/agy-cli/agy-patch.py`](unlock/agy-cli/agy-patch.py) 用于离线/CLI 二进制上下文解锁。
+3. **实时上下文监控、速率监测与错误诊断**
+   - 内置右上角悬浮胶囊（Context Meter）：实时展示当前上下文 Token 占用进度、输入/输出速率（tok/s）、附件扫描预算估计（[`attachment_scan.py`](payload/dist/attachment_scan.py)），以及 8 类失败原因自动分类诊断。
+4. **Token 消耗历史与订阅 / API 参考费用看板**
+   - 统计桌面端与 CLI 用量历史、输入/输出/缓存命中分布、每日热力图与 API 参考费用估算。
+5. **会话主标题 & 章节标题自动简体中文**
+   - 通过 `meter-enhance.js` 在 `language_server` 中写入 3 条等长 ASCII 双向可逆指令补丁（默认开启），自动生成 4~10 字简体中文会话标题与章节标题。
+6. **桌面端简体中文界面与四态品牌标题控制**
+   - 通过 `app.asar` 预加载注入全量简体中文词库（`zh-CN.json`）与 DOM 翻译引擎（`i18n-runtime.js`），支持 **四态无损切换** 左上角品牌标题：
+     - `hakimi`：**`哈基米`**（默认）
+     - `translated`：**`反重力`**
+     - `hidden`：隐藏文字但保留菜单入口
+     - `english`：**`Antigravity`**
+7. **自定义应用图标（可选 `--icon`）**
+   - 支持传入本地图片（`PNG` / `JPG` / `WebP` / `HEIC` / `ICNS` 等）作为 `哈基米.app` 的应用图标；不传时默认沿用官方图标。
+   - 对非透明背景照片会自动居中裁剪为 1:1 并施加 macOS 圆角矩形留白遮罩（带透明圆角/边缘的图标则原样保留，也可配合 `--raw-icon` 禁用遮罩），同时更新 **`Contents/Resources/icon.icns`**（访达 / 启动台 / Spotlight）与 **`app.asar/icon.png`**（运行态 Dock 图标）。
 
-| 项目 | 支持情况 |
-| --- | --- |
-| 平台 | macOS，Apple Silicon / ARM64 |
-| 客户端版本 | 已核验的 2.32.1 构建 |
-| Google AI Ultra | 已实测可用 |
-| Google AI Pro | 使用相同补丁逻辑，尚未实测 |
+---
 
-脚本会验证原始 `language_server` 的完整 SHA-256：
+## 架构隔离与精简边界
+
+- **只读官方守卫 (`assertNotOfficialAntigravityApp`)**：构建脚本与核心引擎在所有写入路径（`language_server`、`app.asar`、`icon.icns`、`codesign`）均强制校验目标绝非 `/Applications/Antigravity.app`、`/Applications/Antigravity.app.orig` 或指向它们的符号链接。
+- **Bundle 身份保留**：`/Applications/哈基米.app` 保留内部 `CFBundleIdentifier` (`com.google.antigravity`)、`CFBundleName`/`CFBundleExecutable` (`Antigravity`) 与内部 `package.json`，从而与官方版无缝共享 Google 登录态、会话记录及 `ElectronAsarIntegrity` 校验流程。
+- **明确裁剪移除的模块**：
+  - 系统提示词精简与防幻觉重写（0~4 档）
+  - 免 TUN 代理（`meter-proxy.js`）
+  - 一键开 CLI 按钮（`meter-cli-launcher.js`）、GitHub 自动更新器、CDP 热注入及就地覆盖官方应用的安装器
+
+---
+
+## 快速使用
+
+### 1. 构建并安装 `/Applications/哈基米.app`
+
+```bash
+# 使用默认官方图标构建（--force 允许覆盖旧的 /Applications/哈基米.app 副本）
+bash ./build-hakimi.sh --force
+
+# 可选：指定一张本地图片作为 哈基米.app 的图标（支持 PNG/JPG/WebP/HEIC/ICNS）
+bash ./build-hakimi.sh --force --icon ~/Pictures/hakimi.jpg
+
+# 启动
+open "/Applications/哈基米.app"
+```
+
+### 2. 构建参数说明
 
 ```text
-f5377993d29bc1036ed9ddbfb2aec55bb37b8aaaf811df4a8c3ed5763dde2db0
+./build-hakimi.sh [选项]
+  --force                         允许覆盖已存在的输出 .app 副本
+  --stage-only                    仅在 /tmp 临时目录构建并签名，不写入 /Applications，也不改用户配置目录
+  --from <path>                   指定只读源 Antigravity.app (默认优先 /Applications/Antigravity.app.orig，其次 /Applications/Antigravity.app)
+  --app <path>                    指定输出 .app 路径 (默认: /Applications/哈基米.app；严禁指向官方应用)
+  -i, --icon <path>               可选：指定本地图片作为应用图标 (同步更新访达 .icns 与 Dock 图标；不传则用默认图标)
+  --raw-icon                      可选：配合 --icon 使用，不自动添加 macOS 圆角矩形留白遮罩
+  --context-mode <mode>           上下文窗口模式: default | fixed | dynamic (默认: dynamic)
+  --context-limit <tokens>        当 --context-mode fixed 时指定固定 token 上限 (16384 ~ 2097152)
+  --chinese-title <on|off>        启用/关闭会话与章节自动中文标题补丁 (默认: on)
+  --client-lang <zh-CN|en>        初始化/强制覆盖桌面端界面语言 (默认首次为 zh-CN)
+  --brand <hakimi|translated|hidden|english>
+                                  初始化/强制覆盖左上角品牌标题模式 (默认首次为 hakimi)
 ```
 
-摘要不匹配时停止处理。同版本的其他构建、已经打过补丁的文件和更新后的版本，都需要单独核验。
+---
 
-## 使用
-
-需要已安装的 Antigravity 原版、Python 3，以及 macOS 自带的 Bash 和 `codesign`。
+## 开发与测试
 
 ```bash
-git clone https://github.com/cli117/antigravity-unlock.git
-cd antigravity-unlock
-bash antigravity-unlock.sh
+# 重新编译 Context Meter 渲染层 -> payload/dist/meter-renderer.js
+npm run build:renderer
+
+# 运行自动化测试（ASAR 打包校验、四态品牌 DOM、官方路径守卫、自定义图标流水线、ARM64 Mach-O 模拟补丁/还原测试）
+npm test
 ```
 
-默认输入优先使用 `/Applications/Antigravity.app.orig`；该路径不存在时使用 `/Applications/Antigravity.app`。脚本在临时副本上完成补丁、重签名和校验后，保存为：
+## 目录结构
 
-```text
-/Applications/Antigravity Patched.app
-```
-
-两个应用共用登录、设置和单实例机制。先退出当前 Antigravity，再打开补丁版：
-
-```bash
-open "/Applications/Antigravity Patched.app"
-```
-
-脚本完成后由用户自行启动应用。目标路径已存在时会停止，可以指定另一个输出路径：
-
-```bash
-bash antigravity-unlock.sh \
-  --from "/Applications/Antigravity.app" \
-  --app "/Applications/Antigravity Patched Test.app"
-```
-
-仅在临时目录生成并校验副本：
-
-```bash
-bash antigravity-unlock.sh --stage-only
-```
-
-## 生效范围
-
-补丁处理 `authclient.ValidateAndOnboardAccount` 中的客户端 `free-tier` 资格判断，覆盖该分支中的不可用原因。服务端档位检查、后续用户状态请求和模型请求仍按原有流程执行。
-
-Pro 和 Ultra 使用相同处理逻辑，最终可用性仍取决于账号在服务端获得的有效档位和权限。补丁本身不提供订阅权益或额外额度，也不能保证服务端拒绝的账号能够使用。
-
-重签名会将副本改为本地 ad-hoc 签名。应用更新可能覆盖补丁，更新后的构建需要重新适配。
-
-## 维护与适配
-
-仓库名和脚本名保持稳定，支持范围随核验结果更新。适配新客户端构建时：
-
-1. 核对原始文件版本、架构和 SHA-256。
-2. 分析目标函数的控制流，准确区分 `allowedTiers` 与 `ineligibleTiers` 判断。
-3. 更新对应构建的匹配条件和摘要，并验证预期指令之外的程序逻辑保持一致。
-4. 在应用副本上验证签名、登录和实际请求，更新本 README 的支持情况。
-
-完整文件摘要和指令匹配必须一起核验。报告兼容性问题时，请附客户端版本、系统架构和脱敏后的脚本输出。
+- `build-hakimi.sh`：一键复制、自定义图标处理、双阶段二进制补丁、ASAR 重打包、`ElectronAsarIntegrity` 更新与 `codesign` 签名脚本
+- `scripts/build-macos-icon.js`：将本地图片转换为标准 macOS `.icns` 与 `512x512` Dock 图标 PNG（自适应圆角留白遮罩）
+- `scripts/build-renderer.js`：将 `src/renderer/*` 编译为 `payload/dist/meter-renderer.js`
+- `scripts/pack-hakimi-asar.js`：解包官方只读 `app.asar`、清理并注入 4 处 `dist/utils.js` 钩子与 `dist/preload.js`、支持替换内置 `icon.png` 并计算头摘要 SHA-256
+- `payload/dist/`：主进程监听、上下文解锁引擎、中文标题引擎、统计存储与汉化词库运行时
+- `src/renderer/`：Context Meter 悬浮胶囊、速率/历史看板与设置弹窗源码
+- `unlock/agy-cli/agy-patch.py`：独立命令行二进制上下文窗口解锁工具
+- `test/`：自动化单元测试套件

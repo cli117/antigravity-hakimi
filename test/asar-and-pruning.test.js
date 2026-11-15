@@ -1,0 +1,603 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const vm = require('vm');
+const { execFileSync } = require('child_process');
+
+const ROOT = path.resolve(__dirname, '..');
+const asarEngine = require(path.join(ROOT, 'payload', 'dist', 'asar-engine.js'));
+const { packHakimiAsar } = require(path.join(ROOT, 'scripts', 'pack-hakimi-asar.js'));
+const { buildMacosIcon } = require(path.join(ROOT, 'scripts', 'build-macos-icon.js'));
+
+const EXCLUDED_SYMBOLS = [
+  'meter-proxy',
+  'meter-cli-launcher',
+  'ensureProxyEnvironment',
+  'testProxy',
+  'badge-cli',
+  'cli-launch-toast',
+  'overflow-cli-btn',
+  'launch-cli',
+  'check-update',
+  'apply-update',
+  'update-popover',
+  'btn-check-update',
+  'check-auto-update',
+  'proxy-notun-drawer',
+  'enhance-tier-',
+  'chk-rec-prompt',
+  'parsePeEmbedTemplates',
+  'PROMPT_TIER_META',
+  'badge.clickOpenCli',
+];
+
+function collectJsFiles(dir) {
+  const out = [];
+  if (!fs.existsSync(dir)) return out;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...collectJsFiles(full));
+    } else if (entry.isFile() && entry.name.endsWith('.js')) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+test('all JS files in payload/dist, scripts, and src/renderer pass vm.Script syntax check', () => {
+  const jsFiles = [
+    ...collectJsFiles(path.join(ROOT, 'payload', 'dist')),
+    ...collectJsFiles(path.join(ROOT, 'scripts')),
+    ...collectJsFiles(path.join(ROOT, 'src', 'renderer')),
+  ];
+  assert.ok(jsFiles.length >= 18, `expected >= 18 JS files, got ${jsFiles.length}`);
+  for (const file of jsFiles) {
+    const src = fs.readFileSync(file, 'utf8');
+    const cleanSrc = src.startsWith('#!') ? '//' + src.slice(2) : src;
+    assert.doesNotThrow(() => new vm.Script(cleanSrc, { filename: file }), `Syntax error in ${file}`);
+  }
+});
+
+test('excluded features (Tiers 0-4, No-TUN proxy, CLI launcher, updater) are pruned from payload and renderer', () => {
+  const payloadJs = fs
+    .readdirSync(path.join(ROOT, 'payload', 'dist'))
+    .filter((f) => f.endsWith('.js'))
+    .map((f) => path.join(ROOT, 'payload', 'dist', f));
+  const rendererFiles = fs
+    .readdirSync(path.join(ROOT, 'src', 'renderer'))
+    .map((f) => path.join(ROOT, 'src', 'renderer', f));
+
+  for (const file of [...payloadJs, ...rendererFiles]) {
+    let text = fs.readFileSync(file, 'utf8');
+    // modular-installer.js intentionally strips legacy proxy hooks inside cleanUtilsSource()
+    if (path.basename(file) === 'modular-installer.js') {
+      text = text
+        .split('\n')
+        .filter((line) => !line.includes('\\.ensureProxyEnvironment\\('))
+        .join('\n');
+    }
+    for (const sym of EXCLUDED_SYMBOLS) {
+      assert.equal(
+        text.includes(sym),
+        false,
+        `Excluded symbol "${sym}" must not appear in ${path.relative(ROOT, file)}`
+      );
+    }
+  }
+});
+
+test('src/renderer/template.html has balanced <div> tags and 4 brand title modes including hakimi', () => {
+  const tpl = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'template.html'), 'utf8');
+  const opens = (tpl.match(/<div\b/g) || []).length;
+  const closes = (tpl.match(/<\/div>/g) || []).length;
+  assert.equal(opens, closes, `Unbalanced <div> tags: opens=${opens}, closes=${closes}`);
+
+  for (const mode of ['hakimi', 'translated', 'hidden', 'english']) {
+    assert.ok(
+      tpl.includes(`data-brand-title="${mode}"`),
+      `Missing brand title button for mode: ${mode}`
+    );
+  }
+  assert.ok(tpl.includes('id="btn-brand-hakimi"'), 'Missing #btn-brand-hakimi');
+});
+
+test('assertNotOfficialAntigravityApp blocks official Antigravity.app, .orig, and symlinks while allowing 哈基米.app', () => {
+  for (const forbidden of [
+    '/Applications/Antigravity.app',
+    '/Applications/Antigravity.app.orig',
+    '/Applications/Antigravity.app/Contents/Resources/app.asar',
+    '/Applications/Antigravity.app/Contents/Resources/bin/language_server',
+    '/Applications/Antigravity.app.orig/Contents/Resources/app.asar',
+  ]) {
+    assert.equal(asarEngine.isOfficialAntigravityPath(forbidden), true, `Expected official path: ${forbidden}`);
+    assert.throws(
+      () => asarEngine.assertNotOfficialAntigravityApp(forbidden, 'modify'),
+      /Refusing to modify official Antigravity\.app/
+    );
+  }
+
+  // Symlink pointing to official /Applications/Antigravity.app
+  if (fs.existsSync('/Applications/Antigravity.app')) {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-symlink-guard-'));
+    try {
+      const linkApp = path.join(tmpDir, 'HarmlessName.app');
+      fs.symlinkSync('/Applications/Antigravity.app', linkApp);
+      assert.equal(asarEngine.isOfficialAntigravityPath(linkApp), true);
+      assert.throws(() => asarEngine.assertNotOfficialAntigravityApp(linkApp, 'overwrite'));
+      assert.throws(() =>
+        asarEngine.assertNotOfficialAntigravityApp(path.join(linkApp, 'Contents', 'Resources', 'app.asar'), 'write')
+      );
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  }
+
+  for (const allowed of [
+    '/Applications/哈基米.app',
+    '/Applications/哈基米.app/Contents/Resources/app.asar',
+    '/Applications/哈基米.app/Contents/Resources/bin/language_server',
+    '/tmp/hakimi-stage/哈基米.app',
+  ]) {
+    assert.equal(asarEngine.isOfficialAntigravityPath(allowed), false, `Expected allowed path: ${allowed}`);
+    assert.doesNotThrow(() => asarEngine.assertNotOfficialAntigravityApp(allowed, 'modify'));
+  }
+});
+
+function createMockElement(tagName, attrs = {}, className = '') {
+  const el = {
+    nodeType: 1,
+    tagName: String(tagName || 'DIV').toUpperCase(),
+    attributes: { ...attrs },
+    className,
+    style: {},
+    childNodes: [],
+    parentNode: null,
+    parentElement: null,
+    nextSibling: null,
+    get firstChild() {
+      return this.childNodes[0] || null;
+    },
+    getAttribute(k) {
+      return Object.prototype.hasOwnProperty.call(this.attributes, k) ? this.attributes[k] : null;
+    },
+    setAttribute(k, v) {
+      this.attributes[k] = String(v);
+    },
+    hasAttribute(k) {
+      return Object.prototype.hasOwnProperty.call(this.attributes, k);
+    },
+    appendChild(child) {
+      const prev = this.childNodes[this.childNodes.length - 1] || null;
+      if (prev) prev.nextSibling = child;
+      child.parentNode = this;
+      child.parentElement = this;
+      child.nextSibling = null;
+      this.childNodes.push(child);
+      return child;
+    },
+    matches(selector) {
+      const parts = String(selector || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      for (const p of parts) {
+        if (/^[a-z0-9]+$/i.test(p) && this.tagName === p.toUpperCase()) return true;
+        if (p.startsWith('#') && this.id === p.slice(1)) return true;
+        if (p.startsWith('.') && this.className.split(/\s+/).includes(p.slice(1))) return true;
+        const eqAttr = p.match(/^\[([a-z0-9_-]+)="([^"]*)"\]$/i);
+        if (eqAttr && this.getAttribute(eqAttr[1]) === eqAttr[2]) return true;
+        const subClass = p.match(/^\[class\*="([^"]*)"\]$/i);
+        if (subClass && this.className.toLowerCase().includes(subClass[1].toLowerCase())) return true;
+      }
+      return false;
+    },
+    closest(selector) {
+      let cur = this;
+      while (cur && cur.nodeType === 1) {
+        if (cur.matches(selector)) return cur;
+        cur = cur.parentElement;
+      }
+      return null;
+    },
+    querySelector() {
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    },
+  };
+  return el;
+}
+
+function createMockTextNode(value) {
+  return {
+    nodeType: 3,
+    nodeValue: value,
+    parentNode: null,
+    parentElement: null,
+    nextSibling: null,
+    previousSibling: null,
+  };
+}
+
+test('i18n-runtime supports lossless 4-way brand title switching (hakimi <-> hidden <-> translated <-> english) without touching chat prose', () => {
+  const runtimeCode = fs.readFileSync(path.join(ROOT, 'payload', 'dist', 'i18n', 'i18n-runtime.js'), 'utf8');
+
+  const rootEl = createMockElement('HTML');
+  const bodyEl = createMockElement('BODY');
+  const titleBar = createMockElement('DIV', {}, 'titlebar-container');
+  const brandBtn = createMockElement('DIV', { 'data-testid': 'title-menu-bar-item' }, 'titlebar-left');
+  const brandText = createMockTextNode('Antigravity');
+  brandBtn.appendChild(brandText);
+  titleBar.appendChild(brandBtn);
+
+  const chatMsg = createMockElement('P', {}, 'chat-message');
+  const chatText = createMockTextNode('Antigravity');
+  chatMsg.appendChild(chatText);
+
+  bodyEl.appendChild(titleBar);
+  bodyEl.appendChild(chatMsg);
+  rootEl.appendChild(bodyEl);
+
+  const doc = {
+    documentElement: rootEl,
+    body: bodyEl,
+    readyState: 'complete',
+    title: 'Antigravity',
+    addEventListener() {},
+    querySelectorAll() {
+      return [];
+    },
+  };
+
+  class FakeMutationObserver {
+    observe() {}
+    disconnect() {}
+  }
+
+  const sandbox = {
+    document: doc,
+    Document: function FakeDocument() {},
+    MutationObserver: FakeMutationObserver,
+    Set,
+    Map,
+    RegExp,
+    Object,
+    String,
+    Array,
+    Date,
+    setInterval() {
+      return 1;
+    },
+    clearInterval() {},
+    setTimeout() {
+      return 1;
+    },
+    clearTimeout() {},
+    requestAnimationFrame(cb) {
+      cb();
+      return 1;
+    },
+    console,
+    __AGY_I18N_CONFIG__: { enabled: true, language: 'zh-CN', brandTitle: 'hakimi' },
+    __AGY_I18N_DATA__: { exact: {}, patterns: [], rules: [] },
+  };
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+
+  vm.runInNewContext(runtimeCode, sandbox, { filename: 'i18n-runtime.js' });
+
+  // Initial scan should apply default 'hakimi' mode
+  assert.equal(brandText.nodeValue, '哈基米');
+  assert.equal(brandBtn.getAttribute('data-agy-brand-item'), 'true');
+  assert.equal(chatText.nodeValue, 'Antigravity', 'Chat prose must never be mutated by brand replacement');
+
+  // Switch to 'hidden'
+  sandbox.__AGY_I18N_CONFIG__.brandTitle = 'hidden';
+  sandbox.__AGY_RUN_FULL_SCAN__();
+  assert.equal(brandText.nodeValue, '');
+  assert.equal(brandBtn.getAttribute('data-agy-brand-item'), 'true');
+  assert.equal(brandBtn.style.display, '');
+
+  // Recover from 'hidden' -> 'translated'
+  sandbox.__AGY_I18N_CONFIG__.brandTitle = 'translated';
+  sandbox.__AGY_RUN_FULL_SCAN__();
+  assert.equal(brandText.nodeValue, '反重力');
+
+  // 'translated' -> 'english'
+  sandbox.__AGY_I18N_CONFIG__.brandTitle = 'english';
+  sandbox.__AGY_RUN_FULL_SCAN__();
+  assert.equal(brandText.nodeValue, 'Antigravity');
+
+  // 'english' -> 'hakimi'
+  sandbox.__AGY_I18N_CONFIG__.brandTitle = 'hakimi';
+  sandbox.__AGY_RUN_FULL_SCAN__();
+  assert.equal(brandText.nodeValue, '哈基米');
+  assert.equal(chatText.nodeValue, 'Antigravity');
+});
+
+test('computeAsarHeaderSha256 matches official Info.plist ElectronAsarIntegrity hash when official app is installed', () => {
+  const officialAsar = '/Applications/Antigravity.app/Contents/Resources/app.asar';
+  const officialPlist = '/Applications/Antigravity.app/Contents/Info.plist';
+  if (!fs.existsSync(officialAsar) || !fs.existsSync(officialPlist)) return;
+
+  const expected = execFileSync(
+    'python3',
+    [
+      '-c',
+      'import plistlib, sys; d=plistlib.load(open(sys.argv[1],"rb")); print(d["ElectronAsarIntegrity"]["Resources/app.asar"]["hash"])',
+      officialPlist,
+    ],
+    { encoding: 'utf8' }
+  ).trim();
+  const actual = asarEngine.computeAsarHeaderSha256(officialAsar);
+  assert.equal(actual, expected);
+});
+
+test('asar-engine and packHakimiAsar preserve file-only unpacked/executable metadata on synthetic ASAR round-trip', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hakimi-asar-test-'));
+  try {
+    const srcTree = path.join(tmp, 'src-tree');
+    fs.mkdirSync(path.join(srcTree, 'dist', 'bin'), { recursive: true });
+    fs.mkdirSync(path.join(srcTree, 'node_modules', 'chrome-devtools-mcp', 'build'), { recursive: true });
+
+    fs.writeFileSync(path.join(srcTree, 'package.json'), JSON.stringify({ name: 'antigravity', version: '2.32.1' }));
+    fs.writeFileSync(
+      path.join(srcTree, 'dist', 'utils.js'),
+      [
+        '"use strict";',
+        'function createWindow(url, storageManager, options) {',
+        '    const win = {};',
+        '    void win.loadURL(url);',
+        '    return win;',
+        '}',
+        'const showOrCreateWindow = (port) => {',
+        '    const wins = [];',
+        '    if (wins.length > 0) {',
+        '        wins[0].focus();',
+        '    } else {',
+        '        createWindow(`${constants_1.WINDOW_ORIGIN}:${port}/`);',
+        '    }',
+        '};',
+        'function setupNodeWrapper(env) {',
+        '    return env;',
+        '}',
+      ].join('\n'),
+      'utf8'
+    );
+    fs.writeFileSync(path.join(srcTree, 'dist', 'preload.js'), '"use strict";\n// base preload\n', 'utf8');
+
+    const execScript = path.join(srcTree, 'dist', 'bin', 'helper.sh');
+    fs.writeFileSync(execScript, '#!/bin/sh\necho ok\n', 'utf8');
+    fs.chmodSync(execScript, 0o755);
+
+    const mcpFile = path.join(srcTree, 'node_modules', 'chrome-devtools-mcp', 'build', 'index.js');
+    fs.writeFileSync(mcpFile, 'console.log("mcp");\n', 'utf8');
+
+    const srcAsar = path.join(tmp, 'src.asar');
+    asarEngine.builtinAsar.createPackageWithOptions(srcTree, srcAsar, {
+      unpackDir: '**/chrome-devtools-mcp',
+    });
+
+    // Verify file-only unpacked & executable in srcAsar header + round-trip extractAll
+    const srcHeader = asarEngine.readAsarHeader(srcAsar).header;
+    assert.equal(srcHeader.files.node_modules.unpacked, undefined);
+    assert.equal(srcHeader.files.node_modules.files['chrome-devtools-mcp'].unpacked, undefined);
+    assert.equal(
+      srcHeader.files.node_modules.files['chrome-devtools-mcp'].files.build.files['index.js'].unpacked,
+      true
+    );
+    assert.equal(srcHeader.files.dist.files.bin.files['helper.sh'].executable, true);
+
+    const extractCheck = path.join(tmp, 'extract-check');
+    asarEngine.builtinAsar.extractAll(srcAsar, extractCheck);
+    assert.equal(
+      fs.readFileSync(path.join(extractCheck, 'node_modules', 'chrome-devtools-mcp', 'build', 'index.js'), 'utf8'),
+      'console.log("mcp");\n'
+    );
+    assert.ok((fs.statSync(path.join(extractCheck, 'dist', 'bin', 'helper.sh')).mode & 0o111) !== 0);
+
+    // Run full packHakimiAsar pipeline
+    const destAsar = path.join(tmp, 'FakeHakimi.app', 'Contents', 'Resources', 'app.asar');
+    const stateDir = path.join(tmp, 'state');
+    const res = packHakimiAsar({
+      srcAsar,
+      destAsar,
+      stateDir,
+      clientLang: 'zh-CN',
+      brand: 'hakimi',
+      hasExplicitLang: true,
+      hasExplicitBrand: true,
+    });
+
+    assert.equal(res.ok, true);
+    assert.match(res.sha256, /^[0-9a-f]{64}$/);
+    assert.equal(res.sha256, asarEngine.computeAsarHeaderSha256(destAsar));
+    assert.equal(res.inspect.meterReady, true);
+    assert.equal(res.inspect.chineseReady, true);
+    assert.equal(res.inspect.chineseStatus, 'ready');
+
+    const savedCfg = JSON.parse(fs.readFileSync(res.configPath, 'utf8'));
+    assert.equal(savedCfg.modules.chinese.enabled, true);
+    assert.equal(savedCfg.modules.chinese.language, 'zh-CN');
+    assert.equal(savedCfg.modules.chinese.brandTitle, 'hakimi');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('renamed script and package references have zero stale antigravity-unlock.sh mentions', () => {
+  assert.equal(fs.existsSync(path.join(ROOT, 'build-hakimi.sh')), true, 'build-hakimi.sh must exist');
+  assert.equal(fs.existsSync(path.join(ROOT, 'antigravity-unlock.sh')), false, 'antigravity-unlock.sh must be removed');
+
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  assert.equal(pkg.name, 'antigravity-hakimi');
+  assert.equal(pkg.scripts['build:hakimi'], 'bash ./build-hakimi.sh');
+
+  const filesToCheck = [
+    path.join(ROOT, 'README.md'),
+    path.join(ROOT, 'package.json'),
+    path.join(ROOT, 'build-hakimi.sh'),
+    ...collectJsFiles(path.join(ROOT, 'payload', 'dist')),
+    ...collectJsFiles(path.join(ROOT, 'scripts')),
+    ...fs.readdirSync(path.join(ROOT, 'src', 'renderer')).map((f) => path.join(ROOT, 'src', 'renderer', f)),
+  ];
+
+  for (const file of filesToCheck) {
+    const content = fs.readFileSync(file, 'utf8');
+    assert.equal(
+      content.includes('antigravity-unlock.sh'),
+      false,
+      `Stale antigravity-unlock.sh reference in ${path.relative(ROOT, file)}`
+    );
+  }
+});
+
+function writeSyntheticTestImage({ outPath, width, height, format, cornerAlphaZero }) {
+  const jxa = `
+ObjC.import("AppKit");
+ObjC.import("Foundation");
+function run(argv) {
+  const outPath = argv[0];
+  const w = Number(argv[1]);
+  const h = Number(argv[2]);
+  const fmt = argv[3];
+  const transparentCorner = argv[4] === "1";
+  const rep = $.NSBitmapImageRep.alloc.initWithBitmapDataPlanesPixelsWidePixelsHighBitsPerSampleSamplesPerPixelHasAlphaIsPlanarColorSpaceNameBytesPerRowBitsPerPixel(
+    null, w, h, 8, 4, true, false, $.NSCalibratedRGBColorSpace, 0, 0
+  );
+  const ctx = $.NSGraphicsContext.graphicsContextWithBitmapImageRep(rep);
+  $.NSGraphicsContext.setCurrentContext(ctx);
+  if (!transparentCorner) {
+    $.NSColor.colorWithCalibratedRedGreenBlueAlpha(0.18, 0.55, 0.92, 1.0).setFill;
+    $.NSBezierPath.fillRect($.NSMakeRect(0, 0, w, h));
+  } else {
+    const circle = $.NSBezierPath.bezierPathWithOvalInRect($.NSMakeRect(w * 0.15, h * 0.15, w * 0.7, h * 0.7));
+    $.NSColor.colorWithCalibratedRedGreenBlueAlpha(0.95, 0.45, 0.2, 1.0).setFill;
+    circle.fill;
+  }
+  ctx.flushGraphics;
+  const type = fmt === "jpeg" ? $.NSBitmapImageFileTypeJPEG : $.NSBitmapImageFileTypePNG;
+  const data = rep.representationUsingTypeProperties(type, $({}));
+  data.writeToFileAtomically(outPath, true);
+  return "ok";
+}
+`;
+  const tmpJxa = `${outPath}.jxa`;
+  fs.writeFileSync(tmpJxa, jxa, 'utf8');
+  try {
+    execFileSync('osascript', [
+      '-l',
+      'JavaScript',
+      tmpJxa,
+      outPath,
+      String(width),
+      String(height),
+      format,
+      cornerAlphaZero ? '1' : '0',
+    ]);
+  } finally {
+    try {
+      fs.unlinkSync(tmpJxa);
+    } catch {}
+  }
+}
+
+test('buildMacosIcon converts JPEG/PNG/ICNS and packHakimiAsar optionally swaps app.asar icon.png', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hakimi-icon-test-'));
+  try {
+    // 1. Non-square opaque JPEG (300x200) -> auto squircle masked .icns + 512x512 PNG
+    const srcJpg = path.join(tmp, 'opaque-photo.jpg');
+    writeSyntheticTestImage({ outPath: srcJpg, width: 300, height: 200, format: 'jpeg', cornerAlphaZero: false });
+    const outIcns1 = path.join(tmp, 'out1.icns');
+    const outPng1 = path.join(tmp, 'out1.png');
+    const res1 = buildMacosIcon({ inputPath: srcJpg, outIcnsPath: outIcns1, outPngPath: outPng1 });
+    assert.equal(res1.ok, true);
+    assert.equal(res1.mode, 'image');
+    assert.equal(res1.masked, true);
+    assert.ok(fs.statSync(outIcns1).size > 1000);
+    const sipsOut1 = execFileSync('sips', ['-g', 'pixelWidth', '-g', 'pixelHeight', outPng1], { encoding: 'utf8' });
+    assert.match(sipsOut1, /pixelWidth:\s*512/);
+    assert.match(sipsOut1, /pixelHeight:\s*512/);
+
+    // 2. Transparent-corner PNG (256x256) -> preserves transparent corners (masked === false)
+    const srcTransPng = path.join(tmp, 'trans-logo.png');
+    writeSyntheticTestImage({ outPath: srcTransPng, width: 256, height: 256, format: 'png', cornerAlphaZero: true });
+    const outIcns2 = path.join(tmp, 'out2.icns');
+    const outPng2 = path.join(tmp, 'out2.png');
+    const res2 = buildMacosIcon({ inputPath: srcTransPng, outIcnsPath: outIcns2, outPngPath: outPng2 });
+    assert.equal(res2.ok, true);
+    assert.equal(res2.masked, false);
+
+    // 3. Direct .icns input -> copies .icns & extracts 512x512 PNG
+    const outIcns3 = path.join(tmp, 'out3.icns');
+    const outPng3 = path.join(tmp, 'out3.png');
+    const res3 = buildMacosIcon({ inputPath: outIcns1, outIcnsPath: outIcns3, outPngPath: outPng3 });
+    assert.equal(res3.ok, true);
+    assert.equal(res3.mode, 'icns');
+    assert.equal(Buffer.compare(fs.readFileSync(outIcns1), fs.readFileSync(outIcns3)), 0);
+
+    // 4. Synthetic ASAR with default vs custom icon.png
+    const srcTree = path.join(tmp, 'src-tree');
+    fs.mkdirSync(path.join(srcTree, 'dist'), { recursive: true });
+    fs.writeFileSync(path.join(srcTree, 'package.json'), JSON.stringify({ name: 'antigravity', version: '2.32.1' }));
+    const defaultIconBuf = Buffer.from('default-icon-placeholder');
+    fs.writeFileSync(path.join(srcTree, 'icon.png'), defaultIconBuf);
+    fs.writeFileSync(
+      path.join(srcTree, 'dist', 'utils.js'),
+      [
+        '"use strict";',
+        'function createWindow(url, storageManager, options) {',
+        '    const win = {};',
+        '    void win.loadURL(url);',
+        '    return win;',
+        '}',
+        'const showOrCreateWindow = (port) => {',
+        '    const wins = [];',
+        '    if (wins.length > 0) {',
+        '        wins[0].focus();',
+        '    } else {',
+        '        createWindow(`${constants_1.WINDOW_ORIGIN}:${port}/`);',
+        '    }',
+        '};',
+        'function setupNodeWrapper(env) {',
+        '    return env;',
+        '}',
+      ].join('\n'),
+      'utf8'
+    );
+    fs.writeFileSync(path.join(srcTree, 'dist', 'preload.js'), '"use strict";\n', 'utf8');
+
+    const srcAsar = path.join(tmp, 'src.asar');
+    asarEngine.builtinAsar.createPackageWithOptions(srcTree, srcAsar, {});
+
+    const destDefault = path.join(tmp, 'DefaultApp.app', 'Contents', 'Resources', 'app.asar');
+    packHakimiAsar({ srcAsar, destAsar: destDefault, skipConfig: true, stateDir: path.join(tmp, 'state1') });
+    assert.equal(
+      Buffer.compare(asarEngine.builtinAsar.extractFile(destDefault, 'icon.png'), defaultIconBuf),
+      0,
+      'Default packHakimiAsar without iconPng must preserve original icon.png'
+    );
+
+    const destCustom = path.join(tmp, 'CustomApp.app', 'Contents', 'Resources', 'app.asar');
+    packHakimiAsar({
+      srcAsar,
+      destAsar: destCustom,
+      iconPng: outPng1,
+      skipConfig: true,
+      stateDir: path.join(tmp, 'state2'),
+    });
+    assert.equal(
+      Buffer.compare(asarEngine.builtinAsar.extractFile(destCustom, 'icon.png'), fs.readFileSync(outPng1)),
+      0,
+      'Custom iconPng must replace root icon.png inside packed app.asar'
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
