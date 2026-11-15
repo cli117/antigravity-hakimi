@@ -7,6 +7,7 @@
     ringTrack: '--ag-custom-ring-track',
     contextText: '--ag-custom-context-text',
     speedText: '--ag-custom-speed',
+    cacheText: '--ag-custom-cache',
     tokenTotal: '--ag-custom-token-total',
     tokenAccent: '--ag-custom-token-accent',
     heatLow: '--ag-custom-heat-low',
@@ -25,6 +26,7 @@
     ringTrack: '',
     contextText: '',
     speedText: '',
+    cacheText: '',
     tokenTotal: '',
     tokenAccent: '',
     heatLow: '',
@@ -299,6 +301,7 @@
       case 'ringTrack': return isLight ? '#b8b8c2' : '#52525b';
       case 'contextText': return isLight ? '#18181b' : '#ececef';
       case 'speedText': return isLight ? '#0284c7' : '#38bdf8';
+      case 'cacheText': return isLight ? '#059669' : '#34d399';
       case 'tokenTotal': return isLight ? '#7c3aed' : '#c084fc';
       case 'tokenAccent': return isLight ? '#7c3aed' : '#a78bfa';
       case 'heatLow': return presetScale[0];

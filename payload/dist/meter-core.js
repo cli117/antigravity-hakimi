@@ -250,6 +250,77 @@
     };
   }
 
+  function computeCacheMetrics(uncachedInput, cachedInput, options = {}) {
+    const u = number(uncachedInput);
+    const c = number(cachedInput);
+    const uncached = u ?? 0;
+    const cached = c ?? 0;
+    const totalInputTokens = uncached + cached;
+    if ((u === null && c === null) || totalInputTokens <= 0) return null;
+    const hitRate = Number(((cached / totalInputTokens) * 100).toFixed(1));
+    const turnCount = options?.turnCount != null && Number.isFinite(Number(options.turnCount))
+      ? Number(options.turnCount)
+      : null;
+    let level = 'good';
+    if ((turnCount === 1 && cached === 0) || totalInputTokens < 12000) {
+      level = 'cold';
+    } else if (hitRate < 25 && uncached >= 20000) {
+      level = 'low';
+    } else if (hitRate < 50 && uncached >= 15000) {
+      level = 'warn';
+    } else if (hitRate >= 75) {
+      level = 'high';
+    }
+    return {
+      hitRate,
+      cachedTokens: cached,
+      uncachedTokens: uncached,
+      totalInputTokens,
+      level
+    };
+  }
+
+  function isSyntheticRecord(call) {
+    if (!call || typeof call !== 'object') return false;
+    if (call.isSynthetic === true) return true;
+    const sId = String(call.callId || '').toLowerCase();
+    const cId = String(call.cascadeId || '').toLowerCase();
+    return sId.startsWith('test_') ||
+      sId.startsWith('fixture_') ||
+      sId.startsWith('synthetic_') ||
+      sId.includes('desktop_response_001') ||
+      cId.includes('verify') ||
+      cId.includes('test') ||
+      cId.includes('mock');
+  }
+
+  function summarizeSessionCache(calls) {
+    if (!Array.isArray(calls) || !calls.length) return null;
+    let uncachedTokens = 0;
+    let cachedTokens = 0;
+    let turns = 0;
+    for (const call of calls) {
+      if (!call || typeof call !== 'object') continue;
+      if (isSyntheticRecord(call)) continue;
+      const uncached = number(call.inputTokens ?? call.input_tokens) ?? 0;
+      const cached = number(call.cacheReadTokens ?? call.cacheTokens ?? call.cache_read_tokens) ?? 0;
+      if (uncached + cached <= 0) continue;
+      uncachedTokens += uncached;
+      cachedTokens += cached;
+      turns += 1;
+    }
+    const totalInputTokens = uncachedTokens + cachedTokens;
+    if (turns === 0 || totalInputTokens <= 0) return null;
+    const hitRate = Number(((cachedTokens / totalInputTokens) * 100).toFixed(1));
+    return {
+      hitRate,
+      cachedTokens,
+      uncachedTokens,
+      totalInputTokens,
+      turns
+    };
+  }
+
   function summarize(metadata, options = {}) {
     const m = metadata?.chatModel;
     if (!m) return null;
@@ -324,6 +395,27 @@
     const usedVal = actual ?? (estimate > 0 ? estimate : null);
     const percentVal = actual !== null && budget > 0 && !exceeded ? (actual / budget * 100) : null;
 
+    let inputVal = null;
+    let uncachedVal = null;
+    let cachedVal = 0;
+    let cacheObj = null;
+    if (hasInput && !error) {
+      inputVal = (input || 0) + (cached || 0);
+      uncachedVal = input || 0;
+      cachedVal = cached || 0;
+      cacheObj = computeCacheMetrics(uncachedVal, cachedVal, { turnCount: options.turnCount });
+    } else if (!exceeded && prevContext && prevContext.input > 0) {
+      inputVal = prevContext.input;
+      cachedVal = prevContext.cached ?? 0;
+      uncachedVal = prevContext.uncachedInput ?? Math.max(0, inputVal - cachedVal);
+      cacheObj = prevContext.cache || computeCacheMetrics(uncachedVal, cachedVal, { turnCount: options.turnCount });
+    } else if (hasInput && !exceeded) {
+      inputVal = (input || 0) + (cached || 0);
+      uncachedVal = input || 0;
+      cachedVal = cached || 0;
+      cacheObj = computeCacheMetrics(uncachedVal, cachedVal, { turnCount: options.turnCount });
+    }
+
     return {
       used: usedVal,
       actual,
@@ -335,8 +427,11 @@
       error,
       errorClassification: classification,
       estimated: actual === null,
-      input: hasInput ? (input || 0) + (cached || 0) : (prevContext?.input || null),
-      cached: cached || prevContext?.cached || 0,
+      input: inputVal,
+      uncachedInput: uncachedVal,
+      cached: cachedVal,
+      cacheHitRate: cacheObj ? cacheObj.hitRate : null,
+      cache: cacheObj,
       output: output ?? (prevContext?.output ?? null),
       percent: percentVal,
       model,
@@ -1254,12 +1349,17 @@
     const safePastDays = Math.max(1, pastDays);
     const dailyAverageTokens = Math.round(totalTokens / safePastDays);
     const activeDailyAverageTokens = activeDays > 0 ? Math.round(totalTokens / activeDays) : 0;
+    const totalInputAndCache = inputTokens + cacheTokens;
+    const cacheHitRate = totalInputAndCache > 0
+      ? Number(((cacheTokens / totalInputAndCache) * 100).toFixed(1))
+      : null;
 
     return {
       totalTokens,
       inputTokens,
       cacheTokens,
       outputTokens,
+      cacheHitRate,
       pastDays,
       activeDays,
       dailyAverageTokens,
@@ -1375,6 +1475,8 @@
 
   const api = {
     summarize,
+    computeCacheMetrics,
+    summarizeSessionCache,
     classifyRequestError,
     resolveModelQuota,
     formatResetTimeZh,

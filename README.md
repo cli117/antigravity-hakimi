@@ -14,11 +14,12 @@
    - 桌面端原生支持 `default` (256K)、`fixed` (`16384 ~ 2097152`) 与 `dynamic`（默认启用，跟随模型原生上限透传），通过 ARM64 Gate 3A (`CLAMP_256K_ARM64` / `DEF_ORIG_ARM64`) 与 Gate 3B (`applyFeatureProviderCheckpointOverrideConfig`) 双重修补生效。
    - 渲染层 Hook 在发送 `SendUserCascadeMessage` 请求时按当前配置动态覆写 `checkpointConfig.maxTokenLimit`；设置面板与顶栏快调浮层均提供 `256K`、`512K`、`1M` 与 `动态跟随` 预设，支持自定义整数与 Apple Silicon (`arm64`) 在 UI 内即时保存应用。
    - **`agy` CLI 联动解锁**：内置 [`meter-cli-unlock.js`](payload/dist/meter-cli-unlock.js)（与 [`unlock/agy-cli/agy-patch.py`](unlock/agy-cli/agy-patch.py)），支持在构建时加 `--patch-cli`、独立执行 `npm run unlock:cli` 或在面板「配置」页点击按钮，一键修补本机 `agy` CLI 二进制（绕过 `/model` 上下文选择器机型白名单 + 修复 `AGY_CLI_AUTO_COMPACT_OVERRIDE` 读取）并同步 CLI 配置文件。
-3. **实时上下文监控与会话快捷操作**
-   - 内置右上角悬浮胶囊（Context Meter）：实时展示当前上下文 Token 占用进度、输入/输出速率（tok/s）、附件扫描预算估计（[`attachment_scan.py`](payload/dist/attachment_scan.py)），以及 8 类失败原因自动分类诊断。
+3. **实时上下文监控、缓存命中率告警与会话快捷操作**
+   - 内置右上角悬浮胶囊（Context Meter）：实时展示当前上下文 Token 占用进度、输入/输出速率（tok/s）、**上下文缓存命中率**、附件扫描预算估计（[`attachment_scan.py`](payload/dist/attachment_scan.py)），以及 8 类失败原因自动分类诊断。
+   - **上下文缓存命中率与低命中提醒**：一级顶栏紧邻输出速度（`tok/s`）展示实时缓存命中率（`cacheReadTokens / (inputTokens + cacheReadTokens)`），宽屏显示 `缓存 XX%`、窄屏自动收缩至 `XX%` 或收入溢出菜单；智能区分新会话首轮冷启动（不误报）与多轮长上下文缓存失效/低命中（琥珀色 `warn` / 红色 `low` 高亮告警 + 悬停即时构成气泡，提示潜在 Token 重算开销），并在「当前会话」面板提供「上下文缓存命中」四维速览卡片（本轮命中率、缓存复用、未缓存新增、会话累计命中率）与底层输入构成明细。
    - **一级顶栏纯图标快捷入口 + 窗口快速微浮层**：顶部监控条紧邻圆环提供**纯图标**按钮（无文字占位，悬停显示说明气泡）：一键触发 `/compact` 压缩当前会话，以及点击弹出**上下文窗口快调浮层**——顶部自动标识并一键切换 `全部模型统一 / 仅当前模型` 作用域，原地直选 `256K / 512K / 1M / 动态` 即时生效；当前会话详情卡片同步提供即时预设条与 `512K → 1M` 下条生效预览。
 4. **纯 Token 消耗历史与额度池看板**
-   - 专注于统计桌面端与 CLI 的纯 Token 历史用量（输入 / 输出 / 缓存读取）、日/周/月/年/累计热力图，以及账号套餐与 Prompt / Flow 额度池状态（已移除全部 API 参考费率、货币换算与订阅价格表单）。
+   - 专注于统计桌面端与 CLI 的纯 Token 历史用量（输入 / 输出 / 缓存读取）、日/周/月/年/累计热力图（日/月悬浮气泡与区间汇总栏支持展示缓存命中率），以及账号套餐与 Prompt / Flow 额度池状态（已移除全部 API 参考费率、货币换算与订阅价格表单）。
 5. **桌面端简体中文界面与四态品牌标题控制**
    - 通过 `app.asar` 预加载注入全量简体中文词库（`zh-CN.json`）与 DOM 翻译引擎（`i18n-runtime.js`），支持 **四态无损切换** 左上角品牌标题：
      - `hakimi`：**`哈基米`**（默认）
@@ -127,7 +128,7 @@ npm run doctor
 - `scripts/build-renderer.js`：将 `src/renderer/*` 编译为 `payload/dist/meter-renderer.js`
 - `scripts/pack-hakimi-asar.js`：解包官方只读 `app.asar`、清理并注入 4 处 `dist/utils.js` 钩子与 `dist/preload.js`、支持替换内置 `icon.png` 并计算头摘要 SHA-256
 - `payload/dist/`：主进程监听、自适应地区解锁、桌面/CLI 上下文解锁引擎、纯 Token 统计存储与汉化词库运行时
-- `src/renderer/`：Context Meter 悬浮胶囊、快捷操作、速率/纯 Token 历史看板与设置弹窗源码
+- `src/renderer/`：Context Meter 悬浮胶囊、缓存命中率监控与低命中告警、快捷操作、速率/纯 Token 历史看板与设置弹窗源码
 - `unlock/agy-cli/agy-patch.py`：独立命令行二进制上下文窗口解锁工具（Python 版）
 - `test/`：自动化单元测试套件
 

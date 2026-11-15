@@ -528,8 +528,14 @@ async function collect(origin, id, options = {}) {
     );
     let latestModel = null;
     let latestCallId = null;
-    for (const m of (tail.generatorMetadata || []).slice().reverse()) {
-      latest = summarize(m, { cascadeModelConfigs: mergedCascadeConfigs });
+    const tailRows = tail.generatorMetadata || [];
+    const tailOffset = Math.max(0, count - 3);
+    for (let idx = tailRows.length - 1; idx >= 0; idx--) {
+      const m = tailRows[idx];
+      latest = summarize(m, {
+        cascadeModelConfigs: mergedCascadeConfigs,
+        turnCount: tailOffset + idx + 1
+      });
       if (latest) {
         latestModel = m.chatModel;
         const callMeta = parseGeneratorCall(m, id, 'desktop', { cascadeModelConfigs: mergedCascadeConfigs });

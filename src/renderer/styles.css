@@ -21,6 +21,7 @@
 
       --ag-context-text-default:#ececef;
       --ag-speed-default:#b8b8c0;
+      --ag-cache-default:#b8b8c0;
       --ag-token-total-default:#b8b8c0;
       --ag-token-accent-default:#a78bfa;
 
@@ -121,6 +122,7 @@
 
       --ag-context-text-default:#18181b;
       --ag-speed-default:#52525b;
+      --ag-cache-default:#52525b;
       --ag-token-total-default:#52525b;
       --ag-token-accent-default:#7c3aed;
 
@@ -317,6 +319,54 @@
       color:inherit;
     }
 
+    /* 单元 2.5: 上下文缓存命中率 */
+    #badge-cache{
+      color:var(--ag-custom-cache,var(--ag-cache-default));
+      justify-content:flex-start;
+    }
+    #badge-cache:hover,#badge-cache:focus-visible,#badge-cache[aria-expanded="true"]{
+      color:var(--ag-custom-cache,var(--ag-toolbar-fg-hover));
+    }
+    .cache-icon{
+      width:13px;height:13px;display:inline-flex;align-items:center;justify-content:center;
+      flex-shrink:0;opacity:0.9;
+    }
+    #cache-amount{
+      font-variant-numeric:tabular-nums;
+      display:inline-block;
+      text-align:left;
+      color:inherit;
+    }
+    #badge-cache[data-cache-state="high"] .cache-icon{
+      color:#22c55e;
+    }
+    :host([data-theme="light"]) #badge-cache[data-cache-state="high"] .cache-icon,
+    :host([data-panel-tone="light"]) #badge-cache[data-cache-state="high"] .cache-icon{
+      color:#16a34a;
+    }
+    #badge-cache[data-cache-state="warn"]{
+      color:var(--ag-ring-warn);
+      background:rgba(245,158,11,0.10);
+      border-color:rgba(245,158,11,0.28);
+    }
+    #badge-cache[data-cache-state="warn"]:hover,
+    #badge-cache[data-cache-state="warn"]:focus-visible,
+    #badge-cache[data-cache-state="warn"][aria-expanded="true"]{
+      color:var(--ag-ring-warn);
+      background:rgba(245,158,11,0.18);
+    }
+    #badge-cache[data-cache-state="low"]{
+      color:var(--ag-ring-danger);
+      background:rgba(239,68,68,0.12);
+      border-color:rgba(239,68,68,0.34);
+    }
+    #badge-cache[data-cache-state="low"]:hover,
+    #badge-cache[data-cache-state="low"]:focus-visible,
+    #badge-cache[data-cache-state="low"][aria-expanded="true"]{
+      color:var(--ag-ring-danger);
+      background:rgba(239,68,68,0.20);
+    }
+
     /* 单元 3: 累计 Token 用量 */
     #badge-tokens{
       color:var(--ag-custom-token-total,var(--ag-token-total-default));
@@ -389,10 +439,12 @@
       width:24px;min-width:24px;height:24px;
     }
     :host([data-layout="compact"]) #badge-speed,
+    :host([data-layout="compact"]) #badge-cache,
     :host([data-layout="compact"]) #badge-tokens{
       padding:0 5px;font-size:11.5px;gap:3px;
     }
     :host([data-layout="minimal"]) #badge-speed,
+    :host([data-layout="minimal"]) #badge-cache,
     :host([data-layout="minimal"]) #badge-tokens{
       display:none!important;
     }
@@ -400,6 +452,7 @@
       display:inline-flex!important;
     }
     :host([data-layout="ring-only"]) #badge-speed,
+    :host([data-layout="ring-only"]) #badge-cache,
     :host([data-layout="ring-only"]) #badge-tokens,
     :host([data-layout="ring-only"]) #badge-overflow,
     :host([data-layout="ring-only"]) .ag-unit-quick{
@@ -458,6 +511,9 @@
     #topbar-action-tooltip[data-tone="success"] .topbar-tip-title{
       color:#22c55e;
     }
+    #topbar-action-tooltip[data-tone="warn"] .topbar-tip-title{
+      color:var(--ag-ring-warn);
+    }
     #topbar-action-tooltip[data-tone="error"] .topbar-tip-title{
       color:#ef4444;
     }
@@ -467,7 +523,7 @@
     }
     .topbar-tip-desc{
       font-size:11px;line-height:1.38;font-weight:400;
-      color:var(--ag-text-muted);margin-top:2px;
+      color:var(--ag-text-muted);margin-top:2px;white-space:pre-line;
     }
     .topbar-tip-desc[hidden]{
       display:none!important;
@@ -534,6 +590,15 @@
     }
     .overflow-item-label{display:flex;align-items:center;gap:6px;font-weight:500}
     .overflow-item-val{font-weight:600;font-variant-numeric:tabular-nums;color:var(--ag-text-primary)}
+    .overflow-item-val.is-warn{color:var(--ag-ring-warn)}
+    .overflow-item-val.is-low{color:var(--ag-ring-danger)}
+
+    /* 会话面板：上下文缓存命中率速览卡片 */
+    .cache-summary-card{background:var(--ag-bg-card);border:1px solid var(--ag-border-card);border-radius:8px;padding:11px 12px;margin:8px 0 10px}
+    .cache-summary-title{color:var(--ag-custom-cache,var(--ag-text-primary))}
+    .cache-stat-primary{color:var(--ag-custom-cache,var(--ag-text-primary))}
+    #cache-summary[data-cache-state="warn"] .cache-stat-primary{color:var(--ag-ring-warn)}
+    #cache-summary[data-cache-state="low"] .cache-stat-primary{color:var(--ag-ring-danger)}
 
     /* 详情二级抽屉折叠交互 */
     .tech-drawer{margin-top:10px;border-top:1px solid var(--ag-border-subtle);padding-top:9px}

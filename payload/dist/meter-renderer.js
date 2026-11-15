@@ -5,6 +5,8 @@
   globalThis.__AGContextMeter?.dispose();
   const {
     summarize,
+    computeCacheMetrics,
+    summarizeSessionCache,
     parseGeneratorCall,
     normalizeModelId,
     resolveStableModelId,
@@ -73,6 +75,7 @@
 
       --ag-context-text-default:#ececef;
       --ag-speed-default:#b8b8c0;
+      --ag-cache-default:#b8b8c0;
       --ag-token-total-default:#b8b8c0;
       --ag-token-accent-default:#a78bfa;
 
@@ -173,6 +176,7 @@
 
       --ag-context-text-default:#18181b;
       --ag-speed-default:#52525b;
+      --ag-cache-default:#52525b;
       --ag-token-total-default:#52525b;
       --ag-token-accent-default:#7c3aed;
 
@@ -369,6 +373,54 @@
       color:inherit;
     }
 
+    /* 单元 2.5: 上下文缓存命中率 */
+    #badge-cache{
+      color:var(--ag-custom-cache,var(--ag-cache-default));
+      justify-content:flex-start;
+    }
+    #badge-cache:hover,#badge-cache:focus-visible,#badge-cache[aria-expanded="true"]{
+      color:var(--ag-custom-cache,var(--ag-toolbar-fg-hover));
+    }
+    .cache-icon{
+      width:13px;height:13px;display:inline-flex;align-items:center;justify-content:center;
+      flex-shrink:0;opacity:0.9;
+    }
+    #cache-amount{
+      font-variant-numeric:tabular-nums;
+      display:inline-block;
+      text-align:left;
+      color:inherit;
+    }
+    #badge-cache[data-cache-state="high"] .cache-icon{
+      color:#22c55e;
+    }
+    :host([data-theme="light"]) #badge-cache[data-cache-state="high"] .cache-icon,
+    :host([data-panel-tone="light"]) #badge-cache[data-cache-state="high"] .cache-icon{
+      color:#16a34a;
+    }
+    #badge-cache[data-cache-state="warn"]{
+      color:var(--ag-ring-warn);
+      background:rgba(245,158,11,0.10);
+      border-color:rgba(245,158,11,0.28);
+    }
+    #badge-cache[data-cache-state="warn"]:hover,
+    #badge-cache[data-cache-state="warn"]:focus-visible,
+    #badge-cache[data-cache-state="warn"][aria-expanded="true"]{
+      color:var(--ag-ring-warn);
+      background:rgba(245,158,11,0.18);
+    }
+    #badge-cache[data-cache-state="low"]{
+      color:var(--ag-ring-danger);
+      background:rgba(239,68,68,0.12);
+      border-color:rgba(239,68,68,0.34);
+    }
+    #badge-cache[data-cache-state="low"]:hover,
+    #badge-cache[data-cache-state="low"]:focus-visible,
+    #badge-cache[data-cache-state="low"][aria-expanded="true"]{
+      color:var(--ag-ring-danger);
+      background:rgba(239,68,68,0.20);
+    }
+
     /* 单元 3: 累计 Token 用量 */
     #badge-tokens{
       color:var(--ag-custom-token-total,var(--ag-token-total-default));
@@ -441,10 +493,12 @@
       width:24px;min-width:24px;height:24px;
     }
     :host([data-layout="compact"]) #badge-speed,
+    :host([data-layout="compact"]) #badge-cache,
     :host([data-layout="compact"]) #badge-tokens{
       padding:0 5px;font-size:11.5px;gap:3px;
     }
     :host([data-layout="minimal"]) #badge-speed,
+    :host([data-layout="minimal"]) #badge-cache,
     :host([data-layout="minimal"]) #badge-tokens{
       display:none!important;
     }
@@ -452,6 +506,7 @@
       display:inline-flex!important;
     }
     :host([data-layout="ring-only"]) #badge-speed,
+    :host([data-layout="ring-only"]) #badge-cache,
     :host([data-layout="ring-only"]) #badge-tokens,
     :host([data-layout="ring-only"]) #badge-overflow,
     :host([data-layout="ring-only"]) .ag-unit-quick{
@@ -510,6 +565,9 @@
     #topbar-action-tooltip[data-tone="success"] .topbar-tip-title{
       color:#22c55e;
     }
+    #topbar-action-tooltip[data-tone="warn"] .topbar-tip-title{
+      color:var(--ag-ring-warn);
+    }
     #topbar-action-tooltip[data-tone="error"] .topbar-tip-title{
       color:#ef4444;
     }
@@ -519,7 +577,7 @@
     }
     .topbar-tip-desc{
       font-size:11px;line-height:1.38;font-weight:400;
-      color:var(--ag-text-muted);margin-top:2px;
+      color:var(--ag-text-muted);margin-top:2px;white-space:pre-line;
     }
     .topbar-tip-desc[hidden]{
       display:none!important;
@@ -586,6 +644,15 @@
     }
     .overflow-item-label{display:flex;align-items:center;gap:6px;font-weight:500}
     .overflow-item-val{font-weight:600;font-variant-numeric:tabular-nums;color:var(--ag-text-primary)}
+    .overflow-item-val.is-warn{color:var(--ag-ring-warn)}
+    .overflow-item-val.is-low{color:var(--ag-ring-danger)}
+
+    /* 会话面板：上下文缓存命中率速览卡片 */
+    .cache-summary-card{background:var(--ag-bg-card);border:1px solid var(--ag-border-card);border-radius:8px;padding:11px 12px;margin:8px 0 10px}
+    .cache-summary-title{color:var(--ag-custom-cache,var(--ag-text-primary))}
+    .cache-stat-primary{color:var(--ag-custom-cache,var(--ag-text-primary))}
+    #cache-summary[data-cache-state="warn"] .cache-stat-primary{color:var(--ag-ring-warn)}
+    #cache-summary[data-cache-state="low"] .cache-stat-primary{color:var(--ag-ring-danger)}
 
     /* 详情二级抽屉折叠交互 */
     .tech-drawer{margin-top:10px;border-top:1px solid var(--ag-border-subtle);padding-top:9px}
@@ -1582,6 +1649,12 @@
     <span id="speed-hover-extra" class="sr-only"></span>
   </button>
 
+  <!-- 顶部基本单元 2.5: 上下文缓存命中率 (%) -->
+  <button id="badge-cache" class="ag-unit" type="button" aria-label="上下文缓存命中率统计" data-i18n-aria="badge.cache.aria" aria-describedby="topbar-action-tooltip" aria-expanded="false" data-cache-state="idle">
+    <span class="cache-icon" aria-hidden="true"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="8" cy="3.75" rx="5.25" ry="2.1"></ellipse><path d="M2.75 3.75v4.1c0 1.16 2.35 2.1 5.25 2.1s5.25-.94 5.25-2.1v-4.1"></path><path d="M2.75 7.85v4.1c0 1.16 2.35 2.1 5.25 2.1s5.25-.94 5.25-2.1v-4.1"></path></svg></span>
+    <span id="cache-amount">--%</span>
+  </button>
+
   <!-- 顶部基本单元 3: 累计 Token 用量（细线统计图标） -->
   <button id="badge-tokens" class="ag-unit" type="button" aria-label="Token 用量一览" data-i18n-aria="badge.tokens.aria" aria-expanded="false">
     <span class="token-fire-dot" aria-hidden="true"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13V9M8 13V4M13 13V7"></path></svg></span>
@@ -1632,6 +1705,10 @@
     <button id="overflow-speed-btn" class="overflow-item" type="button">
       <span class="overflow-item-label"><span>⚡</span><span data-i18n="overflow.speed">输出速度</span></span>
       <span id="overflow-speed-val" class="overflow-item-val">-- tok/s</span>
+    </button>
+    <button id="overflow-cache-btn" class="overflow-item" type="button">
+      <span class="overflow-item-label"><span class="cache-icon"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="8" cy="3.75" rx="5.25" ry="2.1"></ellipse><path d="M2.75 3.75v4.1c0 1.16 2.35 2.1 5.25 2.1s5.25-.94 5.25-2.1v-4.1"></path><path d="M2.75 7.85v4.1c0 1.16 2.35 2.1 5.25 2.1s5.25-.94 5.25-2.1v-4.1"></path></svg></span><span data-i18n="overflow.cache">缓存命中率</span></span>
+      <span id="overflow-cache-val" class="overflow-item-val">--%</span>
     </button>
     <button id="overflow-tokens-btn" class="overflow-item" type="button">
       <span class="overflow-item-label"><span class="token-fire-dot"></span><span data-i18n="overflow.tokens">Token 用量一览</span></span>
@@ -1712,6 +1789,33 @@
           <div id="speed-takeaway" class="key-takeaway" data-i18n="session.speed.wait">等待首次模型输出产生速度统计…</div>
         </div>
 
+        <!-- 卡片 2.5: 上下文缓存命中率速览 -->
+        <div id="cache-summary" class="cache-summary-card">
+          <div class="key-header">
+            <span class="key-title cache-summary-title" data-i18n="session.cacheSummary.title">♻️ 上下文缓存命中</span>
+            <span id="cache-badge" class="key-pill pill-muted" data-i18n="session.cache.pending">待统计</span>
+          </div>
+          <div class="key-stats" style="grid-template-columns:repeat(4,1fr);">
+            <div class="key-stat">
+              <div class="key-stat-label" data-i18n="session.cache.rate">本轮命中率</div>
+              <div id="cache-val" class="key-stat-val cache-stat-primary">—</div>
+            </div>
+            <div class="key-stat">
+              <div class="key-stat-label" data-i18n="session.cache.read">缓存复用</div>
+              <div id="cache-read" class="key-stat-val">—</div>
+            </div>
+            <div class="key-stat">
+              <div class="key-stat-label" data-i18n="session.cache.fresh">未缓存新增</div>
+              <div id="cache-fresh" class="key-stat-val">—</div>
+            </div>
+            <div class="key-stat">
+              <div class="key-stat-label" data-i18n="session.cache.sessionRate">会话命中率</div>
+              <div id="cache-session-rate" class="key-stat-val">—</div>
+            </div>
+          </div>
+          <div id="cache-takeaway" class="key-takeaway" data-i18n="session.cache.wait">等待请求返回输入与缓存复用统计…</div>
+        </div>
+
         <!-- 紧凑上下文设置入口卡片（支持直接点选常用档位） -->
         <div id="ctx-compact-card" class="ctx-compact-card">
           <div class="ctx-compact-top">
@@ -1746,7 +1850,7 @@
           <div id="drawer-body" class="drawer-body" style="display:none;">
             <p id="status" data-i18n="session.tech.checking">正在核对请求和附件…</p><p id="model"></p>
             <h4 data-i18n="session.tech.latestReq">最近一次模型请求</h4>
-            <dl><dt data-i18n="session.tech.reqStatus">请求状态</dt><dd id="request-status">—</dd><dt data-i18n="session.tech.actual">模型返回输入＋输出</dt><dd id="actual">—</dd><dt data-i18n="session.tech.estimate">客户端估算（可能漏附件）</dt><dd id="estimate">—</dd><dt data-i18n="session.tech.budget">客户端预算字段</dt><dd id="budget">—</dd><dt data-i18n="session.tech.serviceLimit">该次报错的服务端限制</dt><dd id="service-limit">—</dd><dt data-i18n="session.tech.percent">相对客户端预算</dt><dd id="percent">—</dd></dl>
+            <dl><dt data-i18n="session.tech.reqStatus">请求状态</dt><dd id="request-status">—</dd><dt data-i18n="session.tech.actual">模型返回输入＋输出</dt><dd id="actual">—</dd><dt data-i18n="session.tech.cacheDetail">本轮输入构成（缓存／新增）</dt><dd id="cache-tech-detail">—</dd><dt data-i18n="session.tech.estimate">客户端估算（可能漏附件）</dt><dd id="estimate">—</dd><dt data-i18n="session.tech.budget">客户端预算字段</dt><dd id="budget">—</dd><dt data-i18n="session.tech.serviceLimit">该次报错的服务端限制</dt><dd id="service-limit">—</dd><dt data-i18n="session.tech.percent">相对客户端预算</dt><dd id="percent">—</dd></dl>
             <h4 data-i18n="session.tech.sessionHeading">整个会话累计内容 · 本地估算</h4>
             <dl><dt data-i18n="session.tech.sessionTotal">可读取文本 token 估算</dt><dd id="session-total" data-i18n="session.tech.scanning">扫描中…</dd><dt data-i18n="session.tech.characters">实际读取文字字符数</dt><dd id="characters">—</dd><dt data-i18n="session.tech.user">用户消息</dt><dd id="user">—</dd><dt data-i18n="session.tech.assistant">模型回复</dt><dd id="assistant">—</dd><dt data-i18n="session.tech.thinking">可见思考内容</dt><dd id="thinking">—</dd><dt data-i18n="session.tech.tools">工具调用与工具输出</dt><dd id="tools">—</dd><dt data-i18n="session.tech.summaries">历史压缩摘要</dt><dd id="summaries">—</dd><dt data-i18n="session.tech.system">当前系统提示与工具定义</dt><dd id="system">—</dd><dt data-i18n="session.tech.attachments">上传／输出附件文本</dt><dd id="attachment-total">—</dd><dt data-i18n="session.tech.steps">历史步骤完整性</dt><dd id="steps">—</dd></dl>
             <p id="coverage"></p><h4 data-i18n="session.tech.filesHeading">附件逐项检查</h4><div id="files"></div><button id="refresh" type="button" data-i18n="session.tech.rescan">重新扫描整段会话与附件</button>
@@ -2264,6 +2368,14 @@
                 </div>
               </div>
               <div class="color-item">
+                <span class="color-item-lbl" data-i18n="settings.colors.cacheText">缓存命中率</span>
+                <div class="color-item-ctrls">
+                  <input id="color-cacheText" class="color-picker" type="color" value="#34d399" data-i18n-aria="settings.colors.cacheText" aria-label="缓存命中率颜色" />
+                  <button id="swatch-cacheText" class="color-swatch-btn" type="button" data-color-slot="cacheText" data-color-label="缓存命中率" data-i18n-color-label="settings.colors.cacheText" data-i18n-title="colors.swatchTitle" title="点击打开颜色选取器"></button>
+                  <button id="reset-cacheText" class="color-reset-btn" type="button" data-mode="auto" data-i18n="colors.followTheme">跟随主题</button>
+                </div>
+              </div>
+              <div class="color-item">
                 <span class="color-item-lbl" data-i18n="settings.colors.tokenTotal">累计 token 用量</span>
                 <div class="color-item-ctrls">
                   <input id="color-tokenTotal" class="color-picker" type="color" value="#c084fc" data-i18n-aria="settings.colors.tokenTotal" aria-label="累计 token 用量颜色" />
@@ -2435,6 +2547,10 @@
           <div class="heat-sum-item">
             <span class="heat-sum-label" data-i18n="tokens.heat.sumActiveAvg">活跃日均:</span>
             <span id="h-sum-active-avg" class="heat-sum-val" data-i18n="tokens.heat.activeAvgPlaceholder">0 Tokens (0天)</span>
+          </div>
+          <div class="heat-sum-item">
+            <span class="heat-sum-label" data-i18n="tokens.heat.sumCacheRate">缓存命中:</span>
+            <span id="h-sum-cache-rate" class="heat-sum-val">--%</span>
           </div>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11px;color:var(--ag-text-muted);flex-wrap:wrap;gap:6px">
@@ -2667,6 +2783,7 @@
     'badge.aria': { 'zh-CN': '会话与上下文统计', 'zh-TW': '工作階段與上下文統計', en: 'Session and context statistics' },
     'badge.reading': { 'zh-CN': '读取中…', 'zh-TW': '讀取中…', en: 'Loading…' },
     'badge.speed.aria': { 'zh-CN': '模型输出速度与耗时统计', 'zh-TW': '模型輸出速度與耗時統計', en: 'Model output speed and latency' },
+    'badge.cache.aria': { 'zh-CN': '上下文缓存命中率统计', 'zh-TW': '上下文快取命中率統計', en: 'Context cache hit rate' },
     'badge.tokens.aria': { 'zh-CN': 'Token 用量一览', 'zh-TW': 'Token 用量一覽', en: 'Token usage overview' },
     'badge.overflow.aria': { 'zh-CN': '更多统计指标', 'zh-TW': '更多統計指標', en: 'More metrics' },
     'tip.title.default': { 'zh-CN': '上下文窗口：', 'zh-TW': '上下文視窗：', en: 'Context window:' },
@@ -2674,6 +2791,7 @@
     'tip.detail.loading': { 'zh-CN': '正在读取当前会话上下文用量…', 'zh-TW': '正在讀取目前工作階段上下文用量…', en: 'Reading current session context usage…' },
     'overflow.aria': { 'zh-CN': '更多统计快捷菜单', 'zh-TW': '更多統計快捷選單', en: 'More metrics menu' },
     'overflow.speed': { 'zh-CN': '输出速度', 'zh-TW': '輸出速度', en: 'Output speed' },
+    'overflow.cache': { 'zh-CN': '缓存命中率', 'zh-TW': '快取命中率', en: 'Cache hit rate' },
     'overflow.tokens': { 'zh-CN': 'Token 用量一览', 'zh-TW': 'Token 用量一覽', en: 'Token usage' },
 
     // 上下文面板头部与分页
@@ -2734,6 +2852,13 @@
     'session.speed.ttft': { 'zh-CN': '首字延迟', 'zh-TW': '首字延遲', en: 'TTFT' },
     'session.speed.tokens': { 'zh-CN': '本次输出', 'zh-TW': '本次輸出', en: 'Output' },
     'session.speed.wait': { 'zh-CN': '等待首次模型输出产生速度统计…', 'zh-TW': '等待首次模型輸出產生速度統計…', en: 'Waiting for the first model response…' },
+    'session.cacheSummary.title': { 'zh-CN': '♻️ 上下文缓存命中', 'zh-TW': '♻️ 上下文快取命中', en: '♻️ Context Cache Reuse' },
+    'session.cache.pending': { 'zh-CN': '待统计', 'zh-TW': '待統計', en: 'Pending' },
+    'session.cache.rate': { 'zh-CN': '本轮命中率', 'zh-TW': '本輪命中率', en: 'Turn Hit Rate' },
+    'session.cache.read': { 'zh-CN': '缓存复用', 'zh-TW': '快取複用', en: 'Cache Read' },
+    'session.cache.fresh': { 'zh-CN': '未缓存新增', 'zh-TW': '未快取新增', en: 'Uncached' },
+    'session.cache.sessionRate': { 'zh-CN': '会话命中率', 'zh-TW': '工作階段命中率', en: 'Session Rate' },
+    'session.cache.wait': { 'zh-CN': '等待请求返回输入与缓存复用统计…', 'zh-TW': '等待請求回傳輸入與快取複用統計…', en: 'Waiting for input and cache read token stats…' },
     'session.compact.title': { 'zh-CN': '上下文设置', 'zh-TW': '上下文設定', en: 'Context Settings' },
     'session.compact.scopeUnified': { 'zh-CN': '上下文上限 · 全局统一', 'zh-TW': '上下文上限 · 全域統一', en: 'Context Limit · All Models' },
     'session.compact.scopeModel': { 'zh-CN': '上下文上限 · {model}', 'zh-TW': '上下文上限 · {model}', en: 'Context Limit · {model}' },
@@ -2747,6 +2872,7 @@
     'session.tech.latestReq': { 'zh-CN': '最近一次模型请求', 'zh-TW': '最近一次模型請求', en: 'Latest Model Request' },
     'session.tech.reqStatus': { 'zh-CN': '请求状态', 'zh-TW': '請求狀態', en: 'Request status' },
     'session.tech.actual': { 'zh-CN': '模型返回输入＋输出', 'zh-TW': '模型回傳輸入＋輸出', en: 'Returned input + output' },
+    'session.tech.cacheDetail': { 'zh-CN': '本轮输入构成（缓存／新增）', 'zh-TW': '本輪輸入構成（快取／新增）', en: 'Input breakdown (cached / fresh)' },
     'session.tech.estimate': { 'zh-CN': '客户端估算（可能漏附件）', 'zh-TW': '用戶端估算（可能漏附件）', en: 'Client estimate (may miss files)' },
     'session.tech.budget': { 'zh-CN': '客户端预算字段', 'zh-TW': '用戶端預算欄位', en: 'Client budget field' },
     'session.tech.serviceLimit': { 'zh-CN': '该次报错的服务端限制', 'zh-TW': '該次報錯的伺服器端限制', en: 'Server limit from error' },
@@ -2962,6 +3088,7 @@
     'settings.colors.ringTrack': { 'zh-CN': '圆环轨道', 'zh-TW': '圓環軌道', en: 'Ring track' },
     'settings.colors.contextText': { 'zh-CN': '上下文用量文字', 'zh-TW': '上下文用量文字', en: 'Context text' },
     'settings.colors.speedText': { 'zh-CN': '输出速度', 'zh-TW': '輸出速度', en: 'Output speed' },
+    'settings.colors.cacheText': { 'zh-CN': '缓存命中率', 'zh-TW': '快取命中率', en: 'Cache hit rate' },
     'settings.colors.tokenTotal': { 'zh-CN': '累计 token 用量', 'zh-TW': '累計 token 用量', en: 'Total tokens' },
     'settings.colors.tokenAccent': { 'zh-CN': '其他 token 指标', 'zh-TW': '其他 token 指標', en: 'Token accent' },
     'settings.colors.note': { 'zh-CN': '注：高占用与超限告警色独立保留，不被常态颜色覆盖。', 'zh-TW': '註：高佔用與超限告警色獨立保留，不被常態顏色覆蓋。', en: 'Note: High-usage and overflow alert colors remain independent.' },
@@ -2999,6 +3126,7 @@
     'tokens.heat.sumTokens': { 'zh-CN': '区间合计:', 'zh-TW': '區間合計:', en: 'Range total:' },
     'tokens.heat.sumDailyAvg': { 'zh-CN': '折合每天:', 'zh-TW': '折合每天:', en: 'Daily avg:' },
     'tokens.heat.sumActiveAvg': { 'zh-CN': '活跃日均:', 'zh-TW': '活躍日均:', en: 'Active avg:' },
+    'tokens.heat.sumCacheRate': { 'zh-CN': '缓存命中:', 'zh-TW': '快取命中:', en: 'Cache hit:' },
     'tokens.heat.tip': { 'zh-CN': '点击或悬浮格子查看当日详细 Token 构成', 'zh-TW': '點擊或懸停格子檢視當日詳細 Token 構成', en: 'Click or hover a cell to view daily token breakdown' },
     'tokens.heat.less': { 'zh-CN': '少', 'zh-TW': '少', en: 'Less' },
     'tokens.heat.more': { 'zh-CN': '多', 'zh-TW': '多', en: 'More' },
@@ -3133,6 +3261,19 @@
       'badge.speedTitleWait': { 'zh-CN': '正在等待模型返回或计算生成指标…', 'zh-TW': '正在等待模型回傳或計算生成指標…', en: 'Waiting for model response or metrics…' },
       'badge.speedTitleDetail': { 'zh-CN': '最新模型输出速度：{tps} tok/s{streaming}\n总耗时：{duration}s (首字 {ttft}s + 流式 {streamSec}s)\n本次产出：{output} tokens', 'zh-TW': '最新模型輸出速度：{tps} tok/s{streaming}\n總耗時：{duration}s (首字 {ttft}s + 流式 {streamSec}s)\n本次產出：{output} tokens', en: 'Latest output speed: {tps} tok/s{streaming}\nTotal: {duration}s (TTFT {ttft}s + streaming {streamSec}s)\nOutput: {output} tokens' },
       'badge.speedStreamingPart': { 'zh-CN': ' (流式 {tps} tok/s)', 'zh-TW': ' (流式 {tps} tok/s)', en: ' (streaming {tps} tok/s)' },
+      'badge.cacheWide': { 'zh-CN': '缓存 {pct}%', 'zh-TW': '快取 {pct}%', en: 'Cache {pct}%' },
+      'badge.cacheCalcWide': { 'zh-CN': '缓存 …', 'zh-TW': '快取 …', en: 'Cache …' },
+      'badge.cacheIdleWide': { 'zh-CN': '缓存 --%', 'zh-TW': '快取 --%', en: 'Cache --%' },
+      'badge.cacheTitleIdle': { 'zh-CN': '上下文缓存命中率', 'zh-TW': '上下文快取命中率', en: 'Context cache hit rate' },
+      'cache.tip.idleTitle': { 'zh-CN': '上下文缓存命中率：待统计', 'zh-TW': '上下文快取命中率：待統計', en: 'Context Cache Hit Rate: Idle' },
+      'cache.tip.idleDesc': { 'zh-CN': '打开对话并完成一轮请求后，将实时统计缓存复用比例。', 'zh-TW': '開啟對話並完成一輪請求後，將即時統計快取複用比例。', en: 'Cache reuse ratio will appear after a completed chat turn.' },
+      'cache.tip.title': { 'zh-CN': '本轮缓存命中率：{pct}%', 'zh-TW': '本輪快取命中率：{pct}%', en: 'Turn Cache Hit Rate: {pct}%' },
+      'cache.tip.titleLow': { 'zh-CN': '⚠ 缓存命中率过低：{pct}%', 'zh-TW': '⚠ 快取命中率過低：{pct}%', en: '⚠ Low Cache Hit Rate: {pct}%' },
+      'cache.tip.titleWarn': { 'zh-CN': '⚡ 缓存命中率偏低：{pct}%', 'zh-TW': '⚡ 快取命中率偏低：{pct}%', en: '⚡ Reduced Cache Hit Rate: {pct}%' },
+      'cache.tip.breakdown': { 'zh-CN': '本轮复用 {cached} · 未缓存新增 {uncached}（共 {total}）', 'zh-TW': '本輪複用 {cached} · 未快取新增 {uncached}（共 {total}）', en: 'Reused {cached} · Uncached {uncached} (total {total})' },
+      'cache.tip.sessionLine': { 'zh-CN': '本会话累计命中 {pct}%（{turns} 轮，共复用 {cached}）', 'zh-TW': '本工作階段累計命中 {pct}%（{turns} 輪，共複用 {cached}）', en: 'Session cumulative: {pct}% ({turns} turns, {cached} reused)' },
+      'cache.tip.warnHint': { 'zh-CN': '未命中部分需重新处理，可能消耗更多输入 Token（常见于频繁改动前置上下文或缓存过期）。', 'zh-TW': '未命中部分需重新處理，可能消耗更多輸入 Token（常見於頻繁改動前置上下文或快取過期）。', en: 'Uncached input is reprocessed, consuming more input tokens (often from prefix edits or cache expiry).' },
+      'cache.tip.coldHint': { 'zh-CN': '首轮建缓存或短上下文（正常冷启动，后续轮次通常会复用）。', 'zh-TW': '首輪建快取或短上下文（正常冷啟動，後續輪次通常會複用）。', en: 'Initial cold cache or short context (subsequent turns typically reuse it).' },
       'badge.corpus.range': { 'zh-CN': '会话{range}{inc}', 'zh-TW': '工作階段{range}{inc}', en: 'Chat {range}{inc}' },
       'badge.corpus.incPlus': { 'zh-CN': '＋未知', 'zh-TW': '＋未知', en: '+unknown' },
       'badge.corpus.scanning': { 'zh-CN': '会话扫描中…', 'zh-TW': '工作階段掃描中…', en: 'Scanning chat…' },
@@ -3173,6 +3314,19 @@
       'speed.tone.steady': { 'zh-CN': '平稳', 'zh-TW': '平穩', en: 'steady' },
       'speed.streamPart': { 'zh-CN': '，纯流式传输达 {tps} tok/s', 'zh-TW': '，純串流傳輸達 {tps} tok/s', en: ', streaming {tps} tok/s' },
       'speed.takeaway.idle': { 'zh-CN': 'ℹ 等待当前或下一次模型输出完成，将自动计算精确输出速度 (tok/s)、首字延迟与总耗时。', 'zh-TW': 'ℹ 等待目前或下一次模型輸出完成，將自動計算精確輸出速度 (tok/s)、首字延遲與總耗時。', en: 'ℹ Waiting for the next model response to measure output speed (tok/s), TTFT, and duration.' },
+      'cache.pill.high': { 'zh-CN': '高效复用', 'zh-TW': '高效複用', en: 'High Hit' },
+      'cache.pill.good': { 'zh-CN': '正常', 'zh-TW': '正常', en: 'Normal' },
+      'cache.pill.cold': { 'zh-CN': '冷启动', 'zh-TW': '冷啟動', en: 'Cold Start' },
+      'cache.pill.warn': { 'zh-CN': '命中偏低', 'zh-TW': '命中偏低', en: 'Reduced' },
+      'cache.pill.low': { 'zh-CN': '命中过低', 'zh-TW': '命中過低', en: 'Low Hit' },
+      'cache.pill.idle': { 'zh-CN': '待统计', 'zh-TW': '待統計', en: 'Idle' },
+      'cache.takeaway.cold': { 'zh-CN': 'ℹ 当前为首轮冷启动或短输入（总输入 {total} tokens，复用 {cached}），属于正常建缓存阶段。', 'zh-TW': 'ℹ 目前為首輪冷啟動或短輸入（總輸入 {total} tokens，複用 {cached}），屬於正常建快取階段。', en: 'ℹ Initial cold start or short input ({total} total tokens, {cached} cached); normal cache warmup.' },
+      'cache.takeaway.low': { 'zh-CN': '⚠ 缓存命中率过低（仅 {pct}%）：本轮多达 {uncached} tokens 未命中缓存，需要重新处理输入，将显著增加 Token 消耗！可能原因：长时间未对话导致缓存过期、切换了模型/系统提示，或前置上下文被修改。', 'zh-TW': '⚠ 快取命中率過低（僅 {pct}%）：本輪多達 {uncached} tokens 未命中快取，需要重新處理輸入，將顯著增加 Token 消耗！可能原因：長時間未對話導致快取過期、切換了模型／系統提示，或前置上下文被修改。', en: '⚠ Very low cache hit rate ({pct}%): {uncached} tokens were uncached and reprocessed this turn, increasing token consumption. Possible causes: cache TTL expiry, model/prefix change, or history rewrite.' },
+      'cache.takeaway.warn': { 'zh-CN': '⚡ 缓存命中率偏低（{pct}%）：本轮新增未缓存输入 {uncached} tokens，复用 {cached} tokens；若非刚插入大文件，请留意缓存是否部分失效。', 'zh-TW': '⚡ 快取命中率偏低（{pct}%）：本輪新增未快取輸入 {uncached} tokens，複用 {cached} tokens；若非剛插入大型檔案，請留意快取是否部分失效。', en: '⚡ Reduced cache hit rate ({pct}%): {uncached} uncached vs {cached} cached tokens. Unless adding large files, check if prefix cache partially invalidated.' },
+      'cache.takeaway.high': { 'zh-CN': '✔ 缓存高效复用（{pct}%）：本轮 {total} 输入中直接命中 {cached} tokens，仅重算 {uncached} tokens。', 'zh-TW': '✔ 快取高效複用（{pct}%）：本輪 {total} 輸入中直接命中 {cached} tokens，僅重算 {uncached} tokens。', en: '✔ High cache efficiency ({pct}%): {cached} of {total} input tokens reused; only {uncached} uncached.' },
+      'cache.takeaway.good': { 'zh-CN': '✔ 缓存正常复用（{pct}%）：复用 {cached} tokens，新增未缓存 {uncached} tokens。', 'zh-TW': '✔ 快取正常複用（{pct}%）：複用 {cached} tokens，新增未快取 {uncached} tokens。', en: '✔ Normal cache reuse ({pct}%): {cached} cached, {uncached} uncached tokens.' },
+      'cache.takeaway.idle': { 'zh-CN': 'ℹ 等待请求返回输入明细后，将自动计算上下文缓存命中率与低命中提醒。', 'zh-TW': 'ℹ 等待請求回傳輸入明細後，將自動計算上下文快取命中率與低命中提醒。', en: 'ℹ Waiting for request usage details to calculate cache hit rate and low-hit alerts.' },
+      'tech.cacheDetail.val': { 'zh-CN': '命中 {pct}% · 复用 {cached} ／ 新增 {uncached} tokens', 'zh-TW': '命中 {pct}% · 複用 {cached} ／ 新增 {uncached} tokens', en: '{pct}% hit · {cached} cached / {uncached} uncached' },
       'tech.modelPlaceholder': { 'zh-CN': '模型标识：{id}', 'zh-TW': '模型識別：{id}', en: 'Model ID: {id}' },
       'tech.modelMissing': { 'zh-CN': '未返回模型信息', 'zh-TW': '未回傳模型資訊', en: 'No model info returned' },
       'tech.req.exceeded': { 'zh-CN': '输入超限（已失败）', 'zh-TW': '輸入超限（已失敗）', en: 'Input limit exceeded (failed)' },
@@ -5727,6 +5881,7 @@
     ringTrack: '--ag-custom-ring-track',
     contextText: '--ag-custom-context-text',
     speedText: '--ag-custom-speed',
+    cacheText: '--ag-custom-cache',
     tokenTotal: '--ag-custom-token-total',
     tokenAccent: '--ag-custom-token-accent',
     heatLow: '--ag-custom-heat-low',
@@ -5745,6 +5900,7 @@
     ringTrack: '',
     contextText: '',
     speedText: '',
+    cacheText: '',
     tokenTotal: '',
     tokenAccent: '',
     heatLow: '',
@@ -6019,6 +6175,7 @@
       case 'ringTrack': return isLight ? '#b8b8c2' : '#52525b';
       case 'contextText': return isLight ? '#18181b' : '#ececef';
       case 'speedText': return isLight ? '#0284c7' : '#38bdf8';
+      case 'cacheText': return isLight ? '#059669' : '#34d399';
       case 'tokenTotal': return isLight ? '#7c3aed' : '#c084fc';
       case 'tokenAccent': return isLight ? '#7c3aed' : '#a78bfa';
       case 'heatLow': return presetScale[0];
@@ -6916,31 +7073,31 @@
   // 带迟滞区间（Hysteresis）的四阶段渐进收缩计算，防止临界宽度抖动
   function computeNextLayoutMode(availWidth, currentMode) {
     // 阈值设计：
-    // wide <-> compact: 收缩 < 195px, 恢复 >= 210px
-    // compact <-> minimal: 收缩 < 135px, 恢复 >= 150px
+    // wide <-> compact: 收缩 < 285px, 恢复 >= 300px
+    // compact <-> minimal: 收缩 < 212px, 恢复 >= 226px
     // minimal <-> ring-only: 收缩 < 68px, 恢复 >= 82px
     if (availWidth == null || Number.isNaN(availWidth)) return 'wide';
     if (currentMode === 'wide') {
       if (availWidth < 68) return 'ring-only';
-      if (availWidth < 135) return 'minimal';
-      if (availWidth < 195) return 'compact';
+      if (availWidth < 212) return 'minimal';
+      if (availWidth < 285) return 'compact';
       return 'wide';
     }
     if (currentMode === 'compact') {
-      if (availWidth >= 210) return 'wide';
+      if (availWidth >= 300) return 'wide';
       if (availWidth < 68) return 'ring-only';
-      if (availWidth < 135) return 'minimal';
+      if (availWidth < 212) return 'minimal';
       return 'compact';
     }
     if (currentMode === 'minimal') {
-      if (availWidth >= 210) return 'wide';
-      if (availWidth >= 150) return 'compact';
+      if (availWidth >= 300) return 'wide';
+      if (availWidth >= 226) return 'compact';
       if (availWidth < 68) return 'ring-only';
       return 'minimal';
     }
     // currentMode === 'ring-only'
-    if (availWidth >= 210) return 'wide';
-    if (availWidth >= 150) return 'compact';
+    if (availWidth >= 300) return 'wide';
+    if (availWidth >= 226) return 'compact';
     if (availWidth >= 82) return 'minimal';
     return 'ring-only';
   }
@@ -7007,6 +7164,7 @@
         el('badge-overflow')?.setAttribute('aria-expanded', 'false');
       }
       syncSpeedBadgeText();
+      syncCacheBadgeText();
     }
   }
 
@@ -7027,7 +7185,9 @@
     applyLayoutMode(nextMode);
     if (state.tooltipOpen) positionContextTooltip();
     if (el('topbar-action-tooltip')?.getAttribute('data-visible') === 'true') {
-      const anchor = activeTopbarTipKind === 'window' ? el('btn-topbar-window') : el('btn-topbar-compact');
+      const anchor = activeTopbarTipKind === 'window'
+        ? el('btn-topbar-window')
+        : (activeTopbarTipKind === 'cache' ? el('badge-cache') : el('btn-topbar-compact'));
       positionTopbarActionTooltip(anchor);
     }
     if (isAnyPanelOpen() || !el('overflow-menu')?.hidden || !el('topbar-window-popover')?.hidden) positionFloatingPanels();
@@ -7147,6 +7307,45 @@
       titleEl.textContent = isQuickCompactBusy ? t('session.quick.compactBusy') : t('topbar.quick.compactTitle');
       descEl.textContent = isQuickCompactBusy ? t('topbar.quick.compactBusyDesc') : t('topbar.quick.compactDesc');
       descEl.hidden = false;
+    } else if (kind === 'cache') {
+      const cm = state.route ? getEffectiveCacheMetrics(state.latest) : null;
+      if (!cm) {
+        tip.setAttribute('data-tone', 'default');
+        titleEl.textContent = t('cache.tip.idleTitle');
+        descEl.textContent = t('cache.tip.idleDesc');
+        descEl.hidden = false;
+      } else {
+        const tone = cm.level === 'low' ? 'error' : (cm.level === 'warn' ? 'warn' : 'default');
+        tip.setAttribute('data-tone', tone);
+        const pctFixed = cm.hitRate.toFixed(1);
+        titleEl.textContent = cm.level === 'low'
+          ? t('cache.tip.titleLow', { pct: pctFixed })
+          : (cm.level === 'warn'
+            ? t('cache.tip.titleWarn', { pct: pctFixed })
+            : t('cache.tip.title', { pct: pctFixed }));
+        const lines = [
+          t('cache.tip.breakdown', {
+            cached: fmtBubbleToken(cm.cachedTokens),
+            uncached: fmtBubbleToken(cm.uncachedTokens),
+            total: fmtBubbleToken(cm.totalInputTokens)
+          })
+        ];
+        const sessCache = typeof summarizeSessionCache === 'function' ? summarizeSessionCache(state.sessionCalls) : null;
+        if (sessCache && sessCache.turns >= 2) {
+          lines.push(t('cache.tip.sessionLine', {
+            pct: sessCache.hitRate.toFixed(1),
+            turns: sessCache.turns,
+            cached: fmtBubbleToken(sessCache.cachedTokens)
+          }));
+        }
+        if (cm.level === 'low' || cm.level === 'warn') {
+          lines.push(t('cache.tip.warnHint'));
+        } else if (cm.level === 'cold') {
+          lines.push(t('cache.tip.coldHint'));
+        }
+        descEl.textContent = lines.join('\n');
+        descEl.hidden = false;
+      }
     } else if (kind === 'window') {
       const info = typeof resolveQuickContextTarget === 'function' ? resolveQuickContextTarget() : { scopeMode: 'unified', ready: true, currentShortLabel: '—' };
       const curLbl = info.currentShortLabel || t('status.savedShortDefault');
@@ -7378,6 +7577,7 @@
     const pOverflow = el('overflow-menu');
     const bContext = el('badge');
     const bSpeed = el('badge-speed');
+    const bCache = el('badge-cache');
     const bTokens = el('badge-tokens');
     const bOverflow = el('badge-overflow');
 
@@ -7393,6 +7593,7 @@
       pTokens.hidden = false;
       bContext.setAttribute('aria-expanded', 'false');
       bSpeed?.setAttribute('aria-expanded', 'false');
+      bCache?.setAttribute('aria-expanded', 'false');
       bTokens.setAttribute('aria-expanded', 'true');
       syncHostStackingElevation(true);
       positionFloatingPanels();
@@ -7408,6 +7609,7 @@
       pContext.hidden = false;
       bContext.setAttribute('aria-expanded', 'true');
       bSpeed?.setAttribute('aria-expanded', 'true');
+      bCache?.setAttribute('aria-expanded', String(activeContextTab === 'session'));
       bTokens.setAttribute('aria-expanded', 'false');
       syncHostStackingElevation(true);
       positionFloatingPanels();
@@ -7427,6 +7629,7 @@
       pTokens.hidden = true;
       bContext.setAttribute('aria-expanded', 'false');
       bSpeed?.setAttribute('aria-expanded', 'false');
+      bCache?.setAttribute('aria-expanded', 'false');
       bTokens.setAttribute('aria-expanded', 'false');
       closeColorPicker();
       hidePopover();
@@ -7921,10 +8124,34 @@
 
   el('badge').addEventListener('click', toggleContext);
   el('badge-speed')?.addEventListener('click', toggleContext);
+  el('badge-cache')?.addEventListener('click', () => {
+    if (!el('panel').hidden && activeContextTab === 'session') {
+      showPanel('none');
+    } else {
+      showPanel('context');
+      switchContextTab('session');
+    }
+  });
   el('badge-tokens').addEventListener('click', toggleTokens);
   el('badge-overflow')?.addEventListener('click', toggleOverflowMenu);
   el('overflow-speed-btn')?.addEventListener('click', () => showPanel('context'));
+  el('overflow-cache-btn')?.addEventListener('click', () => {
+    showPanel('context');
+    switchContextTab('session');
+  });
   el('overflow-tokens-btn')?.addEventListener('click', () => showPanel('tokens'));
+  el('badge-cache')?.addEventListener('mouseenter', () => {
+    if (!isAnyPanelOpen() && el('topbar-window-popover')?.hidden !== false) showTopbarActionTooltip('cache', el('badge-cache'));
+  });
+  el('badge-cache')?.addEventListener('mouseleave', () => {
+    hideTopbarActionTooltip(false);
+  });
+  el('badge-cache')?.addEventListener('focus', () => {
+    if (!isAnyPanelOpen() && el('topbar-window-popover')?.hidden !== false) showTopbarActionTooltip('cache', el('badge-cache'));
+  });
+  el('badge-cache')?.addEventListener('blur', () => {
+    hideTopbarActionTooltip(false);
+  });
   el('close').addEventListener('click', () => showPanel('none'));
   el('close-tokens')?.addEventListener('click', () => showPanel('none'));
 
@@ -8020,6 +8247,7 @@
   el('btn-topbar-window')?.addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
   el('badge-tokens').addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
   el('badge-speed')?.addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
+  el('badge-cache')?.addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
 
   // =========================================================================
   // 模块 3: 上下文面板分页、设置视图、模型产品偏好、重启验证与速度对比
@@ -9210,6 +9438,9 @@
     btnTabModels?.setAttribute('aria-selected', String(activeContextTab === 'models'));
     btnTabSpeed?.setAttribute('aria-selected', String(activeContextTab === 'speed'));
     btnTabSettings?.setAttribute('aria-selected', String(activeContextTab === 'settings'));
+    if (!el('panel')?.hidden) {
+      el('badge-cache')?.setAttribute('aria-expanded', String(activeContextTab === 'session'));
+    }
   }
 
   let prevTabBeforeSettings = 'models';
@@ -13587,10 +13818,12 @@
           heatPopDate.textContent = `${dateLabel}${item.isToday ? t('heat.today') : (item.key === win.firstStr ? t('heat.firstUse') : '')}`;
           heatPopVal.textContent = item.tokens > 0 ? `${fmtYi(item.tokens)} Tokens` : (item.isFuture ? t('heat.future') : '0 Tokens');
           if (item.rec) {
+            const dayCacheTotal = (Number(item.rec.input) || 0) + (Number(item.rec.cache) || 0);
+            const dayCachePct = dayCacheTotal > 0 ? ` (${((Number(item.rec.cache) / dayCacheTotal) * 100).toFixed(1)}%)` : '';
             heatPopDet.innerHTML = `
               <div class="pop-det-col"><span class="pop-det-val">Prompt: ${fmtYi(item.rec.input)}</span><span class="pop-det-trans">${t('heat.prompt')}</span></div>
               <div class="pop-det-col"><span class="pop-det-val">Output: ${fmtYi(item.rec.output)}</span><span class="pop-det-trans">${t('heat.output')}</span></div>
-              <div class="pop-det-col"><span class="pop-det-val">Cache: ${fmtYi(item.rec.cache)}</span><span class="pop-det-trans">${t('heat.cache')}</span></div>
+              <div class="pop-det-col"><span class="pop-det-val">Cache: ${fmtYi(item.rec.cache)}${dayCachePct}</span><span class="pop-det-trans">${t('heat.cache')}</span></div>
             `.trim();
             heatPopDet.style.display = 'flex';
           } else {
@@ -13809,6 +14042,10 @@
     sumTokensEl.textContent = `${fmtYi(tokAgg.totalTokens)} Tokens`;
     if (sumDailyAvgEl) sumDailyAvgEl.textContent = `${fmtYi(tokAgg.dailyAverageTokens)} Tokens`;
     if (sumActiveAvgEl) sumActiveAvgEl.textContent = t('heat.activeDays', { avg: fmtYi(tokAgg.activeDailyAverageTokens), days: tokAgg.activeDays });
+    const sumCacheRateEl = el('h-sum-cache-rate');
+    if (sumCacheRateEl) {
+      sumCacheRateEl.textContent = tokAgg.cacheHitRate != null ? `${tokAgg.cacheHitRate.toFixed(1)}%` : '--%';
+    }
   }
 
   function renderHeatmapMonthly() {
@@ -13889,10 +14126,12 @@
         heatPopDate.textContent = `${mDateLabel}${isToday ? t('heat.today') : ''}`;
         heatPopVal.textContent = tokens > 0 ? `${fmtYi(tokens)} Tokens` : (isFuture ? t('heat.future') : '0 Tokens');
         if (rec) {
+          const mCacheTotal = (Number(rec.input) || 0) + (Number(rec.cache) || 0);
+          const mCachePct = mCacheTotal > 0 ? ` (${((Number(rec.cache) / mCacheTotal) * 100).toFixed(1)}%)` : '';
           heatPopDet.innerHTML = `
             <div class="pop-det-col"><span class="pop-det-val">Prompt: ${fmtYi(rec.input)}</span><span class="pop-det-trans">${t('heat.prompt')}</span></div>
             <div class="pop-det-col"><span class="pop-det-val">Output: ${fmtYi(rec.output)}</span><span class="pop-det-trans">${t('heat.output')}</span></div>
-            <div class="pop-det-col"><span class="pop-det-val">Cache: ${fmtYi(rec.cache)}</span><span class="pop-det-trans">${t('heat.cache')}</span></div>
+            <div class="pop-det-col"><span class="pop-det-val">Cache: ${fmtYi(rec.cache)}${mCachePct}</span><span class="pop-det-trans">${t('heat.cache')}</span></div>
           `.trim();
           heatPopDet.style.display = 'flex';
         } else {
@@ -14364,6 +14603,122 @@
     if (state.tooltipOpen) positionContextTooltip();
   }
 
+  function getEffectiveCacheMetrics(d) {
+    if (!d) return null;
+    if (d.cache && typeof d.cache === 'object') return d.cache;
+    if (typeof computeCacheMetrics === 'function' && d.input != null && d.input > 0) {
+      const cached = Number(d.cached || 0);
+      const uncached = d.uncachedInput != null ? Number(d.uncachedInput) : Math.max(0, Number(d.input) - cached);
+      return computeCacheMetrics(uncached, cached);
+    }
+    return null;
+  }
+
+  function syncCacheBadgeText() {
+    const cacheBadge = el('badge-cache');
+    const cacheAmount = el('cache-amount');
+    const overflowCacheVal = el('overflow-cache-val');
+    if (!cacheAmount) return;
+    const isCompact = state.layoutMode === 'compact';
+    const cm = state.route ? getEffectiveCacheMetrics(state.latest) : null;
+    if (cm) {
+      const pctStr = (cm.hitRate > 0 && cm.hitRate < 1) ? '<1' : String(Math.round(cm.hitRate));
+      cacheAmount.textContent = isCompact ? `${pctStr}%` : t('badge.cacheWide', { pct: pctStr });
+      cacheBadge?.setAttribute('data-cache-state', cm.level || 'good');
+      if (cacheBadge) {
+        const titleTxt = `${cm.level === 'low' ? t('cache.tip.titleLow', { pct: cm.hitRate.toFixed(1) }) : (cm.level === 'warn' ? t('cache.tip.titleWarn', { pct: cm.hitRate.toFixed(1) }) : t('cache.tip.title', { pct: cm.hitRate.toFixed(1) }))} · ${t('cache.tip.breakdown', { cached: fmtBubbleToken(cm.cachedTokens), uncached: fmtBubbleToken(cm.uncachedTokens), total: fmtBubbleToken(cm.totalInputTokens) })}`;
+        cacheBadge.title = titleTxt;
+        cacheBadge.setAttribute('aria-label', titleTxt);
+      }
+      if (overflowCacheVal) {
+        overflowCacheVal.textContent = `${cm.hitRate.toFixed(1)}%`;
+        overflowCacheVal.className = `overflow-item-val${cm.level === 'low' ? ' is-low' : (cm.level === 'warn' ? ' is-warn' : '')}`;
+      }
+    } else if (state.route && state.requestBusy) {
+      cacheAmount.textContent = isCompact ? '…' : t('badge.cacheCalcWide');
+      cacheBadge?.setAttribute('data-cache-state', 'idle');
+      if (cacheBadge) {
+        cacheBadge.title = t('badge.cacheTitleIdle');
+        cacheBadge.setAttribute('aria-label', t('badge.cache.aria'));
+      }
+      if (overflowCacheVal) {
+        overflowCacheVal.textContent = '…';
+        overflowCacheVal.className = 'overflow-item-val';
+      }
+    } else {
+      cacheAmount.textContent = isCompact ? '--%' : t('badge.cacheIdleWide');
+      cacheBadge?.setAttribute('data-cache-state', 'idle');
+      if (cacheBadge) {
+        cacheBadge.title = t('badge.cacheTitleIdle');
+        cacheBadge.setAttribute('aria-label', t('badge.cache.aria'));
+      }
+      if (overflowCacheVal) {
+        overflowCacheVal.textContent = '--%';
+        overflowCacheVal.className = 'overflow-item-val';
+      }
+    }
+    if (activeTopbarTipKind === 'cache' && !isTopbarTipFeedback && el('topbar-action-tooltip')?.getAttribute('data-visible') === 'true') {
+      syncTopbarActionTooltipContent('cache');
+      positionTopbarActionTooltip(cacheBadge);
+    }
+  }
+
+  function renderCacheSummarySection(d) {
+    const cm = state.route ? getEffectiveCacheMetrics(d) : null;
+    const sessCache = state.route && typeof summarizeSessionCache === 'function' ? summarizeSessionCache(state.sessionCalls) : null;
+    const summaryEl = el('cache-summary');
+    if (summaryEl) {
+      summaryEl.setAttribute('data-cache-state', cm ? (cm.level || 'good') : 'idle');
+      const cBadge = el('cache-badge');
+      const cVal = el('cache-val');
+      const cRead = el('cache-read');
+      const cFresh = el('cache-fresh');
+      const cSess = el('cache-session-rate');
+      const cTakeaway = el('cache-takeaway');
+      if (cm) {
+        const pctFixed = cm.hitRate.toFixed(1);
+        if (cBadge) {
+          if (cm.level === 'high') { cBadge.textContent = t('cache.pill.high'); cBadge.className = 'key-pill pill-good'; }
+          else if (cm.level === 'good') { cBadge.textContent = t('cache.pill.good'); cBadge.className = 'key-pill pill-good'; }
+          else if (cm.level === 'cold') { cBadge.textContent = t('cache.pill.cold'); cBadge.className = 'key-pill pill-info'; }
+          else if (cm.level === 'warn') { cBadge.textContent = t('cache.pill.warn'); cBadge.className = 'key-pill pill-warn'; }
+          else if (cm.level === 'low') { cBadge.textContent = t('cache.pill.low'); cBadge.className = 'key-pill pill-danger'; }
+          else { cBadge.textContent = t('cache.pill.idle'); cBadge.className = 'key-pill pill-muted'; }
+        }
+        if (cVal) cVal.textContent = `${pctFixed}%`;
+        if (cRead) cRead.textContent = short(cm.cachedTokens);
+        if (cFresh) cFresh.textContent = short(cm.uncachedTokens);
+        if (cSess) cSess.textContent = sessCache ? `${sessCache.hitRate.toFixed(1)}%` : `${pctFixed}%`;
+        if (cTakeaway) {
+          if (cm.level === 'cold') {
+            cTakeaway.textContent = t('cache.takeaway.cold', { total: fmt(cm.totalInputTokens), cached: fmt(cm.cachedTokens) });
+          } else if (cm.level === 'low') {
+            cTakeaway.textContent = t('cache.takeaway.low', { pct: pctFixed, uncached: fmt(cm.uncachedTokens) });
+          } else if (cm.level === 'warn') {
+            cTakeaway.textContent = t('cache.takeaway.warn', { pct: pctFixed, uncached: fmt(cm.uncachedTokens), cached: fmt(cm.cachedTokens) });
+          } else if (cm.level === 'high') {
+            cTakeaway.textContent = t('cache.takeaway.high', { pct: pctFixed, total: fmt(cm.totalInputTokens), cached: fmt(cm.cachedTokens), uncached: fmt(cm.uncachedTokens) });
+          } else {
+            cTakeaway.textContent = t('cache.takeaway.good', { pct: pctFixed, cached: fmt(cm.cachedTokens), uncached: fmt(cm.uncachedTokens) });
+          }
+        }
+      } else {
+        if (cBadge) { cBadge.textContent = t('cache.pill.idle'); cBadge.className = 'key-pill pill-muted'; }
+        if (cVal) cVal.textContent = '—';
+        if (cRead) cRead.textContent = '—';
+        if (cFresh) cFresh.textContent = '—';
+        if (cSess) cSess.textContent = '—';
+        if (cTakeaway) cTakeaway.textContent = t('cache.takeaway.idle');
+      }
+    }
+    const cacheTechEl = el('cache-tech-detail');
+    if (cacheTechEl) {
+      cacheTechEl.textContent = cm
+        ? t('tech.cacheDetail.val', { pct: cm.hitRate.toFixed(1), cached: fmt(cm.cachedTokens), uncached: fmt(cm.uncachedTokens) })
+        : '—';
+    }
+  }
+
   function syncSpeedBadgeText() {
     const sp = state.latest?.speed;
     const speedAmount = el('speed-amount');
@@ -14813,6 +15168,8 @@
       el('amount').textContent = t('badge.noSession');
       setHoverExtra(t('badge.clickOpen'));
       syncSpeedBadgeText();
+      syncCacheBadgeText();
+      renderCacheSummarySection(null);
       el('badge-tokens').title = t('badge.tokensTitle');
       renderQuickContextControls();
       return;
@@ -14889,11 +15246,12 @@
 
     el('badge-tokens').title = t('badge.tokensTitle');
 
-    // 渲染输出速度 (统一使用 tok/s)
+    // 渲染输出速度 (统一使用 tok/s) 与上下文缓存命中率
     const sp = d?.speed;
     const speedBadge = el('badge-speed');
     const speedHoverExtra = el('speed-hover-extra');
     syncSpeedBadgeText();
+    syncCacheBadgeText();
     if (speedBadge) {
       if (sp?.tps != null) {
         if (speedHoverExtra) {
@@ -15030,6 +15388,8 @@
       }
     }
 
+    renderCacheSummarySection(d);
+
     el('model').textContent = d?.model?.startsWith('MODEL_PLACEHOLDER') ? t('tech.modelPlaceholder', { id: d.model }) : d?.model || t('tech.modelMissing');
     el('request-status').textContent = d?.exceeded ? t('tech.req.exceeded') : d?.network ? t('tech.req.network') : d?.error ? t('tech.req.failed') : d?.status === 'reported' ? t('tech.req.reported') : d?.status === 'estimated' ? t('tech.req.estimated') : t('tech.req.waiting');
     el('actual').textContent = d?.actual != null ? token(d.actual) : d?.exceeded ? t('tech.actual.exceeded', { val: fmt(d.serviceLimit || 0) }) : t('tech.actual.unknown');
@@ -15107,7 +15467,10 @@
         }
       }
       for (let i = rows.length - 1; i >= 0; i--) {
-        const value = summarize(rows[i], { cascadeModelConfigs: state.cascadeModelConfigs || state.scan?.cascadeModelConfigs || [] });
+        const value = summarize(rows[i], {
+          cascadeModelConfigs: state.cascadeModelConfigs || state.scan?.cascadeModelConfigs || [],
+          turnCount: offset + i + 1
+        });
         if (value) {
           state.latest = withStepError(value, rows[i]);
           const callInfo = parseGeneratorCall ? parseGeneratorCall(rows[i], id, 'desktop', { cascadeModelConfigs: modelConfigsList }) : null;

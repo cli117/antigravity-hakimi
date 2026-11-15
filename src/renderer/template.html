@@ -30,6 +30,12 @@
     <span id="speed-hover-extra" class="sr-only"></span>
   </button>
 
+  <!-- 顶部基本单元 2.5: 上下文缓存命中率 (%) -->
+  <button id="badge-cache" class="ag-unit" type="button" aria-label="上下文缓存命中率统计" data-i18n-aria="badge.cache.aria" aria-describedby="topbar-action-tooltip" aria-expanded="false" data-cache-state="idle">
+    <span class="cache-icon" aria-hidden="true"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="8" cy="3.75" rx="5.25" ry="2.1"></ellipse><path d="M2.75 3.75v4.1c0 1.16 2.35 2.1 5.25 2.1s5.25-.94 5.25-2.1v-4.1"></path><path d="M2.75 7.85v4.1c0 1.16 2.35 2.1 5.25 2.1s5.25-.94 5.25-2.1v-4.1"></path></svg></span>
+    <span id="cache-amount">--%</span>
+  </button>
+
   <!-- 顶部基本单元 3: 累计 Token 用量（细线统计图标） -->
   <button id="badge-tokens" class="ag-unit" type="button" aria-label="Token 用量一览" data-i18n-aria="badge.tokens.aria" aria-expanded="false">
     <span class="token-fire-dot" aria-hidden="true"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13V9M8 13V4M13 13V7"></path></svg></span>
@@ -80,6 +86,10 @@
     <button id="overflow-speed-btn" class="overflow-item" type="button">
       <span class="overflow-item-label"><span>⚡</span><span data-i18n="overflow.speed">输出速度</span></span>
       <span id="overflow-speed-val" class="overflow-item-val">-- tok/s</span>
+    </button>
+    <button id="overflow-cache-btn" class="overflow-item" type="button">
+      <span class="overflow-item-label"><span class="cache-icon"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="8" cy="3.75" rx="5.25" ry="2.1"></ellipse><path d="M2.75 3.75v4.1c0 1.16 2.35 2.1 5.25 2.1s5.25-.94 5.25-2.1v-4.1"></path><path d="M2.75 7.85v4.1c0 1.16 2.35 2.1 5.25 2.1s5.25-.94 5.25-2.1v-4.1"></path></svg></span><span data-i18n="overflow.cache">缓存命中率</span></span>
+      <span id="overflow-cache-val" class="overflow-item-val">--%</span>
     </button>
     <button id="overflow-tokens-btn" class="overflow-item" type="button">
       <span class="overflow-item-label"><span class="token-fire-dot"></span><span data-i18n="overflow.tokens">Token 用量一览</span></span>
@@ -160,6 +170,33 @@
           <div id="speed-takeaway" class="key-takeaway" data-i18n="session.speed.wait">等待首次模型输出产生速度统计…</div>
         </div>
 
+        <!-- 卡片 2.5: 上下文缓存命中率速览 -->
+        <div id="cache-summary" class="cache-summary-card">
+          <div class="key-header">
+            <span class="key-title cache-summary-title" data-i18n="session.cacheSummary.title">♻️ 上下文缓存命中</span>
+            <span id="cache-badge" class="key-pill pill-muted" data-i18n="session.cache.pending">待统计</span>
+          </div>
+          <div class="key-stats" style="grid-template-columns:repeat(4,1fr);">
+            <div class="key-stat">
+              <div class="key-stat-label" data-i18n="session.cache.rate">本轮命中率</div>
+              <div id="cache-val" class="key-stat-val cache-stat-primary">—</div>
+            </div>
+            <div class="key-stat">
+              <div class="key-stat-label" data-i18n="session.cache.read">缓存复用</div>
+              <div id="cache-read" class="key-stat-val">—</div>
+            </div>
+            <div class="key-stat">
+              <div class="key-stat-label" data-i18n="session.cache.fresh">未缓存新增</div>
+              <div id="cache-fresh" class="key-stat-val">—</div>
+            </div>
+            <div class="key-stat">
+              <div class="key-stat-label" data-i18n="session.cache.sessionRate">会话命中率</div>
+              <div id="cache-session-rate" class="key-stat-val">—</div>
+            </div>
+          </div>
+          <div id="cache-takeaway" class="key-takeaway" data-i18n="session.cache.wait">等待请求返回输入与缓存复用统计…</div>
+        </div>
+
         <!-- 紧凑上下文设置入口卡片（支持直接点选常用档位） -->
         <div id="ctx-compact-card" class="ctx-compact-card">
           <div class="ctx-compact-top">
@@ -194,7 +231,7 @@
           <div id="drawer-body" class="drawer-body" style="display:none;">
             <p id="status" data-i18n="session.tech.checking">正在核对请求和附件…</p><p id="model"></p>
             <h4 data-i18n="session.tech.latestReq">最近一次模型请求</h4>
-            <dl><dt data-i18n="session.tech.reqStatus">请求状态</dt><dd id="request-status">—</dd><dt data-i18n="session.tech.actual">模型返回输入＋输出</dt><dd id="actual">—</dd><dt data-i18n="session.tech.estimate">客户端估算（可能漏附件）</dt><dd id="estimate">—</dd><dt data-i18n="session.tech.budget">客户端预算字段</dt><dd id="budget">—</dd><dt data-i18n="session.tech.serviceLimit">该次报错的服务端限制</dt><dd id="service-limit">—</dd><dt data-i18n="session.tech.percent">相对客户端预算</dt><dd id="percent">—</dd></dl>
+            <dl><dt data-i18n="session.tech.reqStatus">请求状态</dt><dd id="request-status">—</dd><dt data-i18n="session.tech.actual">模型返回输入＋输出</dt><dd id="actual">—</dd><dt data-i18n="session.tech.cacheDetail">本轮输入构成（缓存／新增）</dt><dd id="cache-tech-detail">—</dd><dt data-i18n="session.tech.estimate">客户端估算（可能漏附件）</dt><dd id="estimate">—</dd><dt data-i18n="session.tech.budget">客户端预算字段</dt><dd id="budget">—</dd><dt data-i18n="session.tech.serviceLimit">该次报错的服务端限制</dt><dd id="service-limit">—</dd><dt data-i18n="session.tech.percent">相对客户端预算</dt><dd id="percent">—</dd></dl>
             <h4 data-i18n="session.tech.sessionHeading">整个会话累计内容 · 本地估算</h4>
             <dl><dt data-i18n="session.tech.sessionTotal">可读取文本 token 估算</dt><dd id="session-total" data-i18n="session.tech.scanning">扫描中…</dd><dt data-i18n="session.tech.characters">实际读取文字字符数</dt><dd id="characters">—</dd><dt data-i18n="session.tech.user">用户消息</dt><dd id="user">—</dd><dt data-i18n="session.tech.assistant">模型回复</dt><dd id="assistant">—</dd><dt data-i18n="session.tech.thinking">可见思考内容</dt><dd id="thinking">—</dd><dt data-i18n="session.tech.tools">工具调用与工具输出</dt><dd id="tools">—</dd><dt data-i18n="session.tech.summaries">历史压缩摘要</dt><dd id="summaries">—</dd><dt data-i18n="session.tech.system">当前系统提示与工具定义</dt><dd id="system">—</dd><dt data-i18n="session.tech.attachments">上传／输出附件文本</dt><dd id="attachment-total">—</dd><dt data-i18n="session.tech.steps">历史步骤完整性</dt><dd id="steps">—</dd></dl>
             <p id="coverage"></p><h4 data-i18n="session.tech.filesHeading">附件逐项检查</h4><div id="files"></div><button id="refresh" type="button" data-i18n="session.tech.rescan">重新扫描整段会话与附件</button>
@@ -712,6 +749,14 @@
                 </div>
               </div>
               <div class="color-item">
+                <span class="color-item-lbl" data-i18n="settings.colors.cacheText">缓存命中率</span>
+                <div class="color-item-ctrls">
+                  <input id="color-cacheText" class="color-picker" type="color" value="#34d399" data-i18n-aria="settings.colors.cacheText" aria-label="缓存命中率颜色" />
+                  <button id="swatch-cacheText" class="color-swatch-btn" type="button" data-color-slot="cacheText" data-color-label="缓存命中率" data-i18n-color-label="settings.colors.cacheText" data-i18n-title="colors.swatchTitle" title="点击打开颜色选取器"></button>
+                  <button id="reset-cacheText" class="color-reset-btn" type="button" data-mode="auto" data-i18n="colors.followTheme">跟随主题</button>
+                </div>
+              </div>
+              <div class="color-item">
                 <span class="color-item-lbl" data-i18n="settings.colors.tokenTotal">累计 token 用量</span>
                 <div class="color-item-ctrls">
                   <input id="color-tokenTotal" class="color-picker" type="color" value="#c084fc" data-i18n-aria="settings.colors.tokenTotal" aria-label="累计 token 用量颜色" />
@@ -883,6 +928,10 @@
           <div class="heat-sum-item">
             <span class="heat-sum-label" data-i18n="tokens.heat.sumActiveAvg">活跃日均:</span>
             <span id="h-sum-active-avg" class="heat-sum-val" data-i18n="tokens.heat.activeAvgPlaceholder">0 Tokens (0天)</span>
+          </div>
+          <div class="heat-sum-item">
+            <span class="heat-sum-label" data-i18n="tokens.heat.sumCacheRate">缓存命中:</span>
+            <span id="h-sum-cache-rate" class="heat-sum-val">--%</span>
           </div>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11px;color:var(--ag-text-muted);flex-wrap:wrap;gap:6px">

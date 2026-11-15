@@ -829,6 +829,10 @@ test('checkAppVersionSync detects version mismatch and renderer exposes quick ac
     'session-ctx-preset-bar',
     'topbar-action-tooltip',
     'cli-unlock-card',
+    'badge-cache',
+    'overflow-cache-btn',
+    'cache-summary',
+    'h-sum-cache-rate',
   ]) {
     assert.ok(tpl.includes(marker), `Missing ${marker} in template.html`);
     assert.ok(renderedJs.includes(marker), `Missing ${marker} in meter-renderer.js`);
@@ -955,4 +959,133 @@ test('build-hakimi.sh and set-hakimi-icon.sh escalate to SIGKILL on stuck proces
     }
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test('meter-core computes cache hit rate, avoids turn-1 false alarms, preserves zero-cache turns across previousValidContext, and aggregates session/interval cache metrics', () => {
+  // 1. computeCacheMetrics edge cases & level classification
+  assert.equal(meterCore.computeCacheMetrics(0, 0), null);
+  assert.equal(meterCore.computeCacheMetrics(null, null), null);
+  assert.equal(meterCore.computeCacheMetrics(-1, -1), null);
+
+  const turn1Cold = meterCore.computeCacheMetrics(16290, 0, { turnCount: 1 });
+  assert.deepEqual(turn1Cold, {
+    hitRate: 0,
+    cachedTokens: 0,
+    uncachedTokens: 16290,
+    totalInputTokens: 16290,
+    level: 'cold',
+  });
+
+  const shortCold = meterCore.computeCacheMetrics(5000, 0, { turnCount: 3 });
+  assert.equal(shortCold.level, 'cold');
+
+  const multiTurnLow = meterCore.computeCacheMetrics(129003, 0, { turnCount: 4 });
+  assert.equal(multiTurnLow.hitRate, 0);
+  assert.equal(multiTurnLow.level, 'low');
+
+  const warnHit = meterCore.computeCacheMetrics(45212, 16832, { turnCount: 2 });
+  assert.equal(warnHit.hitRate, 27.1);
+  assert.equal(warnHit.level, 'warn');
+
+  const goodHit = meterCore.computeCacheMetrics(29127, 62045, { turnCount: 3 });
+  assert.equal(goodHit.hitRate, 68.1);
+  assert.equal(goodHit.level, 'good');
+
+  const highHit = meterCore.computeCacheMetrics(2049, 260136, { turnCount: 7 });
+  assert.equal(highHit.hitRate, 99.2);
+  assert.equal(highHit.level, 'high');
+
+  // 2. summarize() turn-1 cold start vs multi-turn cache miss with previousValidContext
+  const turn1Sum = meterCore.summarize(
+    {
+      chatModel: {
+        model: 'Orchestrator (Carbon)',
+        usage: { inputTokens: 16831, cacheReadTokens: 0, outputTokens: 591 },
+      },
+    },
+    { turnCount: 1 }
+  );
+  assert.equal(turn1Sum.cacheHitRate, 0);
+  assert.equal(turn1Sum.uncachedInput, 16831);
+  assert.equal(turn1Sum.cached, 0);
+  assert.equal(turn1Sum.cache.level, 'cold');
+
+  const highSum = meterCore.summarize(
+    {
+      chatModel: {
+        model: 'Orchestrator (Carbon)',
+        usage: { inputTokens: 2049, cacheReadTokens: 260136, outputTokens: 1356 },
+      },
+    },
+    { turnCount: 7 }
+  );
+  assert.equal(highSum.cacheHitRate, 99.2);
+  assert.equal(highSum.cache.level, 'high');
+
+  // When a new turn genuinely has 0 cache read tokens, it must NOT fall back to previousValidContext.cached
+  const missAfterHigh = meterCore.summarize(
+    {
+      chatModel: {
+        model: 'Orchestrator (Carbon)',
+        usage: { inputTokens: 129003, cacheReadTokens: 0, outputTokens: 361 },
+      },
+    },
+    { turnCount: 4, previousValidContext: highSum }
+  );
+  assert.equal(missAfterHigh.cached, 0);
+  assert.equal(missAfterHigh.uncachedInput, 129003);
+  assert.equal(missAfterHigh.input, 129003);
+  assert.equal(missAfterHigh.cacheHitRate, 0);
+  assert.equal(missAfterHigh.cache.level, 'low');
+
+  // When a non-overflow error happens without usage, fallback preserves previousValidContext's 0 cached value without coercing
+  const errFallback = meterCore.summarize(
+    {
+      chatModel: {
+        retryInfos: [{ error: 'ECONNRESET' }],
+      },
+    },
+    { previousValidContext: missAfterHigh }
+  );
+  assert.equal(errFallback.cached, 0);
+  assert.equal(errFallback.uncachedInput, 129003);
+  assert.equal(errFallback.cacheHitRate, 0);
+  assert.equal(errFallback.cache.level, 'low');
+
+  // 3. summarizeSessionCache filters synthetic / empty entries and computes cumulative hitRate
+  assert.equal(meterCore.summarizeSessionCache([]), null);
+  assert.equal(
+    meterCore.summarizeSessionCache([
+      { callId: 'test_001', inputTokens: 1000, cacheReadTokens: 9000 },
+      { callId: 'call_empty', inputTokens: 0, cacheReadTokens: 0 },
+    ]),
+    null
+  );
+  const sessCache = meterCore.summarizeSessionCache([
+    { callId: 'test_synthetic', inputTokens: 500000, cacheReadTokens: 0 },
+    { callId: 'call_1', inputTokens: 10000, cacheReadTokens: 0 },
+    { callId: 'call_2', inputTokens: 2000, cacheReadTokens: 10000 },
+    { callId: 'call_3', inputTokens: 3000, cacheTokens: 15000 },
+  ]);
+  assert.deepEqual(sessCache, {
+    hitRate: 62.5,
+    cachedTokens: 25000,
+    uncachedTokens: 15000,
+    totalInputTokens: 40000,
+    turns: 3,
+  });
+
+  // 4. calculateIntervalTokens computes interval cacheHitRate
+  const intervalWithCache = meterCore.calculateIntervalTokens(
+    {
+      '2026-11-10': { total: 100000, input: 10000, output: 5000, cache: 85000 },
+      '2026-11-11': { total: 50000, input: 5000, output: 2000, cache: 43000 },
+    },
+    ['2026-11-10', '2026-11-11'],
+    { todayStr: '2026-11-11' }
+  );
+  assert.equal(intervalWithCache.cacheHitRate, 89.5);
+
+  const intervalEmpty = meterCore.calculateIntervalTokens({}, ['2026-11-10'], { todayStr: '2026-11-10' });
+  assert.equal(intervalEmpty.cacheHitRate, null);
 });

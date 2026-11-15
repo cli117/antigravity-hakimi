@@ -52,10 +52,12 @@
           heatPopDate.textContent = `${dateLabel}${item.isToday ? t('heat.today') : (item.key === win.firstStr ? t('heat.firstUse') : '')}`;
           heatPopVal.textContent = item.tokens > 0 ? `${fmtYi(item.tokens)} Tokens` : (item.isFuture ? t('heat.future') : '0 Tokens');
           if (item.rec) {
+            const dayCacheTotal = (Number(item.rec.input) || 0) + (Number(item.rec.cache) || 0);
+            const dayCachePct = dayCacheTotal > 0 ? ` (${((Number(item.rec.cache) / dayCacheTotal) * 100).toFixed(1)}%)` : '';
             heatPopDet.innerHTML = `
               <div class="pop-det-col"><span class="pop-det-val">Prompt: ${fmtYi(item.rec.input)}</span><span class="pop-det-trans">${t('heat.prompt')}</span></div>
               <div class="pop-det-col"><span class="pop-det-val">Output: ${fmtYi(item.rec.output)}</span><span class="pop-det-trans">${t('heat.output')}</span></div>
-              <div class="pop-det-col"><span class="pop-det-val">Cache: ${fmtYi(item.rec.cache)}</span><span class="pop-det-trans">${t('heat.cache')}</span></div>
+              <div class="pop-det-col"><span class="pop-det-val">Cache: ${fmtYi(item.rec.cache)}${dayCachePct}</span><span class="pop-det-trans">${t('heat.cache')}</span></div>
             `.trim();
             heatPopDet.style.display = 'flex';
           } else {
@@ -274,6 +276,10 @@
     sumTokensEl.textContent = `${fmtYi(tokAgg.totalTokens)} Tokens`;
     if (sumDailyAvgEl) sumDailyAvgEl.textContent = `${fmtYi(tokAgg.dailyAverageTokens)} Tokens`;
     if (sumActiveAvgEl) sumActiveAvgEl.textContent = t('heat.activeDays', { avg: fmtYi(tokAgg.activeDailyAverageTokens), days: tokAgg.activeDays });
+    const sumCacheRateEl = el('h-sum-cache-rate');
+    if (sumCacheRateEl) {
+      sumCacheRateEl.textContent = tokAgg.cacheHitRate != null ? `${tokAgg.cacheHitRate.toFixed(1)}%` : '--%';
+    }
   }
 
   function renderHeatmapMonthly() {
@@ -354,10 +360,12 @@
         heatPopDate.textContent = `${mDateLabel}${isToday ? t('heat.today') : ''}`;
         heatPopVal.textContent = tokens > 0 ? `${fmtYi(tokens)} Tokens` : (isFuture ? t('heat.future') : '0 Tokens');
         if (rec) {
+          const mCacheTotal = (Number(rec.input) || 0) + (Number(rec.cache) || 0);
+          const mCachePct = mCacheTotal > 0 ? ` (${((Number(rec.cache) / mCacheTotal) * 100).toFixed(1)}%)` : '';
           heatPopDet.innerHTML = `
             <div class="pop-det-col"><span class="pop-det-val">Prompt: ${fmtYi(rec.input)}</span><span class="pop-det-trans">${t('heat.prompt')}</span></div>
             <div class="pop-det-col"><span class="pop-det-val">Output: ${fmtYi(rec.output)}</span><span class="pop-det-trans">${t('heat.output')}</span></div>
-            <div class="pop-det-col"><span class="pop-det-val">Cache: ${fmtYi(rec.cache)}</span><span class="pop-det-trans">${t('heat.cache')}</span></div>
+            <div class="pop-det-col"><span class="pop-det-val">Cache: ${fmtYi(rec.cache)}${mCachePct}</span><span class="pop-det-trans">${t('heat.cache')}</span></div>
           `.trim();
           heatPopDet.style.display = 'flex';
         } else {

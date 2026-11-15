@@ -4,6 +4,8 @@
   globalThis.__AGContextMeter?.dispose();
   const {
     summarize,
+    computeCacheMetrics,
+    summarizeSessionCache,
     parseGeneratorCall,
     normalizeModelId,
     resolveStableModelId,
@@ -398,31 +400,31 @@
   // 带迟滞区间（Hysteresis）的四阶段渐进收缩计算，防止临界宽度抖动
   function computeNextLayoutMode(availWidth, currentMode) {
     // 阈值设计：
-    // wide <-> compact: 收缩 < 195px, 恢复 >= 210px
-    // compact <-> minimal: 收缩 < 135px, 恢复 >= 150px
+    // wide <-> compact: 收缩 < 285px, 恢复 >= 300px
+    // compact <-> minimal: 收缩 < 212px, 恢复 >= 226px
     // minimal <-> ring-only: 收缩 < 68px, 恢复 >= 82px
     if (availWidth == null || Number.isNaN(availWidth)) return 'wide';
     if (currentMode === 'wide') {
       if (availWidth < 68) return 'ring-only';
-      if (availWidth < 135) return 'minimal';
-      if (availWidth < 195) return 'compact';
+      if (availWidth < 212) return 'minimal';
+      if (availWidth < 285) return 'compact';
       return 'wide';
     }
     if (currentMode === 'compact') {
-      if (availWidth >= 210) return 'wide';
+      if (availWidth >= 300) return 'wide';
       if (availWidth < 68) return 'ring-only';
-      if (availWidth < 135) return 'minimal';
+      if (availWidth < 212) return 'minimal';
       return 'compact';
     }
     if (currentMode === 'minimal') {
-      if (availWidth >= 210) return 'wide';
-      if (availWidth >= 150) return 'compact';
+      if (availWidth >= 300) return 'wide';
+      if (availWidth >= 226) return 'compact';
       if (availWidth < 68) return 'ring-only';
       return 'minimal';
     }
     // currentMode === 'ring-only'
-    if (availWidth >= 210) return 'wide';
-    if (availWidth >= 150) return 'compact';
+    if (availWidth >= 300) return 'wide';
+    if (availWidth >= 226) return 'compact';
     if (availWidth >= 82) return 'minimal';
     return 'ring-only';
   }
@@ -489,6 +491,7 @@
         el('badge-overflow')?.setAttribute('aria-expanded', 'false');
       }
       syncSpeedBadgeText();
+      syncCacheBadgeText();
     }
   }
 
@@ -509,7 +512,9 @@
     applyLayoutMode(nextMode);
     if (state.tooltipOpen) positionContextTooltip();
     if (el('topbar-action-tooltip')?.getAttribute('data-visible') === 'true') {
-      const anchor = activeTopbarTipKind === 'window' ? el('btn-topbar-window') : el('btn-topbar-compact');
+      const anchor = activeTopbarTipKind === 'window'
+        ? el('btn-topbar-window')
+        : (activeTopbarTipKind === 'cache' ? el('badge-cache') : el('btn-topbar-compact'));
       positionTopbarActionTooltip(anchor);
     }
     if (isAnyPanelOpen() || !el('overflow-menu')?.hidden || !el('topbar-window-popover')?.hidden) positionFloatingPanels();
@@ -629,6 +634,45 @@
       titleEl.textContent = isQuickCompactBusy ? t('session.quick.compactBusy') : t('topbar.quick.compactTitle');
       descEl.textContent = isQuickCompactBusy ? t('topbar.quick.compactBusyDesc') : t('topbar.quick.compactDesc');
       descEl.hidden = false;
+    } else if (kind === 'cache') {
+      const cm = state.route ? getEffectiveCacheMetrics(state.latest) : null;
+      if (!cm) {
+        tip.setAttribute('data-tone', 'default');
+        titleEl.textContent = t('cache.tip.idleTitle');
+        descEl.textContent = t('cache.tip.idleDesc');
+        descEl.hidden = false;
+      } else {
+        const tone = cm.level === 'low' ? 'error' : (cm.level === 'warn' ? 'warn' : 'default');
+        tip.setAttribute('data-tone', tone);
+        const pctFixed = cm.hitRate.toFixed(1);
+        titleEl.textContent = cm.level === 'low'
+          ? t('cache.tip.titleLow', { pct: pctFixed })
+          : (cm.level === 'warn'
+            ? t('cache.tip.titleWarn', { pct: pctFixed })
+            : t('cache.tip.title', { pct: pctFixed }));
+        const lines = [
+          t('cache.tip.breakdown', {
+            cached: fmtBubbleToken(cm.cachedTokens),
+            uncached: fmtBubbleToken(cm.uncachedTokens),
+            total: fmtBubbleToken(cm.totalInputTokens)
+          })
+        ];
+        const sessCache = typeof summarizeSessionCache === 'function' ? summarizeSessionCache(state.sessionCalls) : null;
+        if (sessCache && sessCache.turns >= 2) {
+          lines.push(t('cache.tip.sessionLine', {
+            pct: sessCache.hitRate.toFixed(1),
+            turns: sessCache.turns,
+            cached: fmtBubbleToken(sessCache.cachedTokens)
+          }));
+        }
+        if (cm.level === 'low' || cm.level === 'warn') {
+          lines.push(t('cache.tip.warnHint'));
+        } else if (cm.level === 'cold') {
+          lines.push(t('cache.tip.coldHint'));
+        }
+        descEl.textContent = lines.join('\n');
+        descEl.hidden = false;
+      }
     } else if (kind === 'window') {
       const info = typeof resolveQuickContextTarget === 'function' ? resolveQuickContextTarget() : { scopeMode: 'unified', ready: true, currentShortLabel: '—' };
       const curLbl = info.currentShortLabel || t('status.savedShortDefault');
@@ -860,6 +904,7 @@
     const pOverflow = el('overflow-menu');
     const bContext = el('badge');
     const bSpeed = el('badge-speed');
+    const bCache = el('badge-cache');
     const bTokens = el('badge-tokens');
     const bOverflow = el('badge-overflow');
 
@@ -875,6 +920,7 @@
       pTokens.hidden = false;
       bContext.setAttribute('aria-expanded', 'false');
       bSpeed?.setAttribute('aria-expanded', 'false');
+      bCache?.setAttribute('aria-expanded', 'false');
       bTokens.setAttribute('aria-expanded', 'true');
       syncHostStackingElevation(true);
       positionFloatingPanels();
@@ -890,6 +936,7 @@
       pContext.hidden = false;
       bContext.setAttribute('aria-expanded', 'true');
       bSpeed?.setAttribute('aria-expanded', 'true');
+      bCache?.setAttribute('aria-expanded', String(activeContextTab === 'session'));
       bTokens.setAttribute('aria-expanded', 'false');
       syncHostStackingElevation(true);
       positionFloatingPanels();
@@ -909,6 +956,7 @@
       pTokens.hidden = true;
       bContext.setAttribute('aria-expanded', 'false');
       bSpeed?.setAttribute('aria-expanded', 'false');
+      bCache?.setAttribute('aria-expanded', 'false');
       bTokens.setAttribute('aria-expanded', 'false');
       closeColorPicker();
       hidePopover();
@@ -1066,10 +1114,34 @@
 
   el('badge').addEventListener('click', toggleContext);
   el('badge-speed')?.addEventListener('click', toggleContext);
+  el('badge-cache')?.addEventListener('click', () => {
+    if (!el('panel').hidden && activeContextTab === 'session') {
+      showPanel('none');
+    } else {
+      showPanel('context');
+      switchContextTab('session');
+    }
+  });
   el('badge-tokens').addEventListener('click', toggleTokens);
   el('badge-overflow')?.addEventListener('click', toggleOverflowMenu);
   el('overflow-speed-btn')?.addEventListener('click', () => showPanel('context'));
+  el('overflow-cache-btn')?.addEventListener('click', () => {
+    showPanel('context');
+    switchContextTab('session');
+  });
   el('overflow-tokens-btn')?.addEventListener('click', () => showPanel('tokens'));
+  el('badge-cache')?.addEventListener('mouseenter', () => {
+    if (!isAnyPanelOpen() && el('topbar-window-popover')?.hidden !== false) showTopbarActionTooltip('cache', el('badge-cache'));
+  });
+  el('badge-cache')?.addEventListener('mouseleave', () => {
+    hideTopbarActionTooltip(false);
+  });
+  el('badge-cache')?.addEventListener('focus', () => {
+    if (!isAnyPanelOpen() && el('topbar-window-popover')?.hidden !== false) showTopbarActionTooltip('cache', el('badge-cache'));
+  });
+  el('badge-cache')?.addEventListener('blur', () => {
+    hideTopbarActionTooltip(false);
+  });
   el('close').addEventListener('click', () => showPanel('none'));
   el('close-tokens')?.addEventListener('click', () => showPanel('none'));
 
@@ -1165,6 +1237,7 @@
   el('btn-topbar-window')?.addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
   el('badge-tokens').addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
   el('badge-speed')?.addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
+  el('badge-cache')?.addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
 
   // =========================================================================
   // 模块 3: 上下文面板分页、设置视图、模型产品偏好、重启验证与速度对比
@@ -2355,6 +2428,9 @@
     btnTabModels?.setAttribute('aria-selected', String(activeContextTab === 'models'));
     btnTabSpeed?.setAttribute('aria-selected', String(activeContextTab === 'speed'));
     btnTabSettings?.setAttribute('aria-selected', String(activeContextTab === 'settings'));
+    if (!el('panel')?.hidden) {
+      el('badge-cache')?.setAttribute('aria-expanded', String(activeContextTab === 'session'));
+    }
   }
 
   let prevTabBeforeSettings = 'models';
@@ -6779,6 +6855,122 @@
     if (state.tooltipOpen) positionContextTooltip();
   }
 
+  function getEffectiveCacheMetrics(d) {
+    if (!d) return null;
+    if (d.cache && typeof d.cache === 'object') return d.cache;
+    if (typeof computeCacheMetrics === 'function' && d.input != null && d.input > 0) {
+      const cached = Number(d.cached || 0);
+      const uncached = d.uncachedInput != null ? Number(d.uncachedInput) : Math.max(0, Number(d.input) - cached);
+      return computeCacheMetrics(uncached, cached);
+    }
+    return null;
+  }
+
+  function syncCacheBadgeText() {
+    const cacheBadge = el('badge-cache');
+    const cacheAmount = el('cache-amount');
+    const overflowCacheVal = el('overflow-cache-val');
+    if (!cacheAmount) return;
+    const isCompact = state.layoutMode === 'compact';
+    const cm = state.route ? getEffectiveCacheMetrics(state.latest) : null;
+    if (cm) {
+      const pctStr = (cm.hitRate > 0 && cm.hitRate < 1) ? '<1' : String(Math.round(cm.hitRate));
+      cacheAmount.textContent = isCompact ? `${pctStr}%` : t('badge.cacheWide', { pct: pctStr });
+      cacheBadge?.setAttribute('data-cache-state', cm.level || 'good');
+      if (cacheBadge) {
+        const titleTxt = `${cm.level === 'low' ? t('cache.tip.titleLow', { pct: cm.hitRate.toFixed(1) }) : (cm.level === 'warn' ? t('cache.tip.titleWarn', { pct: cm.hitRate.toFixed(1) }) : t('cache.tip.title', { pct: cm.hitRate.toFixed(1) }))} · ${t('cache.tip.breakdown', { cached: fmtBubbleToken(cm.cachedTokens), uncached: fmtBubbleToken(cm.uncachedTokens), total: fmtBubbleToken(cm.totalInputTokens) })}`;
+        cacheBadge.title = titleTxt;
+        cacheBadge.setAttribute('aria-label', titleTxt);
+      }
+      if (overflowCacheVal) {
+        overflowCacheVal.textContent = `${cm.hitRate.toFixed(1)}%`;
+        overflowCacheVal.className = `overflow-item-val${cm.level === 'low' ? ' is-low' : (cm.level === 'warn' ? ' is-warn' : '')}`;
+      }
+    } else if (state.route && state.requestBusy) {
+      cacheAmount.textContent = isCompact ? '…' : t('badge.cacheCalcWide');
+      cacheBadge?.setAttribute('data-cache-state', 'idle');
+      if (cacheBadge) {
+        cacheBadge.title = t('badge.cacheTitleIdle');
+        cacheBadge.setAttribute('aria-label', t('badge.cache.aria'));
+      }
+      if (overflowCacheVal) {
+        overflowCacheVal.textContent = '…';
+        overflowCacheVal.className = 'overflow-item-val';
+      }
+    } else {
+      cacheAmount.textContent = isCompact ? '--%' : t('badge.cacheIdleWide');
+      cacheBadge?.setAttribute('data-cache-state', 'idle');
+      if (cacheBadge) {
+        cacheBadge.title = t('badge.cacheTitleIdle');
+        cacheBadge.setAttribute('aria-label', t('badge.cache.aria'));
+      }
+      if (overflowCacheVal) {
+        overflowCacheVal.textContent = '--%';
+        overflowCacheVal.className = 'overflow-item-val';
+      }
+    }
+    if (activeTopbarTipKind === 'cache' && !isTopbarTipFeedback && el('topbar-action-tooltip')?.getAttribute('data-visible') === 'true') {
+      syncTopbarActionTooltipContent('cache');
+      positionTopbarActionTooltip(cacheBadge);
+    }
+  }
+
+  function renderCacheSummarySection(d) {
+    const cm = state.route ? getEffectiveCacheMetrics(d) : null;
+    const sessCache = state.route && typeof summarizeSessionCache === 'function' ? summarizeSessionCache(state.sessionCalls) : null;
+    const summaryEl = el('cache-summary');
+    if (summaryEl) {
+      summaryEl.setAttribute('data-cache-state', cm ? (cm.level || 'good') : 'idle');
+      const cBadge = el('cache-badge');
+      const cVal = el('cache-val');
+      const cRead = el('cache-read');
+      const cFresh = el('cache-fresh');
+      const cSess = el('cache-session-rate');
+      const cTakeaway = el('cache-takeaway');
+      if (cm) {
+        const pctFixed = cm.hitRate.toFixed(1);
+        if (cBadge) {
+          if (cm.level === 'high') { cBadge.textContent = t('cache.pill.high'); cBadge.className = 'key-pill pill-good'; }
+          else if (cm.level === 'good') { cBadge.textContent = t('cache.pill.good'); cBadge.className = 'key-pill pill-good'; }
+          else if (cm.level === 'cold') { cBadge.textContent = t('cache.pill.cold'); cBadge.className = 'key-pill pill-info'; }
+          else if (cm.level === 'warn') { cBadge.textContent = t('cache.pill.warn'); cBadge.className = 'key-pill pill-warn'; }
+          else if (cm.level === 'low') { cBadge.textContent = t('cache.pill.low'); cBadge.className = 'key-pill pill-danger'; }
+          else { cBadge.textContent = t('cache.pill.idle'); cBadge.className = 'key-pill pill-muted'; }
+        }
+        if (cVal) cVal.textContent = `${pctFixed}%`;
+        if (cRead) cRead.textContent = short(cm.cachedTokens);
+        if (cFresh) cFresh.textContent = short(cm.uncachedTokens);
+        if (cSess) cSess.textContent = sessCache ? `${sessCache.hitRate.toFixed(1)}%` : `${pctFixed}%`;
+        if (cTakeaway) {
+          if (cm.level === 'cold') {
+            cTakeaway.textContent = t('cache.takeaway.cold', { total: fmt(cm.totalInputTokens), cached: fmt(cm.cachedTokens) });
+          } else if (cm.level === 'low') {
+            cTakeaway.textContent = t('cache.takeaway.low', { pct: pctFixed, uncached: fmt(cm.uncachedTokens) });
+          } else if (cm.level === 'warn') {
+            cTakeaway.textContent = t('cache.takeaway.warn', { pct: pctFixed, uncached: fmt(cm.uncachedTokens), cached: fmt(cm.cachedTokens) });
+          } else if (cm.level === 'high') {
+            cTakeaway.textContent = t('cache.takeaway.high', { pct: pctFixed, total: fmt(cm.totalInputTokens), cached: fmt(cm.cachedTokens), uncached: fmt(cm.uncachedTokens) });
+          } else {
+            cTakeaway.textContent = t('cache.takeaway.good', { pct: pctFixed, cached: fmt(cm.cachedTokens), uncached: fmt(cm.uncachedTokens) });
+          }
+        }
+      } else {
+        if (cBadge) { cBadge.textContent = t('cache.pill.idle'); cBadge.className = 'key-pill pill-muted'; }
+        if (cVal) cVal.textContent = '—';
+        if (cRead) cRead.textContent = '—';
+        if (cFresh) cFresh.textContent = '—';
+        if (cSess) cSess.textContent = '—';
+        if (cTakeaway) cTakeaway.textContent = t('cache.takeaway.idle');
+      }
+    }
+    const cacheTechEl = el('cache-tech-detail');
+    if (cacheTechEl) {
+      cacheTechEl.textContent = cm
+        ? t('tech.cacheDetail.val', { pct: cm.hitRate.toFixed(1), cached: fmt(cm.cachedTokens), uncached: fmt(cm.uncachedTokens) })
+        : '—';
+    }
+  }
+
   function syncSpeedBadgeText() {
     const sp = state.latest?.speed;
     const speedAmount = el('speed-amount');
@@ -7228,6 +7420,8 @@
       el('amount').textContent = t('badge.noSession');
       setHoverExtra(t('badge.clickOpen'));
       syncSpeedBadgeText();
+      syncCacheBadgeText();
+      renderCacheSummarySection(null);
       el('badge-tokens').title = t('badge.tokensTitle');
       renderQuickContextControls();
       return;
@@ -7304,11 +7498,12 @@
 
     el('badge-tokens').title = t('badge.tokensTitle');
 
-    // 渲染输出速度 (统一使用 tok/s)
+    // 渲染输出速度 (统一使用 tok/s) 与上下文缓存命中率
     const sp = d?.speed;
     const speedBadge = el('badge-speed');
     const speedHoverExtra = el('speed-hover-extra');
     syncSpeedBadgeText();
+    syncCacheBadgeText();
     if (speedBadge) {
       if (sp?.tps != null) {
         if (speedHoverExtra) {
@@ -7445,6 +7640,8 @@
       }
     }
 
+    renderCacheSummarySection(d);
+
     el('model').textContent = d?.model?.startsWith('MODEL_PLACEHOLDER') ? t('tech.modelPlaceholder', { id: d.model }) : d?.model || t('tech.modelMissing');
     el('request-status').textContent = d?.exceeded ? t('tech.req.exceeded') : d?.network ? t('tech.req.network') : d?.error ? t('tech.req.failed') : d?.status === 'reported' ? t('tech.req.reported') : d?.status === 'estimated' ? t('tech.req.estimated') : t('tech.req.waiting');
     el('actual').textContent = d?.actual != null ? token(d.actual) : d?.exceeded ? t('tech.actual.exceeded', { val: fmt(d.serviceLimit || 0) }) : t('tech.actual.unknown');
@@ -7522,7 +7719,10 @@
         }
       }
       for (let i = rows.length - 1; i >= 0; i--) {
-        const value = summarize(rows[i], { cascadeModelConfigs: state.cascadeModelConfigs || state.scan?.cascadeModelConfigs || [] });
+        const value = summarize(rows[i], {
+          cascadeModelConfigs: state.cascadeModelConfigs || state.scan?.cascadeModelConfigs || [],
+          turnCount: offset + i + 1
+        });
         if (value) {
           state.latest = withStepError(value, rows[i]);
           const callInfo = parseGeneratorCall ? parseGeneratorCall(rows[i], id, 'desktop', { cascadeModelConfigs: modelConfigsList }) : null;
