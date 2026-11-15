@@ -2298,7 +2298,7 @@
   }
 
   /**
-   * 严格校验外部链接是否属于官方白名单（官方仓库或作者署名主页）
+   * 严格校验外部链接是否属于官方白名单（本项目仓库或原作者帖子/主页）
    */
   function isValidExternalUrl(rawUrl) {
     if (!rawUrl || typeof rawUrl !== 'string') return false;
@@ -2307,7 +2307,7 @@
       if (u.protocol !== 'https:') return false;
       if (u.hostname === 'github.com') {
         const pathname = u.pathname.replace(/\/+$/, '');
-        const repoPrefix = '/elviscjn-cjn/antigravity-context-viewer';
+        const repoPrefix = '/cli117/antigravity-hakimi';
         return pathname === repoPrefix || pathname.startsWith(repoPrefix + '/');
       }
       if (u.hostname === 'linux.do') {

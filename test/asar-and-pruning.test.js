@@ -701,3 +701,28 @@ test('meter-context-unlock ps lookup preserves UTF-8 non-ASCII bundle paths unde
     else process.env.LC_CTYPE = prevLcCtype;
   }
 });
+
+test('panel GitHub links and external URL allowlist point to cli117/antigravity-hakimi', () => {
+  const mainJs = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'main.js'), 'utf8');
+  const renderedJs = fs.readFileSync(path.join(ROOT, 'payload', 'dist', 'meter-renderer.js'), 'utf8');
+
+  assert.ok(
+    mainJs.includes('https://github.com/cli117/antigravity-hakimi'),
+    'src/renderer/main.js should point openGithubRepo to cli117/antigravity-hakimi'
+  );
+  assert.ok(
+    renderedJs.includes('https://github.com/cli117/antigravity-hakimi'),
+    'payload/dist/meter-renderer.js should point openGithubRepo to cli117/antigravity-hakimi'
+  );
+  assert.equal(
+    mainJs.includes('elviscjn-cjn/antigravity-context-viewer'),
+    false,
+    'src/renderer/main.js should not retain upstream repo URL in openGithubRepo'
+  );
+
+  assert.equal(meterCore.isValidExternalUrl('https://github.com/cli117/antigravity-hakimi'), true);
+  assert.equal(meterCore.isValidExternalUrl('https://github.com/cli117/antigravity-hakimi/issues'), true);
+  assert.equal(meterCore.isValidExternalUrl('https://linux.do/t/topic/3117832'), true);
+  assert.equal(meterCore.isValidExternalUrl('https://github.com/elviscjn-cjn/antigravity-context-viewer'), false);
+  assert.equal(meterCore.isValidExternalUrl('https://github.com/cli117/other-repo'), false);
+});

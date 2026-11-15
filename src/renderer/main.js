@@ -7257,7 +7257,7 @@
   }
 
   function openGithubRepo(pathSuffix = '') {
-    const url = 'https://github.com/elviscjn-cjn/antigravity-context-viewer' + pathSuffix;
+    const url = 'https://github.com/cli117/antigravity-hakimi' + pathSuffix;
     if (typeof window !== 'undefined' && typeof window.contextMeterAPI?.openExternal === 'function') {
       window.contextMeterAPI.openExternal(url);
     } else {

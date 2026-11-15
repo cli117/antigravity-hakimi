@@ -116,3 +116,10 @@ npm test
 - `src/renderer/`：Context Meter 悬浮胶囊、速率/历史看板与设置弹窗源码
 - `unlock/agy-cli/agy-patch.py`：独立命令行二进制上下文窗口解锁工具
 - `test/`：自动化单元测试套件
+
+---
+
+## 致谢与上游项目
+
+- **Context Meter / 看板 / 汉化与解锁框架**：本项目的前端监控面板、Token 用量与费用统计、桌面端简体中文化运行时及上下文解锁基础代码基于 [`elviscjn-cjn/antigravity-context-viewer`](https://github.com/elviscjn-cjn/antigravity-context-viewer)（基于 `v0.8.3`）改造，在此基础上新增了 macOS Apple Silicon (`arm64`) 独立 `/Applications/哈基米.app` 构建流程、账号地区解锁整合、四态品牌标题与自定义图标支持，并精简了代理及自动更新等模块。
+- **上下文解锁方案原作者**：致谢 [Linux.do @23375](https://linux.do/t/topic/3117832) 提供的上下文窗口解锁技术方案。
