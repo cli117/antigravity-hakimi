@@ -23,19 +23,14 @@ const {
   add,
   empty,
   measure,
-  summarizeApiCost,
-  calculateReferenceModelCost,
   resolveEffectivePlanStatus,
-  SUBSCRIPTION_ACQUISITION_PRESETS,
-  CURRENCY_SYMBOLS,
   parseUserPlanStatus,
   parseGeneratorCall,
   extractModelString,
   normalizeModelId,
   resolveStableModelId,
   isValidSpeedSample,
-  MAX_SPEED_SAMPLES_PER_MODEL,
-  calculateRequestApiCost
+  MAX_SPEED_SAMPLES_PER_MODEL
 } = require('./meter-core');
 
 const conversationWorkspaces = new Map();
@@ -847,13 +842,12 @@ function recordModelCalls(newCalls = [], options = {}) {
     // 幂等入账与数据校准：记录新调用；当存在更完整、最终用量或补齐实测速度数据时更新校准
     const stateProgressed = existing.status === 'streaming' && call.status === 'final';
     const usageProgressed = (call.outputTokens || 0) > (existing.outputTokens || 0) || (call.totalTokens || 0) > (existing.totalTokens || 0);
-    const pricingProgressed = (!existing.isPriced || !existing.costUSD) && (call.isPriced && call.costUSD > 0);
     const speedProgressed = !hasSpeedMetrics(existing) && hasSpeedMetrics(call) && isValidSpeedSample(call);
     const modelExactProgressed = !existing.modelExactId && Boolean(call.modelExactId);
     const isStaleRollback = (existing.status === 'final' && call.status !== 'final') ||
       (existing.status === 'final' && (call.outputTokens || 0) < (existing.outputTokens || 0));
 
-    if (!isStaleRollback && (stateProgressed || usageProgressed || pricingProgressed || speedProgressed || modelExactProgressed)) {
+    if (!isStaleRollback && (stateProgressed || usageProgressed || speedProgressed || modelExactProgressed)) {
       draftCalls[call.callId] = {
         ...existing,
         ...call,
@@ -906,97 +900,9 @@ function sanitizeAccountPlanEntry(entry, accountKey = 'default') {
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
   const out = { ...entry };
   out.account = String(entry.account || accountKey || 'default').trim().toLowerCase();
-
-  // 1. 账号所在地区 (accountRegion / country)：独立保留，仅修改本地记录
-  const rawAccReg = (typeof out.accountRegion === 'string' && out.accountRegion.trim())
-    ? out.accountRegion.trim()
-    : ((typeof out.country === 'string' && out.country.trim()) ? out.country.trim() : '');
-  if (rawAccReg && !rawAccReg.includes('未知')) {
-    out.accountRegion = rawAccReg;
-    out.country = rawAccReg;
-  } else {
-    delete out.accountRegion;
-    delete out.country;
+  if (typeof out.customNote === 'string') {
+    out.customNote = out.customNote.trim();
   }
-
-  // 2. 订阅国家 (subscriptionCountry / subscriptionRegion / region)：独立保留，可与账号所在地区不同
-  const rawSubCountry = (typeof out.subscriptionCountry === 'string' && out.subscriptionCountry.trim())
-    ? out.subscriptionCountry.trim()
-    : ((typeof out.subscriptionRegion === 'string' && out.subscriptionRegion.trim())
-      ? out.subscriptionRegion.trim()
-      : ((typeof out.region === 'string' && out.region.trim()) ? out.region.trim() : ''));
-  if (rawSubCountry && !rawSubCountry.includes('未知')) {
-    out.subscriptionCountry = rawSubCountry;
-    out.subscriptionRegion = rawSubCountry;
-    out.region = rawSubCountry;
-  } else {
-    delete out.subscriptionCountry;
-    delete out.subscriptionRegion;
-    delete out.region;
-  }
-
-  // 3. 订阅币种 (subscriptionCurrency / currency)：独立保留，支持标记手动(custom)或自动(auto)来源
-  const rawCur = (typeof out.subscriptionCurrency === 'string' && out.subscriptionCurrency.trim())
-    ? out.subscriptionCurrency.trim()
-    : ((typeof out.currency === 'string' && out.currency.trim()) ? out.currency.trim() : '');
-  if (rawCur) {
-    let cur = rawCur.toUpperCase();
-    if (cur === 'NTD') cur = 'TWD';
-    if (CURRENCY_SYMBOLS[cur]) {
-      out.subscriptionCurrency = cur;
-      out.currency = cur;
-      if (!out.currencySymbol) out.currencySymbol = CURRENCY_SYMBOLS[cur];
-    } else {
-      delete out.subscriptionCurrency;
-      delete out.currency;
-      delete out.currencySymbol;
-    }
-  } else {
-    delete out.subscriptionCurrency;
-    delete out.currency;
-    delete out.currencySymbol;
-  }
-
-  if (out.currencySource) {
-    out.currencySource = String(out.currencySource).trim();
-  }
-
-  // 1. 先清洗校验实付金额 (actualPricePaid)
-  if (out.actualPricePaid !== undefined && out.actualPricePaid !== null && out.actualPricePaid !== '') {
-    const num = Number(out.actualPricePaid);
-    if (Number.isFinite(num) && num >= 0) {
-      out.actualPricePaid = num;
-    } else {
-      out.actualPricePaid = null;
-    }
-  } else {
-    out.actualPricePaid = null;
-  }
-
-  // 2. 校验价格模式 (priceMode)
-  if (out.priceMode === 'custom' || out.priceMode === 'preset') {
-    // 保持用户显式模式
-  } else if (out.priceSource === 'preset_region') {
-    out.priceMode = 'preset';
-  } else if (out.actualPricePaid !== null) {
-    out.priceMode = 'custom';
-  } else {
-    out.priceMode = 'preset';
-  }
-
-  if (out.priceMode === 'custom' && out.actualPricePaid !== null) {
-    out.customActualPrice = out.actualPricePaid;
-  }
-
-  if (out.customActualPrice !== undefined && out.customActualPrice !== null && out.customActualPrice !== '') {
-    const cNum = Number(out.customActualPrice);
-    if (Number.isFinite(cNum) && cNum >= 0) {
-      out.customActualPrice = cNum;
-    } else {
-      delete out.customActualPrice;
-    }
-  }
-
   return out;
 }
 
@@ -1662,8 +1568,7 @@ async function collectTokenHistoryAsync(options = {}) {
     cli: {}
   };
   const seenEvents = new Set();
-  const recentRequests = [];
-  const newlyParsedPricedRequests = [];
+  const newlyParsedCalls = [];
 
   for (let jIdx = 0; jIdx < transcriptJobs.length; jIdx++) {
     const job = transcriptJobs[jIdx];
@@ -1739,9 +1644,6 @@ async function collectTokenHistoryAsync(options = {}) {
               created_at: event.created_at || null,
               timestamp: event.created_at ? new Date(event.created_at).getTime() : Date.now()
             };
-            const costCalc = calculateRequestApiCost(reqObj);
-            reqObj.isPriced = costCalc.isPriced;
-            reqObj.costUSD = costCalc.costUSD ?? 0;
 
             fileRecords.push({
               eventId,
@@ -1780,9 +1682,8 @@ async function collectTokenHistoryAsync(options = {}) {
         srcMap[rec.dateKey].cache += rec.cap;
         srcMap[rec.dateKey].steps += 1;
 
-        recentRequests.push(rec.reqObj);
-        if (isFreshlyParsed && rec.reqObj.isPriced && rec.reqObj.callId) {
-          newlyParsedPricedRequests.push(rec.reqObj);
+        if (isFreshlyParsed && rec.reqObj.callId) {
+          newlyParsedCalls.push(rec.reqObj);
         }
       }
     } catch {}
@@ -1886,109 +1787,11 @@ async function collectTokenHistoryAsync(options = {}) {
     currentEmail: currentAccountKey
   });
 
-  // 结合持久化逐请求账本与本次新解析的调用
-  const ledger = loadPricingLedger(agDir);
-  if (newlyParsedPricedRequests.length) {
-    recordModelCalls(newlyParsedPricedRequests, { agDir });
+  // 结合持久化逐请求账本与本次新解析的调用（仅统计 Token 与测速样本）
+  if (newlyParsedCalls.length) {
+    recordModelCalls(newlyParsedCalls, { agDir });
   }
   const mergedCalls = Object.values(loadPricingLedger(agDir).calls || {});
-
-  // 分来源与全量动态统计未计价请求与原因
-  const desktopRecentUnpriced = recentRequests.filter(r => r.source === 'desktop' && !r.isPriced);
-  const cliRecentUnpriced = recentRequests.filter(r => r.source === 'cli' && !r.isPriced);
-  const unallocatedLegacyCount = Object.values(mergedLegacyUnallocated).reduce((sum, item) => sum + (item.steps || 0), 0);
-  const unallocatedLegacyTokens = Object.values(mergedLegacyUnallocated).reduce((sum, item) => sum + (item.total || 0), 0);
-
-  function aggregateUnpriced(items, extraCount = 0, extraTokens = 0) {
-    const reasons = { missingModel: extraCount, unsupportedModel: 0, missingUsage: 0 };
-    let tokens = extraTokens;
-    for (const it of items) {
-      tokens += (it.inputTokens + it.cacheTokens + it.outputTokens);
-      if (!it.model) reasons.missingModel++;
-      else if ((it.inputTokens + it.cacheTokens + it.outputTokens) === 0) reasons.missingUsage++;
-      else reasons.unsupportedModel++;
-    }
-    return { count: items.length + extraCount, tokens, reasons };
-  }
-
-  const deskUnpriced = aggregateUnpriced(desktopRecentUnpriced, unallocatedLegacyCount, unallocatedLegacyTokens);
-  const cliUnpriced = aggregateUnpriced(cliRecentUnpriced, 0, 0);
-
-  const totalUnpricedCount = deskUnpriced.count + cliUnpriced.count;
-  const totalUnpricedTokens = deskUnpriced.tokens + cliUnpriced.tokens;
-  const totalUnpricedReasons = {
-    missingModel: deskUnpriced.reasons.missingModel + cliUnpriced.reasons.missingModel,
-    unsupportedModel: deskUnpriced.reasons.unsupportedModel + cliUnpriced.reasons.unsupportedModel,
-    missingUsage: deskUnpriced.reasons.missingUsage + cliUnpriced.reasons.missingUsage
-  };
-
-  const costEstimateAll = summarizeApiCost(mergedCalls, totalUnpricedCount, totalUnpricedReasons, totalUnpricedTokens);
-  const costEstimateDesktop = summarizeApiCost(mergedCalls.filter(c => c.source === 'desktop'), deskUnpriced.count, deskUnpriced.reasons, deskUnpriced.tokens);
-  const costEstimateCli = summarizeApiCost(mergedCalls.filter(c => c.source === 'cli'), cliUnpriced.count, cliUnpriced.reasons, cliUnpriced.tokens);
-
-  // 本期 (本月自然月) 账本过滤与计价分析
-  const currentMonthCalls = mergedCalls.filter(c => c.date && String(c.date).startsWith(monthPrefix));
-  const currentMonthPricedCalls = currentMonthCalls.filter(c => c.isPriced);
-  const currentMonthPricedTokens = currentMonthPricedCalls.reduce((sum, c) => sum + (c.totalTokens || 0), 0);
-  const currentMonthUnpricedCount = Math.max(0, currentMonthSteps - currentMonthPricedCalls.length);
-  const currentMonthUnpricedTokens = Math.max(0, monthTokens - currentMonthPricedTokens);
-  const costEstimateCurrentMonth = summarizeApiCost(
-    currentMonthCalls,
-    currentMonthUnpricedCount,
-    { missingModel: currentMonthUnpricedCount },
-    currentMonthUnpricedTokens
-  );
-
-  // 9. 参考模型折算（官方标准价格表 2026-11-08）
-  const referenceCostAll = calculateReferenceModelCost({
-    inputTokens: totalInputTokens,
-    outputTokens: totalOutputTokens,
-    cacheTokens: totalCacheTokens,
-    totalTokens: grandTotalTokens
-  }, 'gemini-3.8-flash', {
-    pricingDate: '2026-11-08',
-    mode: 'all'
-  });
-
-  const referenceCostCurrentMonth = calculateReferenceModelCost({
-    inputTokens: currentMonthInput,
-    outputTokens: currentMonthOutput,
-    cacheTokens: currentMonthCache,
-    totalTokens: monthTokens
-  }, 'gemini-3.8-flash', {
-    pricingDate: '2026-11-08',
-    mode: 'all'
-  });
-
-  const referenceCostHybrid = calculateReferenceModelCost({
-    inputTokens: totalInputTokens,
-    outputTokens: totalOutputTokens,
-    cacheTokens: totalCacheTokens,
-    totalTokens: grandTotalTokens
-  }, 'gemini-3.8-flash', {
-    pricingDate: '2026-11-09',
-    mode: 'unpriced_only',
-    knownUsage: {
-      byCategory: costEstimateAll.byCategory,
-      costUSD: costEstimateAll.pricedCostUSD
-    }
-  });
-
-  const referenceCostCurrentMonthHybrid = calculateReferenceModelCost({
-    inputTokens: currentMonthInput,
-    outputTokens: currentMonthOutput,
-    cacheTokens: currentMonthCache,
-    totalTokens: monthTokens
-  }, 'gemini-3.8-flash', {
-    pricingDate: '2026-11-09',
-    mode: 'unpriced_only',
-    knownUsage: {
-      byCategory: costEstimateCurrentMonth.byCategory,
-      costUSD: costEstimateCurrentMonth.pricedCostUSD
-    }
-  });
-
-  const costEstimate = costEstimateAll;
 
   const speedRecords = mergedCalls
     .filter(c => isValidSpeedSample(c))
@@ -2045,19 +1848,6 @@ async function collectTokenHistoryAsync(options = {}) {
     rawPlanStatus: livePlanStatus,
     customPlanSettings: currentCustom,
     uiPreferences: customSettingsAll.uiPreferences || {},
-    costEstimate,
-    costEstimateCurrentMonth,
-    costEstimateBySource: {
-      all: costEstimateAll,
-      desktop: costEstimateDesktop,
-      cli: costEstimateCli
-    },
-    referenceCost: {
-      all: referenceCostAll,
-      currentMonth: referenceCostCurrentMonth,
-      hybrid: referenceCostHybrid,
-      currentMonthHybrid: referenceCostCurrentMonthHybrid
-    },
     summary: {
       grandTotalTokens,
       totalInputTokens,
@@ -2072,15 +1862,7 @@ async function collectTokenHistoryAsync(options = {}) {
       totalSteps,
       totalConversations,
       firstUseDate: earliestDate,
-      activeDaysCount: Object.keys(dailyMapAll).length,
-      costEstimate,
-      costEstimateCurrentMonth,
-      referenceCost: {
-        all: referenceCostAll,
-        currentMonth: referenceCostCurrentMonth,
-        hybrid: referenceCostHybrid,
-        currentMonthHybrid: referenceCostCurrentMonthHybrid
-      }
+      activeDaysCount: Object.keys(dailyMapAll).length
     },
     dailyMap: dailyMapAll,
     dailyMapBySource: {
@@ -2098,7 +1880,7 @@ async function collectTokenHistoryAsync(options = {}) {
 
   // 持久化保存到 v2 与 v1 归档（仅在数据变化或文件不存在时原子写入，减少高频磁盘 I/O）
   try {
-    const archiveSig = `${agDir}|${earliestDate}|${totalConversations}|${grandTotalTokens}|${totalSteps}|${effectivePlanStatus?.tierKey || ''}|${effectivePlanStatus?.actualPricePaid ?? ''}|${effectivePlanStatus?.currency || ''}|${costEstimate?.pricedCostUSD ?? ''}`;
+    const archiveSig = `${agDir}|${earliestDate}|${totalConversations}|${grandTotalTokens}|${totalSteps}|${effectivePlanStatus?.tierKey || ''}`;
     const shouldWriteArchive = options.agDir || archiveSig !== collectTokenHistoryAsync._lastArchiveSig || !fs.existsSync(archivePathV2) || !fs.existsSync(archivePathV1);
     if (shouldWriteArchive) {
       collectTokenHistoryAsync._lastArchiveSig = archiveSig;
@@ -2108,9 +1890,6 @@ async function collectTokenHistoryAsync(options = {}) {
         updatedAt: out.updatedAt,
         maxConversations: totalConversations,
         planStatus: effectivePlanStatus,
-        costEstimate,
-        costEstimateCurrentMonth,
-        referenceCost: out.referenceCost,
         dailyMapBySource: out.dailyMapBySource
       };
       safeWriteJsonSync(archivePathV2, v2Payload);
@@ -2157,7 +1936,6 @@ function collectTokenHistory(options = {}) {
     updatedAt: '',
     firstUseDate: null,
     planStatus: parseUserPlanStatus(null),
-    costEstimate: { pricedCostUSD: 0, coveragePercent: 0, byModel: {} },
     summary: { grandTotalTokens: 0, todayTokens: 0, monthTokens: 0, yearTokens: 0, totalConversations: 0, activeDaysCount: 0 },
     dailyMap: {},
     dailyMapBySource: { all: {}, desktop: {}, cli: {} }
@@ -2195,7 +1973,6 @@ module.exports = {
   getPluginSettings,
   savePluginSettings,
   sanitizeContextPreferenceEntry,
-  SUBSCRIPTION_ACQUISITION_PRESETS,
   getContextUnlockStatus,
   applyContextUnlock,
   restoreContextUnlock,

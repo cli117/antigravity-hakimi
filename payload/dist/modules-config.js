@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { getStateDir, findAsarPath, builtinAsar, assertNotOfficialAntigravityApp } = require('./asar-engine');
+const { getStateDir, findAsarPath, builtinAsar, assertNotOfficialAntigravityApp, getHakimiAppPath } = require('./asar-engine');
 
 const SCHEMA_VERSION = '0.8.3';
 const PROJECT_VERSION = '0.8.3';
@@ -272,6 +272,89 @@ function inspectDiskModules(customPath = null) {
   };
 }
 
+function readBundleShortVersion(plistPath) {
+  if (!plistPath) return null;
+  try {
+    if (!fs.existsSync(plistPath)) return null;
+    const xml = fs.readFileSync(plistPath, 'utf8');
+    const m = xml.match(/<key>\s*CFBundleShortVersionString\s*<\/key>\s*<string>\s*([^<]+?)\s*<\/string>/);
+    return m ? m[1].trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function checkAppVersionSync(options = {}) {
+  const officialPlist =
+    options.officialPlist ||
+    (fs.existsSync('/Applications/Antigravity.app.orig/Contents/Info.plist')
+      ? '/Applications/Antigravity.app.orig/Contents/Info.plist'
+      : '/Applications/Antigravity.app/Contents/Info.plist');
+  const hakimiPlist =
+    options.hakimiPlist || path.join(getHakimiAppPath(), 'Contents', 'Info.plist');
+
+  const officialVersion = readBundleShortVersion(officialPlist);
+  const hakimiVersion = readBundleShortVersion(hakimiPlist);
+
+  return {
+    officialVersion,
+    hakimiVersion,
+    outdated: Boolean(officialVersion && hakimiVersion && officialVersion !== hakimiVersion),
+  };
+}
+
+function getDefaultUserDataDir() {
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Application Support', 'Antigravity');
+  }
+  if (process.platform === 'win32') {
+    return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Antigravity');
+  }
+  return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'Antigravity');
+}
+
+function cleanupStaleSingletonLock(userDataDir) {
+  const dir = userDataDir ? path.resolve(String(userDataDir)) : getDefaultUserDataDir();
+  const lockPath = path.join(dir, 'SingletonLock');
+  let st;
+  try {
+    st = fs.lstatSync(lockPath);
+  } catch {
+    return { cleaned: false, reason: 'no_lock', dir };
+  }
+  if (!st || !st.isSymbolicLink()) {
+    return { cleaned: false, reason: 'no_lock', dir };
+  }
+  let target = '';
+  try {
+    target = fs.readlinkSync(lockPath);
+  } catch {
+    return { cleaned: false, reason: 'unreadable_lock', dir };
+  }
+  const match = String(target).match(/-(\d+)$/);
+  if (!match) {
+    return { cleaned: false, reason: 'unrecognized_target', target, dir };
+  }
+  const pid = Number(match[1]);
+  if (!Number.isSafeInteger(pid) || pid <= 0) {
+    return { cleaned: false, reason: 'unrecognized_target', target, dir };
+  }
+  try {
+    process.kill(pid, 0);
+    return { cleaned: false, reason: 'owner_alive', pid, dir };
+  } catch (err) {
+    if (!err || err.code !== 'ESRCH') {
+      return { cleaned: false, reason: 'owner_alive', pid, dir };
+    }
+  }
+  for (const name of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
+    try {
+      fs.unlinkSync(path.join(dir, name));
+    } catch {}
+  }
+  return { cleaned: true, pid, dir };
+}
+
 module.exports = {
   SCHEMA_VERSION,
   PROJECT_VERSION,
@@ -283,4 +366,7 @@ module.exports = {
   saveModulesConfig,
   acquireFileLock,
   inspectDiskModules,
+  readBundleShortVersion,
+  checkAppVersionSync,
+  cleanupStaleSingletonLock,
 };

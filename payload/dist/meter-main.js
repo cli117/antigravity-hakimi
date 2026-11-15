@@ -97,8 +97,13 @@ async function handleModulesStatus(event, customAsar = null) {
   const url = isLocalMainFrameSender(event);
   if (!url) throw new Error('仅允许本机主聊天窗口');
   try {
-    const { loadModulesConfig, inspectDiskModules } = require('./modules-config');
-    return { ok: true, data: loadModulesConfig(), disk: inspectDiskModules(customAsar) };
+    const { loadModulesConfig, inspectDiskModules, checkAppVersionSync } = require('./modules-config');
+    return {
+      ok: true,
+      data: loadModulesConfig(),
+      disk: inspectDiskModules(customAsar),
+      versionSync: checkAppVersionSync(),
+    };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -358,6 +363,30 @@ function registerIpcOnce() {
       const opts = (options && typeof options === 'object') ? { ...options } : {};
       if (opts.syncConfigFiles === undefined && !opts.backupDir) opts.syncConfigFiles = true;
       return restoreContextUnlock(opts);
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('context-meter:cli-unlock-status', async (event, options) => {
+    const url = isLocalMainFrameSender(event);
+    if (!url) throw new Error('仅允许本机主聊天窗口');
+    try {
+      const { analyzeAgyCli } = require('./meter-cli-unlock');
+      const opts = (options && typeof options === 'object') ? { ...options } : {};
+      return { ok: true, data: analyzeAgyCli(opts.binaryPath || null, opts) };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('context-meter:cli-unlock-apply', async (event, options) => {
+    const url = isLocalMainFrameSender(event);
+    if (!url) throw new Error('仅允许本机主聊天窗口');
+    try {
+      const { applyAgyCliUnlock } = require('./meter-cli-unlock');
+      const opts = (options && typeof options === 'object') ? { ...options } : {};
+      return applyAgyCliUnlock(opts);
     } catch (e) {
       return { ok: false, error: e.message };
     }
@@ -635,11 +664,37 @@ exports.installContextMeter = function (win) {
 
 try {
   if (app && typeof app.on === 'function') {
+    let quitFallbackTimer = null;
     app.on('before-quit', () => {
       isAppQuitting = true;
+      setImmediate(() => {
+        try {
+          if (quitFallbackTimer) return;
+          let confirmPending = false;
+          try {
+            const utils = require('./utils');
+            if (utils && utils.showQuitConfirmation) confirmPending = true;
+          } catch {}
+          if (confirmPending) return;
+          const { BrowserWindow } = require('electron');
+          if (BrowserWindow && typeof BrowserWindow.getAllWindows === 'function') {
+            const wins = BrowserWindow.getAllWindows();
+            if (Array.isArray(wins) && wins.length === 0) {
+              quitFallbackTimer = setTimeout(() => {
+                try { process.exit(0); } catch {}
+              }, 6500);
+              if (typeof quitFallbackTimer.unref === 'function') quitFallbackTimer.unref();
+            }
+          }
+        } catch {}
+      });
     });
     app.on('will-quit', () => {
       isAppQuitting = true;
+      if (quitFallbackTimer) {
+        clearTimeout(quitFallbackTimer);
+        quitFallbackTimer = null;
+      }
     });
     const handleCreated = (_event, win) => {
       try {

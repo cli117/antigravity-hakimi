@@ -51,12 +51,24 @@
     'tab.speed': { 'zh-CN': '速度对比', 'zh-TW': '速度對比', en: 'Speed' },
     'tab.settings': { 'zh-CN': '配置', 'zh-TW': '配置', en: 'setting' },
 
-    // 分页 1: 当前会话
-    'session.costBar.title': { 'zh-CN': '当前模型调用的 API 等值参考金额（按已返回用量或实时生成估算）', 'zh-TW': '目前模型呼叫的 API 等值參考金額（依已回傳用量或即時生成估算）', en: 'Estimated API-equivalent cost for the current model (based on returned usage or live output)' },
-    'session.roundCost': { 'zh-CN': '本轮估值：{val}', 'zh-TW': '本輪估值：{val}', en: 'This turn: {val}' },
-    'session.sessionCost': { 'zh-CN': '当前会话合计：{val}', 'zh-TW': '目前工作階段合計：{val}', en: 'Session total: {val}' },
-    'session.roundCost.dash': { 'zh-CN': '本轮估值：—', 'zh-TW': '本輪估值：—', en: 'This turn: —' },
-    'session.sessionCost.dash': { 'zh-CN': '当前会话合计：—', 'zh-TW': '目前工作階段合計：—', en: 'Session total: —' },
+    // 分页 1: 当前会话与版本同步提示
+    'versionSync.mismatch': { 'zh-CN': '⚠️ 检测到官方 Antigravity 已更新至 v{officialVer}（当前哈基米基于 v{hakimiVer}）。如需同步新版底座，请运行：bash ./build-hakimi.sh --force --restart', 'zh-TW': '⚠️ 偵測到官方 Antigravity 已更新至 v{officialVer}（目前哈基米基於 v{hakimiVer}）。如需同步新版底座，請執行：bash ./build-hakimi.sh --force --restart', en: '⚠️ Official Antigravity updated to v{officialVer} (Hakimi is on v{hakimiVer}). Rebuild with: bash ./build-hakimi.sh --force --restart' },
+    'session.quick.compact': { 'zh-CN': '🗜️ Compact 压缩上下文', 'zh-TW': '🗜️ Compact 壓縮上下文', en: '🗜️ Compact Context' },
+    'session.quick.compactBusy': { 'zh-CN': '⏳ 正在压缩…', 'zh-TW': '⏳ 正在壓縮…', en: '⏳ Compacting…' },
+    'session.quick.compactDone': { 'zh-CN': '✔ 已向当前会话发送 /compact 指令，上下文即将更新。', 'zh-TW': '✔ 已向目前工作階段發送 /compact 指令，上下文即將更新。', en: '✔ Sent /compact command to active chat; context will refresh shortly.' },
+    'session.quick.compactFail': { 'zh-CN': '✖ 触发压缩失败：{err}', 'zh-TW': '✖ 觸發壓縮失敗：{err}', en: '✖ Failed to trigger compact: {err}' },
+    'session.quick.compactNoSession': { 'zh-CN': '请先打开一个对话会话并确保后台已就绪。', 'zh-TW': '請先開啟一個對話工作階段並確保後台已就緒。', en: 'Open an active chat and wait until backend is ready.' },
+    'session.quick.raiseLimit': { 'zh-CN': '⬆️ 上调上下文上限', 'zh-TW': '⬆️ 上調上下文上限', en: '⬆️ Raise Context Limit' },
+    'session.quick.raiseTarget': { 'zh-CN': '⬆️ 上调上限至 {target}', 'zh-TW': '⬆️ 上調上限至 {target}', en: '⬆️ Raise limit to {target}' },
+    'session.quick.raiseDone': { 'zh-CN': '✔ 已将上下文上限调整为 {target}，下一条消息生效。', 'zh-TW': '✔ 已將上下文上限調整為 {target}，下一則訊息生效。', en: '✔ Raised context limit to {target}; applies on next message.' },
+    'session.quick.raiseNeedRestart': { 'zh-CN': '✔ 目标已设为 {target} 并解锁底座动态跟随，请重启客户端生效。', 'zh-TW': '✔ 目標已設為 {target} 並解鎖底座動態跟隨，請重啟用戶端生效。', en: '✔ Target set to {target} and dynamic unlock applied. Restart client to take effect.' },
+    'session.quick.raiseFail': { 'zh-CN': '✖ 上调上限失败：{err}', 'zh-TW': '✖ 上調上限失敗：{err}', en: '✖ Failed to raise limit: {err}' },
+    'topbar.quick.compactTitle': { 'zh-CN': 'Compact 压缩上下文', 'zh-TW': 'Compact 壓縮上下文', en: 'Compact Context' },
+    'topbar.quick.compactDesc': { 'zh-CN': '向当前会话发送 /compact，清理历史冗余释放空间', 'zh-TW': '向目前對話發送 /compact，清理歷史冗餘釋放空間', en: 'Send /compact to summarize chat history and free space' },
+    'topbar.quick.compactBusyDesc': { 'zh-CN': '正在向当前会话发送 /compact 指令…', 'zh-TW': '正在向目前對話發送 /compact 指令…', en: 'Sending /compact command to active chat…' },
+    'topbar.quick.raiseTitle': { 'zh-CN': '上调上下文上限至 {target}', 'zh-TW': '上調上下文上限至 {target}', en: 'Raise Context Limit to {target}' },
+    'topbar.quick.raiseDesc': { 'zh-CN': '一键扩容当前上下文预算上限（下一条消息生效）', 'zh-TW': '一鍵擴容目前上下文預算上限（下一則訊息生效）', en: 'Expand context budget limit in one click (applies on next message)' },
+    'topbar.quick.raiseBusyTitle': { 'zh-CN': '正在上调上限至 {target}…', 'zh-TW': '正在上調上限至 {target}…', en: 'Raising limit to {target}…' },
     'session.keySummary.title': { 'zh-CN': '⭐ 核心用量速览', 'zh-TW': '⭐ 核心用量速覽', en: '⭐ Context Summary' },
     'session.badge.reading': { 'zh-CN': '读取中', 'zh-TW': '讀取中', en: 'Loading' },
     'session.stat.used': { 'zh-CN': '当前已用', 'zh-TW': '目前已用', en: 'Used' },
@@ -202,7 +214,7 @@
       'zh-TW': '<strong>驗證範圍</strong>：<div>已驗證：用戶端重啟後讀到了新設定，並在之後的對話中觀測到對應預算。</div><div>未驗證：真實超長請求能否被伺服器端完整接受；帳號風險未知。</div>',
       en: '<strong>Verification scope</strong>:<div>Verified: client read the new setting after restart and live turns showed the updated budget.</div><div>Unverified: whether the server accepts full ultra-long requests; account risk is unknown.</div>'
     },
-    'models.details.li5': { 'zh-CN': '<strong>精确数值</strong>：512K = 512,000 tokens；可设置范围 16,384 – 2,097,152 tokens；跟随模型不固定数值。', 'zh-TW': '<strong>精確數值</strong>：512K = 512,000 tokens；可設定範圍 16,384 – 2,097,152 tokens；跟隨模型不固定數值。', en: '<strong>Exact values</strong>: 512K = 512,000 tokens; allowed range 16,384 – 2,097,152 tokens; Follow Model has no fixed cap.' },
+    'models.details.li5': { 'zh-CN': '<strong>精确数值</strong>：256K = 256,000 tokens；512K = 512,000 tokens；1M = 1,000,000 tokens；可设置范围 16,384 – 2,097,152 tokens；跟随模型不固定数值。', 'zh-TW': '<strong>精確數值</strong>：256K = 256,000 tokens；512K = 512,000 tokens；1M = 1,000,000 tokens；可設定範圍 16,384 – 2,097,152 tokens；跟隨模型不固定數值。', en: '<strong>Exact values</strong>: 256K = 256,000; 512K = 512,000; 1M = 1,000,000 tokens; allowed range 16,384 – 2,097,152 tokens; Follow Model has no fixed cap.' },
     'models.btn.restoreOriginal': { 'zh-CN': '客户端恢复原始设置', 'zh-TW': '用戶端恢復原始設定', en: 'Restore Client Default' },
     'models.btn.refreshStatus': { 'zh-CN': '刷新状态', 'zh-TW': '重新整理狀態', en: 'Refresh' },
     'models.status.detecting': { 'zh-CN': '正在检测当前 Antigravity 状态…', 'zh-TW': '正在偵測目前 Antigravity 狀態…', en: 'Detecting current Antigravity status…' },
@@ -319,8 +331,6 @@
     'tokens.src.all': { 'zh-CN': '全部', 'zh-TW': '全部', en: 'All' },
     'tokens.src.desktop': { 'zh-CN': '桌面端', 'zh-TW': '桌面端', en: 'Desktop' },
     'tokens.src.cli': { 'zh-CN': 'CLI', 'zh-TW': 'CLI', en: 'CLI' },
-    'tokens.view.tokens': { 'zh-CN': 'Token 统计', 'zh-TW': 'Token 統計', en: 'Token Stats' },
-    'tokens.view.cost': { 'zh-CN': 'API 参考金额', 'zh-TW': 'API 參考金額', en: 'API Est. Cost' },
     'tokens.card.total': { 'zh-CN': '累计处理 Token', 'zh-TW': '累計處理 Token', en: 'Total Tokens' },
     'tokens.card.includeCache': { 'zh-CN': '含缓存读取', 'zh-TW': '含快取讀取', en: 'Incl. cache reads' },
     'tokens.card.today': { 'zh-CN': '今日使用', 'zh-TW': '今日使用', en: 'Today' },
@@ -333,11 +343,8 @@
     'tokens.heat.yearly': { 'zh-CN': '今年', 'zh-TW': '今年', en: 'Year' },
     'tokens.heat.cum': { 'zh-CN': '累计总量', 'zh-TW': '累計總量', en: 'Cumulative' },
     'tokens.heat.sumTokens': { 'zh-CN': '区间合计:', 'zh-TW': '區間合計:', en: 'Range total:' },
-    'tokens.heat.sumCost': { 'zh-CN': '预估费用:', 'zh-TW': '預估費用:', en: 'Est. cost:' },
     'tokens.heat.sumDailyAvg': { 'zh-CN': '折合每天:', 'zh-TW': '折合每天:', en: 'Daily avg:' },
     'tokens.heat.sumActiveAvg': { 'zh-CN': '活跃日均:', 'zh-TW': '活躍日均:', en: 'Active avg:' },
-    'tokens.heat.sumSubRatio': { 'zh-CN': '订阅性价比:', 'zh-TW': '訂閱性價比:', en: 'Plan value:' },
-    'tokens.heat.disclaimer': { 'zh-CN': '注：按日聚合按基础档估算，未拆分长上下文分档，结果偏下限。有逐请求记录时优先精确入账。', 'zh-TW': '註：按日彙總依基礎檔估算，未拆分長上下文分檔，結果偏下限。有逐請求記錄時優先精確入帳。', en: 'Note: Daily aggregates use base tier pricing (lower bound) unless per-request records are available.' },
     'tokens.heat.tip': { 'zh-CN': '点击或悬浮格子查看当日详细 Token 构成', 'zh-TW': '點擊或懸停格子檢視當日詳細 Token 構成', en: 'Click or hover a cell to view daily token breakdown' },
     'tokens.heat.less': { 'zh-CN': '少', 'zh-TW': '少', en: 'Less' },
     'tokens.heat.more': { 'zh-CN': '多', 'zh-TW': '多', en: 'More' },
@@ -356,17 +363,6 @@
     'theme.autoTitle': { 'zh-CN': '当前主题：跟随宿主 ({mode})\n点击切换为：浅色模式', 'zh-TW': '目前主題：跟隨宿主 ({mode})\n點擊切換為：淺色模式', en: 'Theme: Follow IDE ({mode})\nClick to switch to Light' },
     'theme.lightTitle': { 'zh-CN': '当前主题：浅色模式 (固定)\n点击切换为：深色模式', 'zh-TW': '目前主題：淺色模式 (固定)\n點擊切換為：深色模式', en: 'Theme: Light (Fixed)\nClick to switch to Dark' },
     'theme.darkTitle': { 'zh-CN': '当前主题：深色模式 (固定)\n点击切换为：跟随宿主', 'zh-TW': '目前主題：深色模式 (固定)\n點擊切換為：跟隨宿主', en: 'Theme: Dark (Fixed)\nClick to switch to Follow IDE' },
-
-    // 本轮/会话估值
-    'cost.streamingEst': { 'zh-CN': '生成中暂估', 'zh-TW': '生成中暫估', en: 'Streaming est.' },
-    'cost.returnedEst': { 'zh-CN': '按已返回用量估算', 'zh-TW': '依已回傳用量估算', en: 'Based on returned usage' },
-    'cost.latestTurn': { 'zh-CN': '最近调用 {val} · {label}', 'zh-TW': '最近呼叫 {val} · {label}', en: 'Latest turn {val} · {label}' },
-    'cost.unpriced': { 'zh-CN': '最近调用：模型费率未收录', 'zh-TW': '最近呼叫：模型費率未收錄', en: 'Latest turn: unpriced model' },
-    'cost.latestDash': { 'zh-CN': '最近调用估值：—', 'zh-TW': '最近呼叫估值：—', en: 'Latest turn: —' },
-    'cost.sessionTotal': { 'zh-CN': '当前会话合计约 ${val}', 'zh-TW': '目前工作階段合計約 ${val}', en: 'Session total ≈ ${val}' },
-    'cost.modelTip': { 'zh-CN': '模型：{model}\n输入：{input} tok\n缓存：{cache} tok\n输出：{output} tok\n参考金额：${cost}', 'zh-TW': '模型：{model}\n輸入：{input} tok\n快取：{cache} tok\n輸出：{output} tok\n參考金額：${cost}', en: 'Model: {model}\nInput: {input} tok\nCache: {cache} tok\nOutput: {output} tok\nEst. cost: ${cost}' },
-    'cost.unpricedTip': { 'zh-CN': '模型：{model}（公开费率未收录）', 'zh-TW': '模型：{model}（公開費率未收錄）', en: 'Model: {model} (public rate unavailable)' },
-    'cost.missingModel': { 'zh-CN': '缺少模型信息', 'zh-TW': '缺少模型資訊', en: 'Missing model info' },
 
     // 模块状态（客户端语言 / 代理）
     'mod.readFail': { 'zh-CN': '⚠️ 读取失败', 'zh-TW': '⚠️ 讀取失敗', en: '⚠️ Read Failed' },
@@ -573,11 +569,10 @@
       'heat.prompt': { 'zh-CN': '提示词', 'zh-TW': '提示詞', en: 'Prompt' },
       'heat.output': { 'zh-CN': '输出', 'zh-TW': '輸出', en: 'Output' },
       'heat.cache': { 'zh-CN': '缓存', 'zh-TW': '快取', en: 'Cache' },
-      'heat.weeklyTotal': { 'zh-CN': 'Weekly Total · 周累计 (折合日均 ${avg})', 'zh-TW': 'Weekly Total · 週累計 (折合日均 ${avg})', en: 'Weekly Total (daily avg ${avg})' },
+      'heat.weeklyTotal': { 'zh-CN': '周累计 · 折合日均 {avg} Tokens', 'zh-TW': '週累計 · 折合日均 {avg} Tokens', en: 'Weekly Total · Avg {avg} Tokens/d' },
       'heat.cumSuffix': { 'zh-CN': ' (累计)', 'zh-TW': ' (累計)', en: ' (Cumulative)' },
-      'heat.cumTotal': { 'zh-CN': 'Cumulative Total · 截至当日累计 (折合日均 ${avg})', 'zh-TW': 'Cumulative Total · 截至當日累計 (折合日均 ${avg})', en: 'Cumulative Total to Date (daily avg ${avg})' },
-      'heat.activeDays': { 'zh-CN': '${avg} ({days}天)', 'zh-TW': '${avg} ({days}天)', en: '${avg} ({days}d)' },
-      'heat.roi': { 'zh-CN': '{ratio}x 回本', 'zh-TW': '{ratio}x 回本', en: '{ratio}x ROI' },
+      'heat.cumTotal': { 'zh-CN': '截至当日累计 · 折合日均 {avg} Tokens', 'zh-TW': '截至當日累計 · 折合日均 {avg} Tokens', en: 'Cumulative to Date · Avg {avg} Tokens/d' },
+      'heat.activeDays': { 'zh-CN': '{avg} Tokens ({days}天)', 'zh-TW': '{avg} Tokens ({days}天)', en: '{avg} Tokens ({days}d)' },
       'heat.peak': { 'zh-CN': '峰值', 'zh-TW': '峰值', en: 'Peak' },
 
       // 模型卡片折叠详情、历史分组与按钮状态补齐
@@ -590,96 +585,24 @@
       'header.theme.aria': { 'zh-CN': '切换浅色/深色主题', 'zh-TW': '切換淺色/深色主題', en: 'Toggle light/dark theme' },
       'header.theme.title': { 'zh-CN': '当前：跟随IDE（点击切换：浅色 / 深色 / 自动）', 'zh-TW': '目前：跟隨IDE（點擊切換：淺色 / 深色 / 自動）', en: 'Current: Follow IDE (click to cycle Light / Dark / Auto)' },
 
-      // 订阅详情与地区/币种选择
+      // 订阅与额度详情
       'plan.detail.toggleOpen': { 'zh-CN': '详情 ▼', 'zh-TW': '詳情 ▼', en: 'Details ▼' },
       'plan.detail.toggleClose': { 'zh-CN': '详情收回 ▲', 'zh-TW': '詳情收回 ▲', en: 'Hide ▲' },
       'plan.detail.title': { 'zh-CN': '💎 AI 订阅与额度详情', 'zh-TW': '💎 AI 訂閱與額度詳情', en: '💎 AI Subscription & Credits' },
       'plan.summary.identified': { 'zh-CN': '已自动识别', 'zh-TW': '已自動識別', en: 'Auto-detected' },
-      'plan.summary.custom': { 'zh-CN': '自定义生效', 'zh-TW': '自訂生效', en: 'Custom' },
       'plan.summary.unknown': { 'zh-CN': '未识别/默认', 'zh-TW': '未識別/預設', en: 'Default / Unknown' },
       'plan.summary.justNow': { 'zh-CN': '刚刚更新', 'zh-TW': '剛剛更新', en: 'Just now' },
-      'plan.summary.perMonth': { 'zh-CN': '/月', 'zh-TW': '/月', en: '/mo' },
-      'plan.summary.freeWithPlan': { 'zh-CN': '(随套餐免费)', 'zh-TW': '(隨方案免費)', en: '(Included)' },
       'plan.dt.plan': { 'zh-CN': '当前套餐：', 'zh-TW': '目前方案：', en: 'Plan:' },
       'plan.dt.account': { 'zh-CN': '当前账号：', 'zh-TW': '目前帳號：', en: 'Account:' },
-      'plan.dt.country': { 'zh-CN': '账号所在地区：', 'zh-TW': '帳號所在地區：', en: 'Account country:' },
-      'plan.dt.region': { 'zh-CN': '订阅国家：', 'zh-TW': '訂閱國家：', en: 'Billing country:' },
-      'plan.dt.currency': { 'zh-CN': '订阅币种：', 'zh-TW': '訂閱幣別：', en: 'Currency:' },
-      'plan.dt.acq': { 'zh-CN': '获取方式：', 'zh-TW': '取得方式：', en: 'Source:' },
-      'plan.dt.price': { 'zh-CN': '计费周期与价格：', 'zh-TW': '計費週期與價格：', en: 'Billing & price:' },
-      'plan.dt.validity': { 'zh-CN': '权益有效期：', 'zh-TW': '權益有效期：', en: 'Valid until:' },
-      'plan.dt.note': { 'zh-CN': '补充备注：', 'zh-TW': '補充備註：', en: 'Note:' },
       'plan.dt.promptCredits': { 'zh-CN': 'Prompt 额度池：', 'zh-TW': 'Prompt 額度池：', en: 'Prompt credits:' },
       'plan.dt.flowCredits': { 'zh-CN': 'Flow 额度池：', 'zh-TW': 'Flow 額度池：', en: 'Flow credits:' },
       'plan.dt.updated': { 'zh-CN': '状态更新时间：', 'zh-TW': '狀態更新時間：', en: 'Updated:' },
       'plan.account.unknown': { 'zh-CN': '未识别当前登录邮箱', 'zh-TW': '未識別目前登入信箱', en: 'Signed-in email not detected' },
-      'plan.country.auto': { 'zh-CN': '🌐 未设置 / 自动', 'zh-TW': '🌐 未設定 / 自動', en: '🌐 Unset / Auto' },
-      'plan.region.unknown': { 'zh-CN': '🌏 未知 (点击选择订阅国家与币种建议)', 'zh-TW': '🌏 未知 (點擊選擇訂閱國家與幣別建議)', en: '🌏 Unknown (select billing country & currency)' },
       'plan.tag.saved': { 'zh-CN': '已保存', 'zh-TW': '已儲存', en: 'Saved' },
-      'plan.tag.custom': { 'zh-CN': '自定义', 'zh-TW': '自訂', en: 'Custom' },
-      'plan.tag.promo': { 'zh-CN': '活动权益', 'zh-TW': '活動權益', en: 'Promo' },
-      'plan.tag.manualFree': { 'zh-CN': '手动确认 · 免费', 'zh-TW': '手動確認 · 免費', en: 'Manual · Free' },
-      'plan.tag.userPaid': { 'zh-CN': '用户实付', 'zh-TW': '用戶實付', en: 'Actual paid' },
-      'plan.tag.official': { 'zh-CN': '官方定价', 'zh-TW': '官方定價', en: 'Official price' },
-      'plan.tag.publicRef': { 'zh-CN': '公开参考价', 'zh-TW': '公開參考價', en: 'Public ref' },
-      'plan.tag.regionRef': { 'zh-CN': '地区参考价', 'zh-TW': '地區參考價', en: 'Regional ref' },
-      'plan.acq.normal': { 'zh-CN': '正常付费订阅', 'zh-TW': '正常付費訂閱', en: 'Standard Paid Plan' },
-      'plan.cycle.monthly': { 'zh-CN': '月付', 'zh-TW': '月繳', en: 'Monthly' },
-      'plan.cycle.yearly': { 'zh-CN': '年付', 'zh-TW': '年繳', en: 'Yearly' },
-      'plan.cycle.oneTime': { 'zh-CN': '单次', 'zh-TW': '單次', en: 'One-time' },
-      'plan.cny.approx': { 'zh-CN': '折合 ≈ {val}', 'zh-TW': '約 ≈ {val}', en: 'approx. {val}' },
       'models.restartConfirm.title': { 'zh-CN': '重启 Antigravity 客户端', 'zh-TW': '重新啟動 Antigravity 用戶端', en: 'Restart Antigravity Client' },
-      'plan.price.modePreset': { 'zh-CN': '跟随参考价', 'zh-TW': '跟隨參考價', en: 'Use reference' },
-      'plan.price.modeCustom': { 'zh-CN': '自定义实付', 'zh-TW': '自訂實付', en: 'Custom paid' },
-      'plan.btn.editCustom': { 'zh-CN': '自定义订阅设置', 'zh-TW': '自訂訂閱設定', en: 'Customize plan' },
       'plan.credits.avail': { 'zh-CN': '{avail} 可用 / {monthly} 月额度', 'zh-TW': '{avail} 可用 / {monthly} 月額度', en: '{avail} left / {monthly} monthly' },
-      'plan.validity.expired': { 'zh-CN': '至 {date} · ⚠️ 权益已到期', 'zh-TW': '至 {date} · ⚠️ 權益已到期', en: 'Until {date} · ⚠️ Expired' },
-      'plan.validity.active': { 'zh-CN': '至 {date} · 有效期内', 'zh-TW': '至 {date} · 有效期內', en: 'Until {date} · Active' },
-      'plan.form.title': { 'zh-CN': '设置当前账号订阅信息', 'zh-TW': '設定目前帳號訂閱資訊', en: 'Configure Account Subscription' },
-      'plan.form.acqLabel': { 'zh-CN': '获取方式 / 活动来源', 'zh-TW': '取得方式 / 活動來源', en: 'Acquisition / Promo Source' },
-      'plan.form.acqCustomLabel': { 'zh-CN': '自定义活动 / 合作方名称', 'zh-TW': '自訂活動 / 合作方名稱', en: 'Custom Promo / Partner Name' },
-      'plan.form.acqCustomPh': { 'zh-CN': '选填，如 Pixel 11 Pro 赠送', 'zh-TW': '選填，如 Pixel 11 Pro 贈送', en: 'Optional, e.g. Pixel bundle' },
-      'plan.form.zeroExtra': { 'zh-CN': '本权益期间无需另付订阅费', 'zh-TW': '本權益期間無需另付訂閱費', en: 'No extra subscription fee during this period' },
-      'plan.form.presetLabel': { 'zh-CN': '预设订阅国家与汇率 (可选快捷套用)', 'zh-TW': '預設訂閱國家與匯率 (可選快速套用)', en: 'Region & Exchange Rate Preset (optional)' },
-      'plan.form.countryLabel': { 'zh-CN': '账号所在地区 (仅本地记录)', 'zh-TW': '帳號所在地區 (僅本機記錄)', en: 'Account Country (local only)' },
-      'plan.form.regionLabel': { 'zh-CN': '订阅国家 (购买/结算地区)', 'zh-TW': '訂閱國家 (購買/結算地區)', en: 'Billing Country' },
-      'plan.form.currencyLabel': { 'zh-CN': '订阅币种与实付金额', 'zh-TW': '訂閱幣別與實付金額', en: 'Currency & Paid Amount' },
-      'plan.form.paidPh': { 'zh-CN': '实付金额', 'zh-TW': '實付金額', en: 'Amount' },
-      'plan.form.cycleLabel': { 'zh-CN': '计费周期', 'zh-TW': '計費週期', en: 'Billing Cycle' },
-      'plan.form.validEndLabel': { 'zh-CN': '权益到期日', 'zh-TW': '權益到期日', en: 'Expiration Date' },
-      'plan.form.noteLabel': { 'zh-CN': '补充说明备注', 'zh-TW': '補充說明備註', en: 'Notes' },
-      'plan.form.notePh': { 'zh-CN': '例如：Pixel 11 Pro 赠送 6 个月 / 家庭拼车', 'zh-TW': '例如：Pixel 11 Pro 贈送 6 個月 / 家庭共享', en: 'e.g. Device promo / family sharing' },
-      'plan.form.clear': { 'zh-CN': '清除自定义', 'zh-TW': '清除自訂', en: 'Clear custom' },
-      'plan.form.cancel': { 'zh-CN': '取消', 'zh-TW': '取消', en: 'Cancel' },
-      'plan.form.save': { 'zh-CN': '保存', 'zh-TW': '儲存', en: 'Save' },
-
-      // API 参考金额与展开详情
-      'cost.title': { 'zh-CN': '💰 本期 API 参考金额', 'zh-TW': '💰 本期 API 參考金額', en: '💰 Period API Reference Cost' },
-      'cost.periodTag': { 'zh-CN': '本月自然月', 'zh-TW': '本月自然月', en: 'This Calendar Month' },
-      'cost.nonPaidBadge': { 'zh-CN': 'API折算 · 非实付', 'zh-TW': 'API換算 · 非實付', en: 'API Est. · Not Billed' },
-      'cost.subUnknown': { 'zh-CN': '订阅实付：未填写', 'zh-TW': '訂閱實付：未填寫', en: 'Plan paid: Not set' },
-      'cost.btnFill': { 'zh-CN': '补充', 'zh-TW': '補充', en: 'Edit' },
-      'cost.btnExpand': { 'zh-CN': '展开详情 ▼', 'zh-TW': '展開詳情 ▼', en: 'Show details ▼' },
-      'cost.btnCollapse': { 'zh-CN': '收起详情 ▴', 'zh-TW': '收起詳情 ▴', en: 'Hide details ▴' },
-      'cost.scopeLabel': { 'zh-CN': '统计范围:', 'zh-TW': '統計範圍:', en: 'Scope:' },
-      'cost.scopePeriod': { 'zh-CN': '本期', 'zh-TW': '本期', en: 'This period' },
-      'cost.scopeAll': { 'zh-CN': '全量历史', 'zh-TW': '全量歷史', en: 'All history' },
-      'cost.modeLabel': { 'zh-CN': '估值模式:', 'zh-TW': '估值模式:', en: 'Pricing mode:' },
-      'cost.modeRef': { 'zh-CN': '参考模型估算', 'zh-TW': '參考模型估算', en: 'Reference model' },
-      'cost.modeHybrid': { 'zh-CN': '混合模式', 'zh-TW': '混合模式', en: 'Hybrid' },
-      'cost.modeIdentified': { 'zh-CN': '仅已识别模型', 'zh-TW': '僅已識別模型', en: 'Identified only' },
-      'cost.card.input': { 'zh-CN': '输入 Token', 'zh-TW': '輸入 Token', en: 'Input Tokens' },
-      'cost.card.cache': { 'zh-CN': '缓存读取 (优惠)', 'zh-TW': '快取讀取 (優惠)', en: 'Cache Read (discounted)' },
-      'cost.card.output': { 'zh-CN': '输出 Token', 'zh-TW': '輸出 Token', en: 'Output Tokens' },
-      'cost.analyzing': { 'zh-CN': '正在分析请求模型与计价覆盖率…', 'zh-TW': '正在分析請求模型與計價覆蓋率…', en: 'Analyzing model calls and pricing coverage…' },
-      'cost.disclaimer': {
-        'zh-CN': '注：此折算反映按公开零售价调用同等资源之费用，包月订阅/活动赠送与 API 零售非同类计费模式，该差额不等于真实节省现金；缓存读取按 10% 优惠计价；不含缓存存储费与搜索落地费用。缓存可在多次请求中重复读取相同上下文，该总量不代表独立文本量或用户输入字数。',
-        'zh-TW': '註：此換算反映依公開零售價呼叫同等資源之費用，包月訂閱/活動贈送與 API 零售非同類計費模式，該差額不等於真實節省現金；快取讀取依 10% 優惠計價；不含快取儲存費與搜尋落地費用。快取可在多次請求中重複讀取相同上下文，該總量不代表獨立文字量或使用者輸入字數。',
-        en: 'Note: Estimates reflect public API retail rates for equivalent usage. Subscriptions/promos differ from pay-as-you-go API billing; differences do not equal cash saved. Cache reads are priced at 10%; storage and grounding fees are excluded. Repeated cache reads do not represent unique text.'
-      },
 
       // Token 统计与热力图控制
-      'tokens.titleCost': { 'zh-CN': 'API 价格折算', 'zh-TW': 'API 價格換算', en: 'API Equivalent Cost' },
       'tokens.firstUse': { 'zh-CN': '首次使用：{date}', 'zh-TW': '首次使用：{date}', en: 'First use: {date}' },
       'tokens.heat.presetLabel': { 'zh-CN': '5 档色阶预设：', 'zh-TW': '5 檔色階預設：', en: '5-step presets:' },
       'tokens.heat.presetPurple': { 'zh-CN': '紫色系', 'zh-TW': '紫色系', en: 'Purple' },
@@ -701,31 +624,7 @@
       'tokens.heat.accentColors': { 'zh-CN': '累计与强调指标色', 'zh-TW': '累計與強調指標色', en: 'Total & accent colors' },
       'tokens.colors.followTheme': { 'zh-CN': '跟随主题', 'zh-TW': '跟隨主題', en: 'Follow theme' },
 
-      // 动态费用明细与 Token 卡片补齐
-      'cost.titleAll': { 'zh-CN': '💰 全量 API 参考金额', 'zh-TW': '💰 全量 API 參考金額', en: '💰 All-Time API Reference Cost' },
-      'cost.allHistory': { 'zh-CN': '全历史累计', 'zh-TW': '全歷史累計', en: 'All history' },
-      'cost.approx': { 'zh-CN': '约 ${val}', 'zh-TW': '約 ${val}', en: '~${val}' },
-      'cost.notReady': { 'zh-CN': '数据未就绪', 'zh-TW': '資料尚未就緒', en: 'Not ready' },
-      'cost.noRecords': { 'zh-CN': '暂无记录', 'zh-TW': '暫無記錄', en: 'No records' },
-      'cost.unpriced': { 'zh-CN': '暂无法估值', 'zh-TW': '暫無法估值', en: 'Unpriced' },
-      'cost.refSub': { 'zh-CN': '统一按 {model} 估算 (输入 ${in} / 缓存 ${ca} / 输出 ${out} 每百万 Token)', 'zh-TW': '統一依 {model} 估算 (輸入 ${in} / 快取 ${ca} / 輸出 ${out} 每百萬 Token)', en: 'Estimated via {model} (In ${in} / Cache ${ca} / Out ${out} per 1M)' },
-      'cost.hybridSub': { 'zh-CN': '混合模式：已识别 ${known} + 未知折算 ${res}', 'zh-TW': '混合模式：已識別 ${known} + 未知換算 ${res}', en: 'Hybrid: Identified ${known} + Residual ${res}' },
-      'cost.hybridBadge': { 'zh-CN': '混合模式折算', 'zh-TW': '混合模式換算', en: 'Hybrid mode' },
-      'cost.identSub': { 'zh-CN': '仅计入 {n} 条已知真实模型调用', 'zh-TW': '僅計入 {n} 筆已知真實模型呼叫', en: 'Only {n} identified model call(s) included' },
-      'cost.identSubNone': { 'zh-CN': '当前范围内请求缺少模型型号（未按 $0 计入）', 'zh-TW': '目前範圍內請求缺少模型型號（未依 $0 計入）', en: 'Requests lack model IDs (not counted as $0)' },
-      'cost.covPct': { 'zh-CN': '{pct}% 计价覆盖', 'zh-TW': '{pct}% 計價覆蓋', en: '{pct}% priced' },
-      'cost.tokCacheDiscount': { 'zh-CN': '{tok} tok (优惠)', 'zh-TW': '{tok} tok (優惠)', en: '{tok} tok (disc.)' },
-      'cost.tokResidual': { 'zh-CN': '剩余 {tok} tok', 'zh-TW': '剩餘 {tok} tok', en: 'Rem. {tok} tok' },
-      'cost.usageSummary': { 'zh-CN': '累计处理 Token: {total} (含 {cache} 缓存读取)', 'zh-TW': '累計處理 Token: {total} (含 {cache} 快取讀取)', en: 'Total tokens: {total} (incl. {cache} cache)' },
-      'cost.diffAll': { 'zh-CN': '全量累计不直接与单月费用做差额比较 · 避免跨月虚高', 'zh-TW': '全量累計不直接與單月費用做差額比較 · 避免跨月虛高', en: 'All-time totals are not compared against monthly fees' },
-      'cost.diffFree': { 'zh-CN': '与此 API 方案参考差额 约 +${val} (免费权益使用中 · 不计算无限倍数)', 'zh-TW': '與此 API 方案參考差額 約 +${val} (免費權益使用中 · 不計算無限倍數)', en: 'Diff vs API: ~+${val} (free promo active)' },
-      'cost.diffPaid': { 'zh-CN': '与此 API 方案参考差额 {sign}${val} (API折算 - 实际支出 · 仅供参考比较)', 'zh-TW': '與此 API 方案參考差額 {sign}${val} (API換算 - 實際支出 · 僅供參考比較)', en: 'Diff vs API: {sign}${val} (API est. - paid · reference only)' },
-      'cost.diffUnknown': { 'zh-CN': '跨币种或实付未知 · 并列展示不计算差额', 'zh-TW': '跨幣別或實付未知 · 並列顯示不計算差額', en: 'Cross-currency or paid amount unknown' },
-      'cost.subLineFree': { 'zh-CN': '订阅额外实付：{sym}0 ({src})', 'zh-TW': '訂閱額外實付：{sym}0 ({src})', en: 'Extra plan paid: {sym}0 ({src})' },
-      'cost.subLinePaid': { 'zh-CN': '订阅实付：{sym}{val}{cny} ({cycle}{exp})', 'zh-TW': '訂閱實付：{sym}{val}{cny} ({cycle}{exp})', en: 'Plan paid: {sym}{val}{cny} ({cycle}{exp})' },
-      'cost.breakdownPrefix': { 'zh-CN': '已识别真实模型明细：{details}{note}。', 'zh-TW': '已識別真實模型明細：{details}{note}。', en: 'Identified models: {details}{note}.' },
-      'cost.breakdownNone': { 'zh-CN': '暂无已匹配真实模型', 'zh-TW': '暫無已匹配真實模型', en: 'No matched model calls yet' },
-      'tokens.dailyAvg': { 'zh-CN': ' · 日均 ${val}', 'zh-TW': ' · 日均 ${val}', en: ' · Avg ${val}/d' },
+      // Token 数据与来源标签
       'tokens.firstUseNone': { 'zh-CN': '首次使用：--', 'zh-TW': '首次使用：--', en: 'First use: --' },
       'tokens.srcAllLabel': { 'zh-CN': '全部来源', 'zh-TW': '全部來源', en: 'All Sources' },
       'tokens.srcDesktopLabel': { 'zh-CN': '桌面端', 'zh-TW': '桌面端', en: 'Desktop' },
@@ -853,8 +752,7 @@
       'common.notProvided': { 'zh-CN': '未提供', 'zh-TW': '未提供', en: 'Not provided' },
       'common.loading': { 'zh-CN': '读取中...', 'zh-TW': '讀取中...', en: 'Loading...' },
       'tokens.heat.firstUsePlaceholder': { 'zh-CN': '首次使用：--', 'zh-TW': '首次使用：--', en: 'First use: --' },
-      'tokens.card.costPlaceholder': { 'zh-CN': '≈ $0.00 (¥0.00) · 日均 $0.00', 'zh-TW': '≈ $0.00 (¥0.00) · 日均 $0.00', en: '≈ $0.00 (¥0.00) · $0.00/d' },
-      'tokens.heat.activeAvgPlaceholder': { 'zh-CN': '$0.00 (0天)', 'zh-TW': '$0.00 (0天)', en: '$0.00 (0d)' },
+      'tokens.heat.activeAvgPlaceholder': { 'zh-CN': '0 Tokens (0天)', 'zh-TW': '0 Tokens (0天)', en: '0 Tokens (0d)' },
       'tokens.card.todaySub': { 'zh-CN': '{n} 会话实时累加', 'zh-TW': '{n} 會話即時累加', en: '{n} chat(s) live' },
       'tokens.card.monthSub': { 'zh-CN': '日均约 {val}', 'zh-TW': '日均約 {val}', en: '~{val}/day avg' },
       'tokens.card.yearSub': { 'zh-CN': '{n} 天活动记录', 'zh-TW': '{n} 天活動記錄', en: '{n} active day(s)' },
@@ -864,22 +762,9 @@
       'heatmap.pop.inProgress': { 'zh-CN': '（进行中）', 'zh-TW': '（進行中）', en: ' (Current)' },
       'heatmap.pop.peak': { 'zh-CN': '（年度峰值）', 'zh-TW': '（年度峰值）', en: ' (Peak)' },
       'heatmap.pop.future': { 'zh-CN': '未来月份（尚未产生用量）', 'zh-TW': '未來月份（尚未產生用量）', en: 'Future month (no usage)' },
-      'heatmap.pop.monthlyDet': { 'zh-CN': '月度合计 · 折合日均 ${avg} (活跃 {days} 天)', 'zh-TW': '月度合計 · 折合日均 ${avg} (活躍 {days} 天)', en: 'Monthly Total · Avg ${avg}/d ({days} active days)' },
-      'cost.subSpendLabel': { 'zh-CN': '本人同期实际支出', 'zh-TW': '本人同期實際支出', en: 'Your Actual Spend' },
-      'cost.freePromo': { 'zh-CN': '免费活动', 'zh-TW': '免費活動', en: 'Free promo' },
-      'cost.subSpend': { 'zh-CN': '订阅支出', 'zh-TW': '訂閱支出', en: 'Plan spend' },
-      'cost.paidLabel': { 'zh-CN': '实付', 'zh-TW': '實付', en: 'Paid' },
-      'cost.paidUnknown': { 'zh-CN': '实付未知', 'zh-TW': '實付未知', en: 'Paid unknown' },
-      'cost.publicRefMonthly': { 'zh-CN': '公开参考价 ${p}/月（实付未确认）', 'zh-TW': '公開參考價 ${p}/月（實付未確認）', en: 'Public ref ${p}/mo (paid unconfirmed)' },
-      'cost.unknown': { 'zh-CN': '未知', 'zh-TW': '未知', en: 'Unknown' },
-      'cost.noPlanData': { 'zh-CN': '未获取到套餐与实付数据', 'zh-TW': '未取得方案與實付資料', en: 'No plan or spend data available' },
-      'cost.allNoCompare': { 'zh-CN': ' · 全量累计不直接对比单月支出', 'zh-TW': ' · 全量累計不直接對比單月支出', en: ' · All-time not compared to monthly spend' },
-      'cost.expiredTag': { 'zh-CN': ' · ⚠️ 权益已到期', 'zh-TW': ' · ⚠️ 權益已到期', en: ' · ⚠️ Expired' },
-      'cost.freeActive': { 'zh-CN': '{src} · 用户确认 · 免费权益使用中{extra}', 'zh-TW': '{src} · 使用者確認 · 免費權益使用中{extra}', en: '{src} · Confirmed · Free active{extra}' },
-      'cost.covFull': { 'zh-CN': '100% 折算覆盖', 'zh-TW': '100% 換算覆蓋', en: '100% priced' },
-      'cost.refApprox': { 'zh-CN': '约 ${val}', 'zh-TW': '約 ${val}', en: '~${val}' },
+      'heatmap.pop.monthlyDet': { 'zh-CN': '月度合计 · 折合日均 {avg} Tokens (活跃 {days} 天)', 'zh-TW': '月度合計 · 折合日均 {avg} Tokens (活躍 {days} 天)', en: 'Monthly Total · Avg {avg} Tokens/d ({days} active days)' },
 
-      // 调色板与下拉选择器
+      // 调色板与 agy CLI 解锁文案
       'colors.resetLevel': { 'zh-CN': '恢复该档预设', 'zh-TW': '恢復該檔預設', en: 'Reset step' },
       'colors.followTheme': { 'zh-CN': '跟随主题', 'zh-TW': '跟隨主題', en: 'Follow theme' },
       'colors.lvl0': { 'zh-CN': '色阶第 1 档（少/无用量）', 'zh-TW': '色階第 1 檔（少/無用量）', en: 'Step 1 (None/Min)' },
@@ -891,20 +776,18 @@
       'colors.eyedropperUnsupported': { 'zh-CN': '当前环境不支持原生吸管，可直接粘贴 HEX', 'zh-TW': '目前環境不支援原生滴管，可直接貼上 HEX', en: 'Eyedropper unsupported; paste HEX directly' },
       'colors.appliedHex': { 'zh-CN': '已应用 {hex}', 'zh-TW': '已套用 {hex}', en: 'Applied {hex}' },
       'colors.copied': { 'zh-CN': '✔ 已复制 {label}: {val}', 'zh-TW': '✔ 已複製 {label}: {val}', en: '✔ Copied {label}: {val}' },
-      'dropdown.countrySearch': { 'zh-CN': '🔍 搜索账号所在地区或代码 (如: 美国、TW、JP)...', 'zh-TW': '🔍 搜尋帳號所在地區或代碼 (如: 美國、TW、JP)...', en: '🔍 Search country or code (e.g. US, TW, JP)...' },
-      'dropdown.countryEmpty': { 'zh-CN': '未找到匹配的账号所在地区', 'zh-TW': '未找到匹配的帳號所在地區', en: 'No matching country found' },
-      'dropdown.regionSearch': { 'zh-CN': '🔍 搜索订阅国家/地区、货币或缩写 (如: 台湾、澳、USD)...', 'zh-TW': '🔍 搜尋訂閱國家/地區、貨幣或縮寫 (如: 台灣、澳、USD)...', en: '🔍 Search billing region or currency (e.g. TW, USD)...' },
-      'dropdown.regionEmpty': { 'zh-CN': '未找到匹配的订阅国家/地区', 'zh-TW': '未找到匹配的訂閱國家/地區', en: 'No matching billing region found' },
-      'dropdown.currencySearch': { 'zh-CN': '🔍 搜索币种名称或代码 (如: USD、NTD、人民币)...', 'zh-TW': '🔍 搜尋幣別名稱或代碼 (如: USD、NTD、台幣)...', en: '🔍 Search currency code or name (e.g. USD, CNY)...' },
-      'dropdown.currencyEmpty': { 'zh-CN': '未找到匹配的币种', 'zh-TW': '未找到匹配的幣別', en: 'No matching currency found' },
-      'dropdown.autoSaved': { 'zh-CN': '✔ 已自动保存', 'zh-TW': '✔ 已自動儲存', en: '✔ Auto-saved' },
-      'dropdown.saveFailed': { 'zh-CN': '保存失败', 'zh-TW': '儲存失敗', en: 'Save failed' },
-      'dropdown.saveFailedDetail': { 'zh-CN': '✖ 保存失败：{msg}', 'zh-TW': '✖ 儲存失敗：{msg}', en: '✖ Save failed: {msg}' },
-      'dropdown.writeCfgFailed': { 'zh-CN': '无法写入配置文件', 'zh-TW': '無法寫入設定檔', en: 'Cannot write settings file' },
-      'dropdown.noPersistBridge': { 'zh-CN': '未连接持久化服务，无法保存', 'zh-TW': '未連線持久化服務，無法儲存', en: 'Persistence bridge unavailable' },
-      'dropdown.persistErr': { 'zh-CN': '持久化异常', 'zh-TW': '持久化異常', en: 'Persistence error' },
-      'dropdown.perMonth': { 'zh-CN': '/月', 'zh-TW': '/月', en: '/mo' },
-      'dropdown.regionUnknownShort': { 'zh-CN': '🌏 未知 (点击选择订阅地区与货币)', 'zh-TW': '🌏 未知 (點擊選擇訂閱地區與貨幣)', en: '🌏 Unknown (select region & currency)' },
+      'settings.cliUnlock.title': { 'zh-CN': '⌨️ agy CLI 上下文联动解锁', 'zh-TW': '⌨️ agy CLI 上下文連動解鎖', en: '⌨️ agy CLI Context Unlock' },
+      'settings.cliUnlock.desc': { 'zh-CN': '检测本机 agy 命令行二进制，解除 /model 上下文选择器机型白名单并修复 AGY_CLI_AUTO_COMPACT_OVERRIDE 环境变量读取，同时同步上下文窗口配置。', 'zh-TW': '偵測本機 agy 命令列二進位檔，解除 /model 上下文選擇器機型白名單並修復 AGY_CLI_AUTO_COMPACT_OVERRIDE 環境變數讀取，同時同步上下文視窗設定。', en: 'Detects local agy CLI binary, bypasses /model context selector allowlist, fixes AGY_CLI_AUTO_COMPACT_OVERRIDE env reading, and syncs CLI context config.' },
+      'settings.cliUnlock.applyBtn': { 'zh-CN': '一键修补并同步 agy CLI', 'zh-TW': '一鍵修補並同步 agy CLI', en: 'Patch & Sync agy CLI' },
+      'settings.cliUnlock.busy': { 'zh-CN': '正在修补并重签名 agy CLI…', 'zh-TW': '正在修補並重簽章 agy CLI…', en: 'Patching & codesigning agy CLI…' },
+      'settings.cliUnlock.patched': { 'zh-CN': '🟢 已解锁 ({ok}/{total})', 'zh-TW': '🟢 已解鎖 ({ok}/{total})', en: '🟢 Unlocked ({ok}/{total})' },
+      'settings.cliUnlock.unpatched': { 'zh-CN': '⚪ 未修补', 'zh-TW': '⚪ 未修補', en: '⚪ Unpatched' },
+      'settings.cliUnlock.partial': { 'zh-CN': '⚠️ 部分匹配', 'zh-TW': '⚠️ 部分符合', en: '⚠️ Partial Match' },
+      'settings.cliUnlock.notFound': { 'zh-CN': '⚪ 未安装 agy CLI', 'zh-TW': '⚪ 未安裝 agy CLI', en: '⚪ agy CLI Not Found' },
+      'settings.cliUnlock.unsupported': { 'zh-CN': '⚠️ 架构不支持', 'zh-TW': '⚠️ 架構不支援', en: '⚠️ Unsupported Arch' },
+      'settings.cliUnlock.brokenLinks': { 'zh-CN': '检测到失效软链接：{paths}', 'zh-TW': '偵測到失效軟連結：{paths}', en: 'Broken symlink(s): {paths}' },
+      'settings.cliUnlock.metaPath': { 'zh-CN': '二进制路径：{path}', 'zh-TW': '二進位路徑：{path}', en: 'Binary: {path}' },
+      'settings.cliUnlock.metaCfg': { 'zh-CN': '已同步 CLI 配置：{n} 项', 'zh-TW': '已同步 CLI 設定：{n} 項', en: 'Synced CLI configs: {n}' },
 
       // 速度图表 Aria 与 设置/更新弹窗
       'speed.barSvg.aria': { 'zh-CN': '各模型与档位速度对比柱状图', 'zh-TW': '各模型與檔位速度對比長條圖', en: 'Model & effort speed comparison bar chart' },
@@ -1001,37 +884,7 @@
       'cp.hslAria': { 'zh-CN': 'HSL 色值', 'zh-TW': 'HSL 色值', en: 'HSL value' },
       'cp.copyHsl': { 'zh-CN': '复制 HSL', 'zh-TW': '複製 HSL', en: 'Copy HSL' },
 
-      // 订阅表单与热力图补充
-      'plan.summary.priceBadgeTitle': { 'zh-CN': '当前订阅月费及人民币折合汇率参考 (点击展开/收起详情)', 'zh-TW': '目前訂閱月費及人民幣折合匯率參考 (點擊展開/收起詳情)', en: 'Current monthly fee & CNY estimate (click to toggle details)' },
-      'plan.country.title': { 'zh-CN': '仅作为本地显示记录，不修改实际 Google 账号', 'zh-TW': '僅作為本機顯示記錄，不修改實際 Google 帳號', en: 'Local display record only; does not change your Google account' },
-      'plan.region.title': { 'zh-CN': '实际购买或支付订阅所在的国家或地区', 'zh-TW': '實際購買或支付訂閱所在的國家或地區', en: 'Country/region where the subscription is billed' },
-      'plan.currency.aria': { 'zh-CN': '选择订阅币种', 'zh-TW': '選擇訂閱幣別', en: 'Select subscription currency' },
-      'plan.currency.title': { 'zh-CN': '订阅计价/结算币种', 'zh-TW': '訂閱計價/結算幣別', en: 'Subscription billing currency' },
-      'plan.country.unknown': { 'zh-CN': '未知', 'zh-TW': '未知', en: 'Unknown' },
-      'plan.region.unknown': { 'zh-CN': '未知', 'zh-TW': '未知', en: 'Unknown' },
-      'plan.cnyApprox': { 'zh-CN': '折合 ≈ ¥{val} CNY/月', 'zh-TW': '折合 ≈ ¥{val} CNY/月', en: '≈ ¥{val} CNY/mo' },
-      'plan.cnyShort': { 'zh-CN': '≈ ¥{val} CNY', 'zh-TW': '≈ ¥{val} CNY', en: '≈ ¥{val} CNY' },
-      'plan.acqOpt.normal_paid': { 'zh-CN': '正常官方付费订阅', 'zh-TW': '正常官方付費訂閱', en: 'Standard paid subscription' },
-      'plan.acqOpt.student_offer': { 'zh-CN': '学生教育优惠 (Google AI Pro 学生方案)', 'zh-TW': '學生教育優惠 (Google AI Pro 學生方案)', en: 'Student discount (Google AI Pro)' },
-      'plan.acqOpt.pixel_bundle': { 'zh-CN': 'Pixel 手机购机赠送权益', 'zh-TW': 'Pixel 手機購機贈送權益', en: 'Pixel phone bundle perk' },
-      'plan.acqOpt.chromebook_bundle': { 'zh-CN': 'Chromebook 购机赠送权益', 'zh-TW': 'Chromebook 購機贈送權益', en: 'Chromebook bundle perk' },
-      'plan.acqOpt.samsung_galaxy': { 'zh-CN': 'Samsung Galaxy 手机赠送权益', 'zh-TW': 'Samsung Galaxy 手機贈送權益', en: 'Samsung Galaxy perk' },
-      'plan.acqOpt.jio_offer': { 'zh-CN': 'Jio 运营商优惠活动', 'zh-TW': 'Jio 電信優惠活動', en: 'Jio carrier promotion' },
-      'plan.acqOpt.partner_carrier': { 'zh-CN': '合作运营商 / 活动赠送', 'zh-TW': '合作電信商 / 活動贈送', en: 'Carrier / partner promotion' },
-      'plan.acqOpt.family_sharing': { 'zh-CN': 'Google 家庭共享成员', 'zh-TW': 'Google 家庭共享成員', en: 'Google Family Sharing' },
-      'plan.acqOpt.official_promo': { 'zh-CN': '官方试用 / 促销优惠', 'zh-TW': '官方試用 / 促銷優惠', en: 'Official trial / promo' },
-      'plan.acqOpt.custom_source': { 'zh-CN': '其他自定义渠道', 'zh-TW': '其他自訂管道', en: 'Other custom source' },
-      'plan.form.presetPlaceholder': { 'zh-CN': '-- 选择预设地区 (自动填入价格与汇率) --', 'zh-TW': '-- 選擇預設地區 (自動填入價格與匯率) --', en: '-- Choose preset region (auto-fills price & rate) --' },
-      'plan.form.presetCustom': { 'zh-CN': '✎ 自定义输入地区', 'zh-TW': '✎ 自訂輸入地區', en: '✎ Custom region' },
-      'plan.form.countryPh': { 'zh-CN': '例如：美国 (US)', 'zh-TW': '例如：美國 (US)', en: 'e.g. United States (US)' },
-      'plan.form.regionPh': { 'zh-CN': '例如：韩国 / 澳大利亚', 'zh-TW': '例如：韓國 / 澳洲', en: 'e.g. South Korea / Australia' },
-      'plan.form.presetLine': { 'zh-CN': '{flag} {name} ({id}) · {sym}{price}/月 (≈ ¥{cny})', 'zh-TW': '{flag} {name} ({id}) · {sym}{price}/月 (≈ ¥{cny})', en: '{flag} {name} ({id}) · {sym}{price}/mo (≈ ¥{cny})' },
-      'plan.form.presetLineCny': { 'zh-CN': '{flag} {name} (CNY) · ¥{price}/月', 'zh-TW': '{flag} {name} (CNY) · ¥{price}/月', en: '{flag} {name} (CNY) · ¥{price}/mo' },
-      'plan.cycleOpt.monthly': { 'zh-CN': '月付', 'zh-TW': '月付', en: 'Monthly' },
-      'plan.cycleOpt.yearly': { 'zh-CN': '年付', 'zh-TW': '年付', en: 'Yearly' },
-      'plan.cycleOpt.free': { 'zh-CN': '免费 / 促销赠送', 'zh-TW': '免費 / 促銷贈送', en: 'Free / Promo' },
-      'plan.cycleOpt.included': { 'zh-CN': '随套餐包含', 'zh-TW': '隨方案包含', en: 'Included in bundle' },
-      'plan.cycleOpt.other': { 'zh-CN': '其他周期', 'zh-TW': '其他週期', en: 'Other cycle' },
+      // 热力图与色彩自定义补充
       'tokens.heat.prevTitle': { 'zh-CN': '上一个周期', 'zh-TW': '上一個週期', en: 'Previous period' },
       'tokens.heat.nextTitle': { 'zh-CN': '下一个周期', 'zh-TW': '下一個週期', en: 'Next period' },
       'tokens.heat.tabsAria': { 'zh-CN': '热力图时间维度', 'zh-TW': '熱力圖時間維度', en: 'Heatmap time dimension' },
@@ -1122,50 +975,6 @@
     '完整重启 Antigravity 后启用附件扫描': { 'zh-TW': '完整重新啟動 Antigravity 後啟用附件掃描', en: 'Fully restart Antigravity to enable attachment scanning' },
     '扫描未返回有效结果': { 'zh-TW': '掃描未回傳有效結果', en: 'Scan returned no valid result' }
   };
-
-  function localizeBillingCycleLabel(cycle) {
-    if (!cycle) return t('plan.cycleOpt.monthly');
-    const c = String(cycle).trim();
-    if (c === '月付' || c === '月繳' || c === 'Monthly' || c === 'monthly') return t('plan.cycleOpt.monthly');
-    if (c === '年付' || c === '年繳' || c === 'Yearly' || c === 'yearly') return t('plan.cycleOpt.yearly');
-    if (c === '免费/赠送' || c === '随套餐赠送/免费' || c === 'Free / Promo' || c === 'free') {
-      if (currentPanelLanguage === 'zh-CN') return '免费/赠送';
-      if (currentPanelLanguage === 'zh-TW') return '免費/贈送';
-      return 'Free / Promo';
-    }
-    if (c === '随套餐包含' || c === 'Included in bundle') return t('plan.cycleOpt.included');
-    if (c === '单次' || c === '單次' || c === 'One-time' || c === 'one_time') return t('plan.cycle.oneTime');
-    if (c === '其他周期' || c === 'Other cycle') return t('plan.cycleOpt.other');
-    if (c === '未知' || c === 'Unknown') return t('speed.unknown');
-    return c;
-  }
-
-  function localizeAcquisitionSource(val) {
-    if (!val) return t('plan.acq.normal');
-    const s = String(val).trim();
-    const directKey = `plan.acqOpt.${s}`;
-    const directHit = t(directKey);
-    if (directHit && directHit !== directKey) return directHit;
-
-    if (s.includes('学生') || s.includes('教育') || s.includes('Student')) return t('plan.acqOpt.student_offer');
-    if (s.includes('Pixel')) return t('plan.acqOpt.pixel_bundle');
-    if (s.includes('Chromebook')) return t('plan.acqOpt.chromebook_bundle');
-    if (s.includes('Samsung') || s.includes('三星')) return t('plan.acqOpt.samsung_galaxy');
-    if (s.includes('Jio')) return t('plan.acqOpt.jio_offer');
-    if (s.includes('家庭') || s.includes('Family')) return t('plan.acqOpt.family_sharing');
-    if (s.includes('促销') || s.includes('试用') || s.includes('Promo') || s.includes('Trial')) return t('plan.acqOpt.official_promo');
-    if (s.includes('正常') || s.includes('付费') || s.includes('Standard') || s.includes('Paid')) return t('plan.acq.normal');
-    if (s.includes('自定义') || s.includes('Custom')) return t('plan.acqOpt.custom_source');
-    return s;
-  }
-
-  function localizeCnyFormatted(str) {
-    if (!str) return '';
-    const s = String(str).trim();
-    const cleanVal = s.replace(/^[折合約\s≈()（）]+/, '').replace(/[()（）]/g, '').trim();
-    if (!cleanVal) return '';
-    return t('plan.cny.approx', { val: cleanVal });
-  }
 
   function localizeUnknownLabel(val) {
     if (val === null || val === undefined || val === '') return t('speed.unknown');

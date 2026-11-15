@@ -9,7 +9,7 @@
 #      - 上下文窗口解锁 (default 256K / fixed / dynamic) + 发送链路 maxTokenLimit 动态覆写
 #      - 会话主标题 & 章节标题自动简体中文补丁
 #      - 桌面端简体中文界面与 4 态品牌标题 (默认：哈基米 / 反重力 / 隐藏 / Antigravity)
-#      - 实时上下文占用监控、速率监测、8 类错误诊断、Token 消费历史与参考费用看板
+#      - 实时上下文占用监控、速率监测、8 类错误诊断与 Token 消费历史看板
 #
 # 用法:
 #   ./build-hakimi.sh [选项]
@@ -34,6 +34,8 @@ ICON_PATH=""
 RAW_ICON=0
 FORCE_DEFAULT_ICON=0
 AUTO_RESTART=0
+PATCH_CLI=0
+CLI_BIN=""
 
 usage() {
   cat <<'EOF'
@@ -50,6 +52,8 @@ usage() {
   -r, --restart                   若目标应用当前正在运行，构建完成后自动优雅退出旧进程并重启新版
   --context-mode <mode>           上下文窗口模式: default | fixed | dynamic (默认: dynamic)
   --context-limit <tokens>        当 --context-mode fixed 时指定固定 token 上限 (16384 ~ 2097152)
+  --patch-cli                     构建完成后联动修补本机 agy CLI 二进制并同步 CLI 上下文配置
+  --cli-bin <path>                可选：配合 --patch-cli 指定 agy 二进制路径
   --chinese-title <on|off>        是否启用会话/章节自动简体中文标题补丁 (默认: on)
   --client-lang <zh-CN|en>        桌面端界面语言 (首次写入配置默认为 zh-CN)
   --brand <hakimi|translated|hidden|english>
@@ -93,6 +97,16 @@ while [[ $# -gt 0 ]]; do
     --context-limit)
       require_arg "$@"
       CONTEXT_LIMIT="$2"
+      shift 2
+      ;;
+    --patch-cli)
+      PATCH_CLI=1
+      shift
+      ;;
+    --cli-bin)
+      require_arg "$@"
+      CLI_BIN="$2"
+      PATCH_CLI=1
       shift 2
       ;;
     --chinese-title)
@@ -193,6 +207,13 @@ fi
 [[ -f "$SRC/Contents/Resources/app.asar" ]] || { echo "源应用缺少 Contents/Resources/app.asar: $SRC" >&2; exit 1; }
 [[ -f "$SRC/Contents/Resources/bin/language_server" ]] || { echo "源应用缺少 Contents/Resources/bin/language_server: $SRC" >&2; exit 1; }
 
+SRC_VERSION="$(node -e '
+const path = require("path");
+const { readBundleShortVersion } = require(path.join(process.argv[1], "payload", "dist", "modules-config.js"));
+process.stdout.write(readBundleShortVersion(path.join(process.argv[2], "Contents", "Info.plist")) || "unknown");
+' "$SCRIPT_DIR" "$SRC")"
+echo "==> 只读官方源: $SRC (版本: v$SRC_VERSION)"
+
 if [[ $STAGE_ONLY -eq 0 && ( -e "$APP" || -L "$APP" ) && $FORCE -eq 0 ]]; then
   echo "输出路径已存在: $APP （如需覆盖请传入 --force，或用 --app 指定新路径）" >&2
   exit 1
@@ -209,8 +230,10 @@ if [[ -n "$ICON_PATH" ]]; then
   command -v iconutil >/dev/null 2>&1 || { echo "自定义图标需要 macOS iconutil 工具" >&2; exit 1; }
 fi
 
+# --- BEGIN TARGET PROCESS LIFECYCLE HELPERS ---
 find_running_target_pids() {
   local target_app="$1"
+  local mode="${2:-all}"
   [[ -f "$target_app/Contents/MacOS/Antigravity" ]] || return 0
   node -e '
   const fs = require("fs");
@@ -218,22 +241,88 @@ find_running_target_pids() {
   const { execFileSync } = require("child_process");
   const appExec = fs.realpathSync(path.join(process.argv[1], "Contents", "MacOS", "Antigravity"));
   const appPrefix = fs.realpathSync(process.argv[1]) + "/";
+  const mode = process.argv[2] || "all";
   const out = execFileSync("ps", ["-ax", "-o", "pid=,command="], {
     encoding: "utf8",
     env: { ...process.env, LANG: "en_US.UTF-8", LC_CTYPE: "UTF-8", LC_TIME: "C" },
   });
+  const selfPids = new Set([process.pid, process.ppid]);
   const pids = [];
   for (const line of out.split(/\r?\n/)) {
     const m = line.match(/^\s*(\d+)\s+(.+)$/);
     if (!m) continue;
+    const pid = Number(m[1]);
+    if (selfPids.has(pid)) continue;
     const cmd = m[2];
-    if (cmd === appExec || cmd.startsWith(appExec + " ") || cmd.startsWith(appPrefix)) {
-      pids.push(Number(m[1]));
+    const isMain = cmd === appExec || cmd.startsWith(appExec + " ");
+    const isUnderApp = cmd.startsWith(appPrefix);
+    if (mode === "main" ? isMain : (isMain || isUnderApp)) {
+      pids.push(pid);
     }
   }
   process.stdout.write(pids.join(" "));
-  ' "$target_app"
+  ' "$target_app" "$mode"
 }
+
+stop_running_target_app() {
+  local target_app="$1"
+  local grace_tenths="${HAKIMI_STOP_GRACE_TENTHS:-35}"
+  local term_tenths="${HAKIMI_STOP_TERM_TENTHS:-15}"
+  local kill_tenths="${HAKIMI_STOP_KILL_TENTHS:-25}"
+
+  trap '' HUP
+
+  local main_pids rem_pids
+  main_pids="$(find_running_target_pids "$target_app" main)"
+  if [[ -n "$main_pids" ]]; then
+    for pid in $main_pids; do
+      kill -TERM "$pid" 2>/dev/null || true
+    done
+    for ((i = 0; i < grace_tenths; i++)); do
+      rem_pids="$(find_running_target_pids "$target_app" all)"
+      [[ -z "$rem_pids" ]] && break
+      sleep 0.1
+    done
+  fi
+
+  rem_pids="$(find_running_target_pids "$target_app" all)"
+  if [[ -n "$rem_pids" ]]; then
+    for pid in $rem_pids; do
+      kill -TERM "$pid" 2>/dev/null || true
+    done
+    for ((i = 0; i < term_tenths; i++)); do
+      rem_pids="$(find_running_target_pids "$target_app" all)"
+      [[ -z "$rem_pids" ]] && break
+      sleep 0.1
+    done
+  fi
+
+  rem_pids="$(find_running_target_pids "$target_app" all)"
+  if [[ -n "$rem_pids" ]]; then
+    echo "==> 旧进程仍在清理中，强制结束残留进程 (PID: $rem_pids) ..."
+    for ((i = 0; i < kill_tenths; i++)); do
+      rem_pids="$(find_running_target_pids "$target_app" all)"
+      [[ -z "$rem_pids" ]] && break
+      for pid in $rem_pids; do
+        kill -KILL "$pid" 2>/dev/null || true
+      done
+      sleep 0.1
+    done
+  fi
+
+  rem_pids="$(find_running_target_pids "$target_app" all)"
+  if [[ -n "$rem_pids" ]]; then
+    echo "等待进程退出超时，仍有残留进程 (PID: $rem_pids)，请先手动 Cmd+Q 退出 $target_app" >&2
+    exit 1
+  fi
+
+  node -e '
+  const path = require("path");
+  const { cleanupStaleSingletonLock } = require(path.join(process.argv[1], "payload", "dist", "modules-config.js"));
+  cleanupStaleSingletonLock(process.env.HAKIMI_USER_DATA_DIR || undefined);
+  ' "$SCRIPT_DIR" 2>/dev/null || true
+}
+# --- END TARGET PROCESS LIFECYCLE HELPERS ---
 
 WAS_RUNNING=0
 if [[ $STAGE_ONLY -eq 0 && -d "$APP" ]]; then
@@ -251,6 +340,8 @@ if [[ ! -f "$SCRIPT_DIR/payload/dist/meter-renderer.js" ]] || \
    [[ "$SCRIPT_DIR/src/renderer/main.js" -nt "$SCRIPT_DIR/payload/dist/meter-renderer.js" ]] || \
    [[ "$SCRIPT_DIR/src/renderer/template.html" -nt "$SCRIPT_DIR/payload/dist/meter-renderer.js" ]] || \
    [[ "$SCRIPT_DIR/src/renderer/i18n.js" -nt "$SCRIPT_DIR/payload/dist/meter-renderer.js" ]] || \
+   [[ "$SCRIPT_DIR/src/renderer/dropdown.js" -nt "$SCRIPT_DIR/payload/dist/meter-renderer.js" ]] || \
+   [[ "$SCRIPT_DIR/src/renderer/heatmap.js" -nt "$SCRIPT_DIR/payload/dist/meter-renderer.js" ]] || \
    [[ "$SCRIPT_DIR/src/renderer/styles.css" -nt "$SCRIPT_DIR/payload/dist/meter-renderer.js" ]]; then
   echo "==> 编译 Context Meter 渲染层 (meter-renderer.js)"
   node "$SCRIPT_DIR/scripts/build-renderer.js"
@@ -285,114 +376,7 @@ codesign -d --entitlements - --xml "$SRC_LS" 2>/dev/null > "$ENT_LS"  || true
 PLIST
 
 echo "==> [1/4] 写入地区 / Free-tier 解锁补丁 (authclient.ValidateAndOnboardAccount)"
-python3 - "$STAGE_LS" <<'PY'
-import hashlib, os, stat, struct, sys
-
-path = sys.argv[1]
-with open(path, 'rb') as f:
-    data = bytearray(f.read())
-
-EXPECTED_SHA256 = 'f5377993d29bc1036ed9ddbfb2aec55bb37b8aaaf811df4a8c3ed5763dde2db0'
-actual_sha = hashlib.sha256(data).hexdigest()
-if actual_sha != EXPECTED_SHA256:
-    sys.exit(f"仅支持已核验的 Antigravity 2.32.1 ARM64 原始文件；当前 SHA256={actual_sha} 不匹配，停止处理")
-
-# pclntab: magic 0xFFFFFFF1 (Go >= 1.20) / 0xFFFFFFF0
-cands = []
-for magic in (0xFFFFFFF1, 0xFFFFFFF0):
-    pat = struct.pack('<I', magic) + b'\x00\x00'
-    s = 0
-    while True:
-        i = data.find(pat, s)
-        if i < 0:
-            break
-        cands.append((i, magic))
-        s = i + 1
-
-funcs = None
-for i, magic in cands:
-    try:
-        nfunc, = struct.unpack('<Q', data[i+8:i+16])
-        textStart, fnOff, cuOff, ftOff, pcOff, pclnOff = struct.unpack('<QQQQQQ', data[i+24:i+72])
-    except Exception:
-        continue
-    if not (0 < nfunc < 500000 and 0 < pclnOff < len(data)):
-        continue
-    functab = i + pclnOff
-    fnname = i + fnOff
-    table = []
-    for k in range(nfunc):
-        entryoff, funcoff = struct.unpack('<II', data[functab+k*8: functab+k*8+8])
-        fo = functab + funcoff
-        nameoff, = struct.unpack('<i', data[fo+4:fo+8])
-        ns = fnname + nameoff
-        ne = data.find(b'\x00', ns)
-        table.append((entryoff, data[ns:ne].decode('utf8', 'replace')))
-    funcs = (i, table)
-    break
-
-if not funcs:
-    sys.exit("找不到 Go pclntab，版本可能变了")
-
-hdr, table = funcs
-first_off, first_name = table[0]
-if first_name != 'internal/abi.(*RegArgs).Dump':
-    print(f"  注意: 首个符号为 {first_name}")
-
-text_off = None
-for cand in range(0x400, 0x4000, 4):
-    w, = struct.unpack('<I', data[cand:cand+4])
-    if (w & 0xFFC0001F) == (0xF9400000 | 16) and ((w >> 5) & 0x1f) == 28:
-        text_off = cand
-        break
-if text_off is None:
-    sys.exit("找不到 __text 起点")
-
-target = 'authclient.ValidateAndOnboardAccount'
-hit = [(o, n) for (o, n) in table if n.endswith(target)]
-if not hit:
-    sys.exit(f"函数表中找不到 {target}")
-
-entryoff, name = hit[0]
-start = text_off + entryoff
-nxt = min((o for (o, _) in table if o > entryoff), default=entryoff + 0x2000)
-end = text_off + nxt
-print(f"  找到 {name.split('/')[-1]} @ file offset 0x{start:x} (len 0x{end-start:x})")
-
-CMP_X8_9 = 0xf100251f
-spots = []
-for off in (start + 0x294,):
-    w, = struct.unpack('<I', data[off:off+4])
-    if w != CMP_X8_9:
-        continue
-    b, = struct.unpack('<I', data[off+4:off+8])
-    if (b & 0xfc000000) != 0x54000000:
-        continue
-    imm19 = (b >> 5) & 0x7ffff
-    if imm19 >= (1 << 18):
-        imm19 -= (1 << 19)
-    tgt = off + 4 + imm19 * 4
-    if tgt < off:
-        spots.append((off + 4, b, tgt))
-
-if len(spots) != 1:
-    sys.exit(f"期望命中 1 处，实际 {len(spots)} 处；版本可能变了，需人工确认")
-
-b_off, b_word, tgt = spots[0]
-off26 = (tgt - b_off) // 4
-if off26 < -(1 << 25) or off26 >= (1 << 25):
-    sys.exit("分支距离超出范围")
-new = 0x14000000 | (off26 & 0x03ffffff)
-data[b_off:b_off+4] = struct.pack('<I', new)
-
-mode = stat.S_IMODE(os.stat(path).st_mode) or 0o755
-tmp_path = f"{path}.region_tmp_{os.getpid()}"
-with open(tmp_path, 'wb') as f:
-    f.write(data)
-os.chmod(tmp_path, mode)
-os.replace(tmp_path, path)
-print(f"  patched: file 0x{b_off:x}  {b_word:#010x}(b.cond) -> {new:#010x}(b)  target 0x{tgt:x}")
-PY
+node "$SCRIPT_DIR/scripts/region-unlock.js" --apply "$STAGE_LS"
 
 echo "==> [2/4] 写入上下文窗口解锁 (${CONTEXT_MODE}${CONTEXT_LIMIT:+:$CONTEXT_LIMIT}) & 自动中文标题 (${CHINESE_TITLE})"
 node -e '
@@ -452,7 +436,7 @@ if (!stageOnly) {
   const effLimit = (ctxInfo && ctxInfo.configuredLimitTokens) || (contextLimit ? Number(contextLimit) : null);
   contextUnlock.syncExternalContextConfigs(effMode, effLimit, {
     syncConfigFiles: true,
-    syncCliConfigs: false,
+    syncCliConfigs: true,
   });
 }
 ' "$SCRIPT_DIR" "$STAGE_LS" "$APP" "$WORK" "$STAGE_ONLY" "$CONTEXT_MODE" "$CONTEXT_LIMIT" "$CHINESE_TITLE"
@@ -541,24 +525,11 @@ fi
 
 if [[ -e "$APP" || -L "$APP" ]]; then
   if [[ $AUTO_RESTART -eq 1 ]]; then
-    CUR_PIDS="$(find_running_target_pids "$APP")"
+    CUR_PIDS="$(find_running_target_pids "$APP" all)"
     if [[ -n "$CUR_PIDS" ]]; then
       WAS_RUNNING=1
       echo "==> 正在退出运行中的 $APP ..."
-      for pid in $CUR_PIDS; do
-        kill -TERM "$pid" 2>/dev/null || true
-      done
-      for _ in $(seq 1 30); do
-        STILL_ALIVE=0
-        for pid in $CUR_PIDS; do
-          if kill -0 "$pid" 2>/dev/null; then
-            STILL_ALIVE=1
-            break
-          fi
-        done
-        [[ $STILL_ALIVE -eq 0 ]] && break
-        sleep 0.2
-      done
+      stop_running_target_app "$APP"
     fi
   fi
   # 二次守卫后移除旧的 哈基米.app 副本
@@ -579,9 +550,20 @@ if [[ -x "$LSREGISTER" ]]; then
   "$LSREGISTER" -f "$APP" 2>/dev/null || true
 fi
 
+if [[ $PATCH_CLI -eq 1 ]]; then
+  echo "==> [CLI] 联动修补本机 agy CLI 并同步配置"
+  CLI_ARGS=(--apply --mode "$CONTEXT_MODE")
+  [[ -n "$CONTEXT_LIMIT" ]] && CLI_ARGS+=(--limit "$CONTEXT_LIMIT")
+  if [[ -n "$CLI_BIN" ]]; then
+    CLI_ARGS+=(--binary "$CLI_BIN" --strict)
+  fi
+  node "$SCRIPT_DIR/scripts/cli-unlock.js" "${CLI_ARGS[@]}"
+fi
+
 if [[ $AUTO_RESTART -eq 1 && $WAS_RUNNING -eq 1 ]]; then
   echo "==> 重新打开 $APP"
-  open "$APP"
+  sleep 0.5
+  env -u ELECTRON_RUN_AS_NODE -u ELECTRON_NO_ASAR -u NODE_OPTIONS -u ELECTRON_OZONE_PLATFORM_HINT -u DEV_URL open -n "$APP"
 fi
 
 echo "==> 构建完成！"

@@ -50,10 +50,7 @@
             ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
             : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
           heatPopDate.textContent = `${dateLabel}${item.isToday ? t('heat.today') : (item.key === win.firstStr ? t('heat.firstUse') : '')}`;
-          const costInfo = getDailyModelCost(item.rec, item.key, activeCostModel, { mode: activeCostMode });
-          const cny = convertToCNY(costInfo.costUSD, 'USD');
-          const costStr = costInfo.costUSD > 0 ? ` · ≈ $${costInfo.costUSD.toFixed(2)}${cny !== null ? ` (¥${cny.toFixed(2)})` : ''}` : '';
-          heatPopVal.textContent = item.tokens > 0 ? `${fmtYi(item.tokens)} Tokens${costStr}` : (item.isFuture ? t('heat.future') : '0 Tokens');
+          heatPopVal.textContent = item.tokens > 0 ? `${fmtYi(item.tokens)} Tokens` : (item.isFuture ? t('heat.future') : '0 Tokens');
           if (item.rec) {
             heatPopDet.innerHTML = `
               <div class="pop-det-col"><span class="pop-det-val">Prompt: ${fmtYi(item.rec.input)}</span><span class="pop-det-trans">${t('heat.prompt')}</span></div>
@@ -133,15 +130,12 @@
       const showPop = () => {
         const weekDates = [];
         for (let r = 0; r < 7; r++) weekDates.push(formatLocalYmd(addDays(w.sDate, r)));
-        const costAgg = calculateIntervalCost(ANTIGRAVITY_TOKEN_DATA.dailyMap, weekDates, activeCostModel, {
-          mode: activeCostMode,
+        const tokAgg = calculateIntervalTokens(ANTIGRAVITY_TOKEN_DATA.dailyMap, weekDates, {
           todayStr: formatLocalYmd(win.today)
         });
-        const cny = convertToCNY(costAgg.totalCostUSD, 'USD');
-        const costStr = costAgg.totalCostUSD > 0 ? ` · ≈ $${costAgg.totalCostUSD.toFixed(2)}${cny !== null ? ` (¥${cny.toFixed(2)})` : ''}` : '';
         heatPopDate.textContent = `${w.sDate.getFullYear()}.${w.sDate.getMonth() + 1}.${w.sDate.getDate()} - ${w.eDate.getMonth() + 1}.${w.eDate.getDate()}`;
-        heatPopVal.textContent = w.sum > 0 ? `${fmtYi(w.sum)} Tokens${costStr}` : '0 Tokens';
-        heatPopDet.innerHTML = `<span>${t('heat.weeklyTotal', { avg: costAgg.dailyAverageUSD.toFixed(2) })}</span>`;
+        heatPopVal.textContent = w.sum > 0 ? `${fmtYi(w.sum)} Tokens` : '0 Tokens';
+        heatPopDet.innerHTML = `<span>${t('heat.weeklyTotal', { avg: fmtYi(tokAgg.dailyAverageTokens) })}</span>`;
         heatPopDet.style.display = 'block';
         const r = col.getBoundingClientRect();
         heatPop.style.left = `${r.left + r.width / 2}px`;
@@ -246,18 +240,15 @@
       for (const k of Object.keys(map)) {
         if (k <= pt.key) cumDates.push(k);
       }
-      const costAgg = calculateIntervalCost(map, cumDates, activeCostModel, {
-        mode: activeCostMode,
+      const tokAgg = calculateIntervalTokens(map, cumDates, {
         todayStr: formatLocalYmd(win.today)
       });
-      const cny = convertToCNY(costAgg.totalCostUSD, 'USD');
-      const costStr = costAgg.totalCostUSD > 0 ? ` · ≈ $${costAgg.totalCostUSD.toFixed(2)}${cny !== null ? ` (¥${cny.toFixed(2)})` : ''}` : '';
       const cumDateLabel = currentPanelLanguage === 'en'
         ? `${pt.date.getFullYear()}-${String(pt.date.getMonth() + 1).padStart(2, '0')}-${String(pt.date.getDate()).padStart(2, '0')}`
         : `${pt.date.getFullYear()}年${pt.date.getMonth() + 1}月${pt.date.getDate()}日`;
       heatPopDate.textContent = `${cumDateLabel}${t('heat.cumSuffix')}`;
-      heatPopVal.textContent = `${fmtYi(pt.val)} Tokens${costStr}`;
-      heatPopDet.innerHTML = `<span>${t('heat.cumTotal', { avg: costAgg.dailyAverageUSD.toFixed(2) })}</span>`;
+      heatPopVal.textContent = `${fmtYi(pt.val)} Tokens`;
+      heatPopDet.innerHTML = `<span>${t('heat.cumTotal', { avg: fmtYi(tokAgg.dailyAverageTokens) })}</span>`;
       heatPopDet.style.display = 'block';
       heatPop.style.left = `${e.clientX}px`;
       heatPop.style.top = `${r.top + (height - (pt.val / max) * (height - 12)) - 6}px`;
@@ -272,45 +263,17 @@
 
   function updateSummaryBar(viewType, dateKeys = []) {
     const sumTokensEl = el('h-sum-tokens');
-    const sumCostEl = el('h-sum-cost');
     const sumDailyAvgEl = el('h-sum-daily-avg');
     const sumActiveAvgEl = el('h-sum-active-avg');
-    const subRatioWrapEl = el('h-sum-sub-ratio-wrap');
-    const subRatioEl = el('h-sum-sub-ratio');
-    if (!sumTokensEl || !sumCostEl) return;
+    if (!sumTokensEl) return;
 
     const win = computeTimelineWindow();
     const todayStr = formatLocalYmd(win.today);
-    const costAgg = calculateIntervalCost(ANTIGRAVITY_TOKEN_DATA.dailyMap, dateKeys, activeCostModel, {
-      mode: activeCostMode,
-      todayStr
-    });
+    const tokAgg = calculateIntervalTokens(ANTIGRAVITY_TOKEN_DATA.dailyMap, dateKeys, { todayStr });
 
-    const cny = convertToCNY(costAgg.totalCostUSD, 'USD');
-    sumTokensEl.textContent = `${fmtYi(costAgg.totalTokens)} Tokens`;
-    sumCostEl.textContent = `≈ $${costAgg.totalCostUSD.toFixed(2)}${cny !== null ? ` (¥${cny.toFixed(2)})` : ''}`;
-    sumDailyAvgEl.textContent = `$${costAgg.dailyAverageUSD.toFixed(2)}`;
-    sumActiveAvgEl.textContent = t('heat.activeDays', { avg: costAgg.activeDailyAverageUSD.toFixed(2), days: costAgg.activeDays });
-
-    if ((viewType === 'monthly' || viewType === 'yearly') && subRatioWrapEl && subRatioEl) {
-      const plan = resolveEffectivePlanStatus(ANTIGRAVITY_TOKEN_DATA.planStatus, ANTIGRAVITY_TOKEN_DATA.customPlanSettings);
-      const paidVal = plan.actualPricePaid ?? plan.pricePaid ?? plan.officialPriceMonthly ?? null;
-      const isZeroCost = plan.isZeroExtraCost || paidVal === 0;
-      if (!isZeroCost && paidVal > 0 && costAgg.totalCostUSD > 0) {
-        const subMonthlyUSD = plan.currency === 'USD' ? paidVal : (plan.actualPricePaidCNY ? plan.actualPricePaidCNY / 6.72 : paidVal);
-        if (subMonthlyUSD > 0) {
-          const ratio = (costAgg.totalCostUSD / (viewType === 'yearly' ? subMonthlyUSD * 12 : subMonthlyUSD)).toFixed(1);
-          subRatioEl.textContent = t('heat.roi', { ratio });
-          subRatioWrapEl.style.display = 'inline-flex';
-        } else {
-          subRatioWrapEl.style.display = 'none';
-        }
-      } else {
-        subRatioWrapEl.style.display = 'none';
-      }
-    } else if (subRatioWrapEl) {
-      subRatioWrapEl.style.display = 'none';
-    }
+    sumTokensEl.textContent = `${fmtYi(tokAgg.totalTokens)} Tokens`;
+    if (sumDailyAvgEl) sumDailyAvgEl.textContent = `${fmtYi(tokAgg.dailyAverageTokens)} Tokens`;
+    if (sumActiveAvgEl) sumActiveAvgEl.textContent = t('heat.activeDays', { avg: fmtYi(tokAgg.activeDailyAverageTokens), days: tokAgg.activeDays });
   }
 
   function renderHeatmapMonthly() {
@@ -385,14 +348,11 @@
       }
 
       const showPop = () => {
-        const costInfo = getDailyModelCost(rec, k, activeCostModel, { mode: activeCostMode });
-        const cny = convertToCNY(costInfo.costUSD, 'USD');
-        const costStr = costInfo.costUSD > 0 ? ` · ≈ $${costInfo.costUSD.toFixed(2)}${cny !== null ? ` (¥${cny.toFixed(2)})` : ''}` : '';
         const mDateLabel = currentPanelLanguage === 'en'
           ? `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
           : `${targetYear}年${targetMonth + 1}月${day}日`;
         heatPopDate.textContent = `${mDateLabel}${isToday ? t('heat.today') : ''}`;
-        heatPopVal.textContent = tokens > 0 ? `${fmtYi(tokens)} Tokens${costStr}` : (isFuture ? t('heat.future') : '0 Tokens');
+        heatPopVal.textContent = tokens > 0 ? `${fmtYi(tokens)} Tokens` : (isFuture ? t('heat.future') : '0 Tokens');
         if (rec) {
           heatPopDet.innerHTML = `
             <div class="pop-det-col"><span class="pop-det-val">Prompt: ${fmtYi(rec.input)}</span><span class="pop-det-trans">${t('heat.prompt')}</span></div>
@@ -561,16 +521,13 @@
       g.appendChild(text);
 
       const showPop = () => {
-        const costAgg = calculateIntervalCost(ANTIGRAVITY_TOKEN_DATA.dailyMap, item.dates, activeCostModel, {
-          mode: activeCostMode,
+        const tokAgg = calculateIntervalTokens(ANTIGRAVITY_TOKEN_DATA.dailyMap, item.dates, {
           todayStr: formatLocalYmd(win.today)
         });
-        const cny = convertToCNY(costAgg.totalCostUSD, 'USD');
-        const costStr = costAgg.totalCostUSD > 0 ? ` · ≈ $${costAgg.totalCostUSD.toFixed(2)}${cny !== null ? ` (¥${cny.toFixed(2)})` : ''}` : '';
         const yearMonthLabel = currentPanelLanguage === 'en' ? `${item.monthName} ${targetYear}` : `${targetYear}年${item.monthName}`;
         heatPopDate.textContent = `${yearMonthLabel}${item.isCurrent ? t('heatmap.pop.inProgress') : (item.monthIndex === peakMonthIndex ? t('heatmap.pop.peak') : '')}`;
-        heatPopVal.textContent = item.tokens > 0 ? `${fmtYi(item.tokens)} Tokens${costStr}` : (item.isFuture ? t('heatmap.pop.future') : '0 Tokens');
-        heatPopDet.innerHTML = `<span>${t('heatmap.pop.monthlyDet', { avg: costAgg.dailyAverageUSD.toFixed(2), days: costAgg.activeDays })}</span>`;
+        heatPopVal.textContent = item.tokens > 0 ? `${fmtYi(item.tokens)} Tokens` : (item.isFuture ? t('heatmap.pop.future') : '0 Tokens');
+        heatPopDet.innerHTML = `<span>${t('heatmap.pop.monthlyDet', { avg: fmtYi(tokAgg.dailyAverageTokens), days: tokAgg.activeDays })}</span>`;
         heatPopDet.style.display = 'block';
 
         const r = g.getBoundingClientRect ? g.getBoundingClientRect() : { left: cx, top: cy, width: radius * 2 };

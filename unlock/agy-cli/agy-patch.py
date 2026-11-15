@@ -283,6 +283,17 @@ def patch_env(data, funcs, text_va, text_off, arch):
 
 # --------------------------------------------------------------------------
 
+def assert_not_official_antigravity(path):
+    real_path = os.path.realpath(os.path.abspath(path))
+    forbidden_roots = (
+        "/Applications/Antigravity.app",
+        "/Applications/Antigravity.app.orig",
+    )
+    for root in forbidden_roots:
+        if real_path == root or real_path.startswith(root + "/"):
+            raise PatchError(f"Refusing to access official Antigravity bundle: {real_path}")
+
+
 def resign(path):
     if sys.platform != "darwin":
         print("[i] non-macOS target: no ad-hoc signing step applied")
@@ -303,16 +314,19 @@ def main():
     args = ap.parse_args()
 
     src = os.path.abspath(args.binary)
+    assert_not_official_antigravity(src)
     if not os.path.exists(src):
         sys.exit(f"no such file: {src}")
+    src_real = os.path.realpath(src)
+    assert_not_official_antigravity(src_real)
 
-    with open(src, "rb") as fh:
+    with open(src_real, "rb") as fh:
         data = bytearray(fh.read())
     before = hashlib.sha256(data).hexdigest()
 
     text_va, text_off, arch = find_text_section(data)
     funcs = build_functions(bytes(data))
-    print(f"[i] {src}\n[i] arch={arch} text_va={text_va:#x} text_off={text_off:#x} "
+    print(f"[i] {src_real}\n[i] arch={arch} text_va={text_va:#x} text_off={text_off:#x} "
           f"symbols={len(funcs)}")
 
     for key in (FUNC_OFFERS, FUNC_OVERRIDE, "strings.TrimSpace", "os.Getenv"):
@@ -342,11 +356,21 @@ def main():
         print(f"[*] dry run: {before[:12]} -> {after[:12]}")
         return
 
-    dst = src if args.in_place else src + ".patched"
-    with open(dst, "wb") as fh:
-        fh.write(data)
-    os.chmod(dst, 0o755)
-    resign(dst)
+    dst = src_real if args.in_place else src + ".patched"
+    assert_not_official_antigravity(dst)
+    tmp_dst = f"{dst}.hakimi_tmp_{os.getpid()}"
+    try:
+        with open(tmp_dst, "wb") as fh:
+            fh.write(data)
+        os.chmod(tmp_dst, 0o755)
+        os.replace(tmp_dst, dst)
+        resign(dst)
+    finally:
+        if os.path.exists(tmp_dst):
+            try:
+                os.unlink(tmp_dst)
+            except OSError:
+                pass
     print(f"[*] wrote {dst}\n    sha256 {before[:12]} -> {after[:12]}")
 
 

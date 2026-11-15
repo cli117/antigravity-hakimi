@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const vm = require('vm');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const asarEngine = require(path.join(ROOT, 'payload', 'dist', 'asar-engine.js'));
@@ -15,6 +15,8 @@ const { buildMacosIcon } = require(path.join(ROOT, 'scripts', 'build-macos-icon.
 const { replaceAsarIcon } = require(path.join(ROOT, 'scripts', 'replace-asar-icon.js'));
 const meterCore = require(path.join(ROOT, 'payload', 'dist', 'meter-core.js'));
 const contextUnlock = require(path.join(ROOT, 'payload', 'dist', 'meter-context-unlock.js'));
+const modulesConfig = require(path.join(ROOT, 'payload', 'dist', 'modules-config.js'));
+const { runDoctor } = require(path.join(ROOT, 'scripts', 'doctor.js'));
 
 const EXCLUDED_SYMBOLS = [
   'meter-proxy',
@@ -36,6 +38,14 @@ const EXCLUDED_SYMBOLS = [
   'parsePeEmbedTemplates',
   'PROMPT_TIER_META',
   'badge.clickOpenCli',
+  'GEMINI_PRICING_TABLE',
+  'calculateRequestApiCost',
+  'calculateReferenceModelCost',
+  'SUBSCRIPTION_REGIONS_PRESET',
+  'tok-view-cost',
+  'cost-estimate-card',
+  'round-cost-bar',
+  'plan-summary-price-badge',
 ];
 
 function collectJsFiles(dir) {
@@ -725,4 +735,209 @@ test('panel GitHub links and external URL allowlist point to cli117/antigravity-
   assert.equal(meterCore.isValidExternalUrl('https://linux.do/t/topic/3117832'), true);
   assert.equal(meterCore.isValidExternalUrl('https://github.com/elviscjn-cjn/antigravity-context-viewer'), false);
   assert.equal(meterCore.isValidExternalUrl('https://github.com/cli117/other-repo'), false);
+});
+
+test('meter-core analyzeSteps computes session groups and calculateIntervalTokens aggregates pure tokens', () => {
+  const mkText = (len) => 'a '.repeat(len);
+  const steps = [
+    { type: 'CORTEX_STEP_TYPE_USER_INPUT', userInput: { items: [{ text: 'short hi' }] } },
+    { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', plannerResponse: { response: mkText(800), thinking: mkText(400) } },
+    { type: 'CORTEX_STEP_TYPE_VIEW_FILE', viewFile: { filePath: '/Users/dev/secret/project/src/secret_file.ts', content: mkText(2000) } },
+    { type: 'CORTEX_STEP_TYPE_RUN_COMMAND', runCommand: { command: 'npm test', combinedOutput: { full: mkText(1200) } } },
+    { type: 'CORTEX_STEP_TYPE_GREP_SEARCH', grepSearch: { query: 'foo', results: mkText(600) } },
+    { type: 'CORTEX_STEP_TYPE_LIST_DIR', listDir: { directoryPath: '/Users/dev/secret/dir', entries: mkText(500) } },
+    { type: 'CORTEX_STEP_TYPE_CONVERSATION_SUMMARY', conversationSummary: { summary: mkText(700) } },
+  ];
+
+  const analysis = meterCore.analyzeSteps(steps);
+  assert.equal(analysis.topConsumers, undefined);
+  assert.equal(analysis.userMessages, 1);
+  assert.equal(analysis.assistantMessages, 1);
+  assert.equal(analysis.steps, steps.length);
+  assert.ok(analysis.groups && analysis.groups.tools && analysis.groups.tools.chars > 0);
+  assert.ok(analysis.total && analysis.total.high >= analysis.total.low);
+
+  const agg = meterCore.calculateIntervalTokens(
+    {
+      '2026-11-10': { total: 1000, input: 600, output: 300, cache: 100 },
+      '2026-11-12': { total: 2000, input: 1200, output: 500, cache: 300 },
+      '2026-11-15': { total: 99999, input: 99999, output: 0, cache: 0 }, // future relative to todayStr
+    },
+    ['2026-11-10', '2026-11-11', '2026-11-12', '2026-11-15'],
+    { todayStr: '2026-11-12' }
+  );
+  assert.equal(agg.activeDays, 3);
+  assert.equal(agg.pastDays, 3);
+  assert.equal(agg.totalTokens, 102999);
+  assert.equal(agg.dailyAverageTokens, Math.round(102999 / 3));
+  assert.equal(agg.activeDailyAverageTokens, Math.round(102999 / 3));
+});
+
+test('checkAppVersionSync detects version mismatch and renderer exposes quick actions and CLI unlock hooks', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hakimi-sync-doctor-'));
+  try {
+    const offPlist = path.join(tmp, 'Official.plist');
+    const hakPlist = path.join(tmp, 'Hakimi.plist');
+    const makePlist = (ver) =>
+      `<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleShortVersionString</key><string>${ver}</string></dict></plist>`;
+
+    fs.writeFileSync(offPlist, makePlist('2.33.0'), 'utf8');
+    fs.writeFileSync(hakPlist, makePlist('2.32.1'), 'utf8');
+    const mismatch = modulesConfig.checkAppVersionSync({ officialPlist: offPlist, hakimiPlist: hakPlist });
+    assert.equal(mismatch.officialVersion, '2.33.0');
+    assert.equal(mismatch.hakimiVersion, '2.32.1');
+    assert.equal(mismatch.outdated, true);
+
+    fs.writeFileSync(hakPlist, makePlist('2.33.0'), 'utf8');
+    const synced = modulesConfig.checkAppVersionSync({ officialPlist: offPlist, hakimiPlist: hakPlist });
+    assert.equal(synced.outdated, false);
+
+    const docReport = runDoctor({
+      appPath: path.join(tmp, 'MissingHakimi.app'),
+      allowMissing: true,
+      skipCodesign: true,
+      skipProcess: true,
+      homeDir: tmp,
+      stateDir: tmp,
+    });
+    assert.equal(docReport.ok, true);
+    assert.equal(docReport.counts.fail, 0);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+
+  const tpl = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'template.html'), 'utf8');
+  const renderedJs = fs.readFileSync(path.join(ROOT, 'payload', 'dist', 'meter-renderer.js'), 'utf8');
+  for (const marker of [
+    'version-sync-banner',
+    'btn-session-compact',
+    'btn-session-raise-limit',
+    'btn-topbar-compact',
+    'btn-topbar-raise-limit',
+    'topbar-action-tooltip',
+    'cli-unlock-card',
+  ]) {
+    assert.ok(tpl.includes(marker), `Missing ${marker} in template.html`);
+    assert.ok(renderedJs.includes(marker), `Missing ${marker} in meter-renderer.js`);
+  }
+  assert.equal(tpl.includes('ctx-breakdown-card'), false, 'ctx-breakdown-card should be removed from template.html');
+  assert.equal(renderedJs.includes('ctx-breakdown-card'), false, 'ctx-breakdown-card should be removed from meter-renderer.js');
+  for (const btnId of ['btn-topbar-compact', 'btn-topbar-raise-limit']) {
+    const match = tpl.match(new RegExp(`<button\\s+id="${btnId}"[^>]*>([\\s\\S]*?)<\\/button>`));
+    assert.ok(match, `Missing <button id="${btnId}"> element in template.html`);
+    assert.ok(match[1].includes('<svg'), `${btnId} must render an <svg> icon`);
+    const visibleText = match[1].replace(/<[^>]+>/g, '').trim();
+    assert.equal(visibleText, '', `${btnId} on primary top bar must be icon-only with no visible text`);
+  }
+  assert.ok(renderedJs.includes('GetSlashCommands'), 'Missing GetSlashCommands in meter-renderer.js');
+  assert.ok(renderedJs.includes('resolveSessionRaiseAction'), 'Missing resolveSessionRaiseAction in meter-renderer.js');
+  assert.ok(renderedJs.includes('triggerSessionRaiseLimit'), 'Missing triggerSessionRaiseLimit in meter-renderer.js');
+});
+
+test('build-hakimi.sh and set-hakimi-icon.sh escalate to SIGKILL on stuck processes, clean stale SingletonLock, and use open -n', async () => {
+  for (const scriptName of ['build-hakimi.sh', 'set-hakimi-icon.sh']) {
+    const scriptPath = path.join(ROOT, scriptName);
+    execFileSync('bash', ['-n', scriptPath]);
+    const content = fs.readFileSync(scriptPath, 'utf8');
+    for (const token of ['stop_running_target_app', 'kill -KILL', 'cleanupStaleSingletonLock', 'open -n "$APP"']) {
+      assert.ok(content.includes(token), `${scriptName} missing "${token}"`);
+    }
+  }
+
+  const meterMainSrc = fs.readFileSync(path.join(ROOT, 'payload', 'dist', 'meter-main.js'), 'utf8');
+  assert.ok(meterMainSrc.includes('quitFallbackTimer'), 'meter-main.js must arm quitFallbackTimer on before-quit');
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hakimi-restart-fix-'));
+  let stuckPid = 0;
+  try {
+    // 1. Verify cleanupStaleSingletonLock preserves live lock and cleans dead lock
+    const userDataLive = path.join(tmp, 'user-data-live');
+    fs.mkdirSync(userDataLive, { recursive: true });
+    fs.symlinkSync(`test-host-${process.pid}`, path.join(userDataLive, 'SingletonLock'));
+    const liveRes = modulesConfig.cleanupStaleSingletonLock(userDataLive);
+    assert.equal(liveRes.cleaned, false);
+    assert.equal(liveRes.reason, 'owner_alive');
+    assert.ok(fs.lstatSync(path.join(userDataLive, 'SingletonLock')).isSymbolicLink());
+
+    const deadProc = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+    assert.ok(Number.isSafeInteger(deadProc.pid) && deadProc.pid > 0);
+    const userDataDead = path.join(tmp, 'user-data-dead');
+    fs.mkdirSync(userDataDead, { recursive: true });
+    fs.symlinkSync(`test-host-${deadProc.pid}`, path.join(userDataDead, 'SingletonLock'));
+    fs.symlinkSync('12345', path.join(userDataDead, 'SingletonCookie'));
+    fs.symlinkSync('/tmp/nonexistent-socket', path.join(userDataDead, 'SingletonSocket'));
+    const deadRes = modulesConfig.cleanupStaleSingletonLock(userDataDead);
+    assert.equal(deadRes.cleaned, true);
+    assert.equal(deadRes.pid, deadProc.pid);
+    for (const f of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
+      assert.throws(() => fs.lstatSync(path.join(userDataDead, f)), /ENOENT/);
+    }
+
+    // 2. End-to-end test of stop_running_target_app against a SIGTERM-ignoring mock binary
+    //    adopted by PID 1 (launchd) so killing it does not leave an unreaped zombie under execFileSync.
+    const mockApp = path.join(tmp, 'MockHakimi.app');
+    const mockExec = path.join(mockApp, 'Contents', 'MacOS', 'Antigravity');
+    fs.mkdirSync(path.dirname(mockExec), { recursive: true });
+    fs.writeFileSync(mockExec, '#!/bin/sh\nexit 0\n', 'utf8');
+    fs.chmodSync(mockExec, 0o755);
+    const realMockExec = fs.realpathSync(mockExec);
+
+    const launcherOut = execFileSync(
+      process.execPath,
+      [
+        '-e',
+        `const { spawn } = require('child_process');
+         const child = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);"], {
+           argv0: process.argv[1],
+           detached: true,
+           stdio: 'ignore',
+         });
+         child.unref();
+         process.stdout.write(String(child.pid));`,
+        realMockExec,
+      ],
+      { encoding: 'utf8' }
+    );
+    stuckPid = Number(launcherOut.trim());
+    assert.ok(Number.isSafeInteger(stuckPid) && stuckPid > 0);
+    assert.doesNotThrow(() => process.kill(stuckPid, 0));
+
+    const buildSrc = fs.readFileSync(path.join(ROOT, 'build-hakimi.sh'), 'utf8');
+    const helperMatch = buildSrc.match(
+      /# --- BEGIN TARGET PROCESS LIFECYCLE HELPERS ---([\s\S]*?)# --- END TARGET PROCESS LIFECYCLE HELPERS ---/
+    );
+    assert.ok(helperMatch, 'Missing lifecycle helper block in build-hakimi.sh');
+
+    const helperScript = path.join(tmp, 'run-stop.sh');
+    fs.writeFileSync(
+      helperScript,
+      `#!/bin/bash\nset -euo pipefail\nSCRIPT_DIR="$1"\n${helperMatch[1]}\nstop_running_target_app "$2"\n`,
+      'utf8'
+    );
+    fs.chmodSync(helperScript, 0o755);
+
+    const stopUserData = path.join(tmp, 'user-data-stop');
+    fs.mkdirSync(stopUserData, { recursive: true });
+    fs.symlinkSync(`test-host-${stuckPid}`, path.join(stopUserData, 'SingletonLock'));
+
+    execFileSync('bash', [helperScript, ROOT, mockApp], {
+      env: {
+        ...process.env,
+        HAKIMI_STOP_GRACE_TENTHS: '3',
+        HAKIMI_STOP_TERM_TENTHS: '2',
+        HAKIMI_STOP_KILL_TENTHS: '25',
+        HAKIMI_USER_DATA_DIR: stopUserData,
+      },
+    });
+
+    // After SIGKILL escalation + PID 1 reap, stuckPid must no longer exist
+    assert.throws(() => process.kill(stuckPid, 0), /ESRCH/);
+    stuckPid = 0;
+    assert.throws(() => fs.lstatSync(path.join(stopUserData, 'SingletonLock')), /ENOENT/);
+  } finally {
+    if (stuckPid) {
+      try { process.kill(stuckPid, 'SIGKILL'); } catch {}
+    }
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });

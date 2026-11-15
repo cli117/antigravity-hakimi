@@ -6,7 +6,6 @@
   const {
     summarize,
     parseGeneratorCall,
-    calculateRequestApiCost,
     normalizeModelId,
     resolveStableModelId,
     formatEffortLabel,
@@ -17,10 +16,7 @@
     computeMedian,
     summarizeSpeedByModel,
     getLvlForRange,
-    getDailyModelCost,
-    calculateIntervalCost,
-    convertToCNY,
-    resolveEffectivePlanStatus
+    calculateIntervalTokens
   } = (globalThis.__AGContextMeterCore || {});
   const host = document.createElement('div');
   host.id = 'ag-context-meter';
@@ -301,6 +297,52 @@
       stroke:var(--ag-ring-danger);
     }
 
+    /* 顶部快捷操作图标按钮（仅图标，悬停显示说明） */
+    .ag-unit-quick{
+      width:26px;min-width:26px;height:26px;padding:0;border-radius:7px;
+      color:var(--ag-toolbar-fg);
+    }
+    .ag-unit-quick[hidden]{
+      display:none!important;
+    }
+    .ag-unit-quick:disabled{
+      opacity:0.48;cursor:wait;transform:none;
+    }
+    .topbar-quick-icon{
+      width:14px;height:14px;display:block;flex-shrink:0;
+    }
+    :host([data-occupancy="warn"]) .ag-unit-quick{
+      color:var(--ag-ring-warn);
+      background:rgba(245,158,11,0.10);
+      border-color:rgba(245,158,11,0.24);
+    }
+    :host([data-occupancy="warn"]) .ag-unit-quick:hover,
+    :host([data-occupancy="warn"]) .ag-unit-quick:focus-visible{
+      background:rgba(245,158,11,0.18);
+    }
+    :host([data-occupancy="danger"]) #btn-topbar-compact{
+      color:var(--ag-ring-danger);
+      background:rgba(239,68,68,0.12);
+      border-color:rgba(239,68,68,0.28);
+    }
+    :host([data-occupancy="danger"]) #btn-topbar-compact:hover,
+    :host([data-occupancy="danger"]) #btn-topbar-compact:focus-visible{
+      background:rgba(239,68,68,0.20);
+    }
+    :host([data-occupancy="danger"]) #btn-topbar-raise-limit{
+      color:#60a5fa;
+      background:rgba(37,99,235,0.16);
+      border-color:rgba(59,130,246,0.38);
+    }
+    :host([data-occupancy="danger"]) #btn-topbar-raise-limit:hover,
+    :host([data-occupancy="danger"]) #btn-topbar-raise-limit:focus-visible{
+      background:rgba(37,99,235,0.24);
+    }
+    :host([data-theme="light"][data-occupancy="danger"]) #btn-topbar-raise-limit,
+    :host([data-panel-tone="light"][data-occupancy="danger"]) #btn-topbar-raise-limit{
+      color:#2563eb;
+    }
+
     /* 单元 2: 输出速度 */
     #badge-speed{
       color:var(--ag-custom-speed,var(--ag-speed-default));
@@ -390,6 +432,9 @@
     :host([data-layout="compact"]){
       gap:1px;
     }
+    :host([data-layout="compact"]) .ag-unit-quick{
+      width:24px;min-width:24px;height:24px;
+    }
     :host([data-layout="compact"]) #badge-speed,
     :host([data-layout="compact"]) #badge-tokens{
       padding:0 5px;font-size:11.5px;gap:3px;
@@ -403,7 +448,8 @@
     }
     :host([data-layout="ring-only"]) #badge-speed,
     :host([data-layout="ring-only"]) #badge-tokens,
-    :host([data-layout="ring-only"]) #badge-overflow{
+    :host([data-layout="ring-only"]) #badge-overflow,
+    :host([data-layout="ring-only"]) .ag-unit-quick{
       display:none!important;
     }
 
@@ -440,6 +486,38 @@
       font-size:12.5px;line-height:1.38;font-weight:500;
       color:var(--ag-custom-context-text,var(--ag-text-secondary));
       margin-top:1px;
+    }
+
+    /* 顶部快捷操作悬停说明与点击反馈气泡 */
+    #topbar-action-tooltip{
+      position:fixed;top:0;left:0;z-index:2147483601;
+      min-width:148px;max-width:264px;padding:7px 11px;
+      border-radius:9px;border:1px solid var(--ag-float-border);
+      background:var(--ag-float-bg);color:var(--ag-text-primary);
+      box-shadow:var(--ag-float-shadow);
+      pointer-events:none;opacity:0;visibility:hidden;
+      transform:translateY(2px);
+      transition:opacity .12s ease,transform .12s ease,visibility .12s ease;
+    }
+    #topbar-action-tooltip[data-visible="true"]{
+      opacity:1;visibility:visible;transform:translateY(0);
+    }
+    #topbar-action-tooltip[data-tone="success"] .topbar-tip-title{
+      color:#22c55e;
+    }
+    #topbar-action-tooltip[data-tone="error"] .topbar-tip-title{
+      color:#ef4444;
+    }
+    .topbar-tip-title{
+      font-size:12px;line-height:1.35;font-weight:600;
+      color:var(--ag-text-primary);
+    }
+    .topbar-tip-desc{
+      font-size:11px;line-height:1.38;font-weight:400;
+      color:var(--ag-text-muted);margin-top:2px;
+    }
+    .topbar-tip-desc[hidden]{
+      display:none!important;
     }
 
     /* 窄屏溢出菜单浮层 */
@@ -538,58 +616,6 @@
       background:var(--ag-unified-bg);color:var(--ag-text-primary);font-weight:600;
       box-shadow:0 1px 3px rgba(0,0,0,0.18);
     }
-    .plan-summary-price-badge{
-      display:inline-flex;align-items:center;gap:4px;
-      padding:2px 9px;border-radius:999px;
-      font-size:10.5px;font-weight:600;white-space:nowrap;
-      cursor:pointer;flex-shrink:0;user-select:none;
-      background:rgba(167,139,250,0.14);
-      border:1px solid rgba(167,139,250,0.32);
-      color:var(--ag-token-accent-default,#a78bfa);
-      transition:background 0.2s cubic-bezier(0.16,1,0.3,1), border-color 0.2s cubic-bezier(0.16,1,0.3,1), transform 0.2s cubic-bezier(0.16,1,0.3,1), box-shadow 0.25s ease;
-    }
-    .plan-summary-price-badge:hover{
-      background:rgba(167,139,250,0.24);
-      border-color:rgba(167,139,250,0.55);
-      color:#ffffff;
-      transform:scale(1.02);
-    }
-    .plan-summary-price-badge.is-animating{
-      box-shadow:0 0 10px rgba(167,139,250,0.45);
-      border-color:rgba(167,139,250,0.65);
-    }
-    :host([data-theme="light"]) .plan-summary-price-badge{
-      background:rgba(124,58,237,0.10);
-      border-color:rgba(124,58,237,0.28);
-      color:#7c3aed;
-    }
-    :host([data-theme="light"]) .plan-summary-price-badge.is-animating{
-      box-shadow:0 0 10px rgba(124,58,237,0.35);
-      border-color:rgba(124,58,237,0.55);
-    }
-    .badge-symbol-anim{
-      display:inline-block;
-      transition:opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1), transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), filter 0.18s ease;
-      will-change:opacity, transform, filter;
-    }
-    .badge-symbol-anim.is-dissolving{
-      opacity:0;
-      transform:scale(0.72) translateY(-2px);
-      filter:blur(1.5px);
-    }
-    .badge-symbol-anim.is-entering{
-      opacity:0;
-      transform:scale(1.25) translateY(2px);
-      filter:blur(1.5px);
-    }
-    .badge-num-anim{
-      display:inline-block;
-      font-variant-numeric:tabular-nums;
-      font-feature-settings:"tnum";
-    }
-    .badge-cycle-anim{
-      display:inline-block;
-    }
     .plan-summary-bar{
       display:flex;align-items:center;justify-content:space-between;gap:8px;
       background:var(--ag-bg-card);border:1px solid var(--ag-border-card);border-radius:8px;
@@ -646,40 +672,9 @@
     .collapsible-pane[style*="display: block"],
     .collapsible-pane:not([style*="display: none"]),
     #plan-detail-card:not([style*="display: none"]),
-    #plan-custom-form:not([style*="display: none"]),
-    #cost-details-pane:not([style*="display: none"]),
     .drawer-body:not([style*="display: none"]){
       animation: agSmoothExpand 0.2s cubic-bezier(0.16,1,0.3,1) forwards;
       transform-origin: top center;
-    }
-
-    /* 适度调和、略亮半度但温润自然的药丸编辑按钮 */
-    .plan-edit-pill-btn{
-      display:inline-flex;align-items:center;gap:5px;
-      padding:4px 13px;border-radius:9999px;
-      font-size:11px;font-weight:500;
-      color:var(--ag-text-primary,#ececef);
-      background:rgba(167,139,250,0.14);
-      border:1px solid rgba(167,139,250,0.32);
-      box-shadow:0 2px 6px rgba(0,0,0,0.25);
-      cursor:pointer;user-select:none;
-      transition:all 0.16s cubic-bezier(0.16,1,0.3,1);
-    }
-    .plan-edit-pill-btn:hover{
-      background:rgba(167,139,250,0.24);
-      border-color:rgba(167,139,250,0.55);
-      color:#ffffff;
-      box-shadow:0 3px 10px rgba(124,58,237,0.25);
-      transform:translateY(-1px);
-    }
-    .plan-edit-pill-btn:active{
-      transform:translateY(0);
-      background:rgba(167,139,250,0.28);
-    }
-    :host([data-theme="light"]) .plan-edit-pill-btn{
-      background:linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
-      border-color:#6d28d9;color:#ffffff;
-      box-shadow:0 3px 10px rgba(124,58,237,0.3);
     }
 
     /* Antigravity 原生定制下拉组件样式与动效 */
@@ -808,11 +803,6 @@
     .collapsible-pane{
       transition:opacity 0.18s ease;
     }
-    .round-cost-bar{
-      display:flex;align-items:center;justify-content:space-between;gap:8px;
-      background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);border-radius:6px;
-      padding:5px 9px;margin:6px 0 8px;font-size:11.5px;
-    }
     .cp-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}
     .cp-title{font-size:12.5px;font-weight:600;color:var(--ag-text-primary);display:flex;align-items:center;gap:6px}
     .cp-target-lbl{font-size:11px;font-weight:400;color:var(--ag-text-muted)}
@@ -886,7 +876,6 @@
     }
     #panel{width:472px;max-width:calc(100vw - 24px)}
     #panel-tokens{width:730px;transition:width .22s cubic-bezier(0.16,1,0.3,1),left .22s cubic-bezier(0.16,1,0.3,1),max-width .22s cubic-bezier(0.16,1,0.3,1),opacity .16s cubic-bezier(0.16,1,0.3,1),transform .16s cubic-bezier(0.16,1,0.3,1)}
-    #panel-tokens.cost-compact-view{width:400px!important;max-width:calc(100vw - 24px)}
     .ag-panel[hidden]{display:block!important;opacity:0;transform:translateY(-6px);visibility:hidden;pointer-events:none}
 
     /* 视图内平滑交叉淡入淡出（避免直接 display 硬切导致内容跳闪） */
@@ -950,6 +939,26 @@
     #key-used{color:var(--ag-custom-context-text,var(--ag-text-primary))}
     .key-takeaway{font-size:11px;color:var(--ag-text-secondary);padding-top:6px;border-top:1px solid var(--ag-border-subcard);line-height:1.4}
 
+    .version-sync-banner{
+      background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.35);
+      color:var(--ag-text-primary);border-radius:7px;padding:7px 10px;
+      margin-bottom:8px;font-size:11px;line-height:1.4;
+    }
+    .version-sync-banner[hidden]{display:none!important}
+    .version-sync-banner-text code{
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+      font-size:10px;padding:1px 4px;border-radius:4px;
+      background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);
+    }
+
+    .key-quick-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+    .key-quick-btn{flex:1 1 auto;justify-content:center;font-size:11px;padding:5px 8px}
+    .key-quick-btn[hidden]{display:none!important}
+    .key-quick-feedback{margin-top:6px;font-size:10.5px;line-height:1.35;color:var(--ag-text-secondary)}
+    .key-quick-feedback.is-error{color:#ef4444}
+    .key-quick-feedback.is-success{color:#22c55e}
+    .key-quick-feedback[hidden]{display:none!important}
+
     #status{padding:7px 10px;border:0;border-left:2.5px solid var(--tone,#666);border-radius:4px;background:var(--ag-bg-status);color:var(--ag-text-status);font-weight:500;font-size:11.5px}
     #model{overflow-wrap:anywhere;font-size:11.5px;color:var(--ag-text-muted)}
     #note,#coverage,#updated{font-size:11px;color:var(--ag-text-muted)}
@@ -974,7 +983,6 @@
     #t-total-val{color:var(--ag-custom-token-total,var(--ag-text-primary))}
     #t-today-val{color:var(--ag-custom-token-accent,var(--ag-text-primary))}
     .t-card-sub{font-size:10px;color:var(--ag-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .t-card-cost{font-size:9.5px;color:var(--ag-text-secondary);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
 
     .heatmap-section{background:var(--ag-heat-bg);border:1px solid var(--ag-border-card);border-radius:10px;padding:12px}
     .heat-header{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
@@ -1126,7 +1134,6 @@
     .heat-sum-item{display:inline-flex;align-items:center;gap:4px}
     .heat-sum-label{color:var(--ag-text-muted);font-size:10px}
     .heat-sum-val{color:var(--ag-text-primary);font-weight:600;font-variant-numeric:tabular-nums}
-    .heat-cost-disclaimer{font-size:9.5px;color:var(--ag-text-muted);margin-top:4px;line-height:1.35}
 
     .heat-preset-bar{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;margin:6px 0 8px}
     .heat-preset-group{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
@@ -1492,7 +1499,7 @@
       .color-grid{grid-template-columns:1fr}
     }
     @media (prefers-reduced-motion: reduce){
-      *,.ag-unit,.ring-fill,.key-bar-fill,.ag-panel,#context-tooltip,.heat-cell,.w-bar-fill{
+      *,.ag-unit,.ring-fill,.key-bar-fill,.ag-panel,#context-tooltip,#topbar-action-tooltip,.heat-cell,.w-bar-fill{
         transition:none!important;animation:none!important;
       }
     }
@@ -1500,7 +1507,7 @@
       #panel{width:calc(100vw - 24px)}
     }
     @media(max-width:760px){
-      #panel-tokens:not(.cost-compact-view){width:calc(100vw - 24px)}
+      #panel-tokens{width:calc(100vw - 24px)}
     }
 
   </style>
@@ -1515,6 +1522,18 @@
     <div id="bar-wrap" class="sr-only" aria-hidden="true"><div id="bar-fill" class="meter-bar-fill"></div></div>
     <span id="amount" class="sr-only" data-i18n="badge.reading">读取中…</span>
     <span id="hover-wrap" class="sr-only"><span id="hover-extra"></span></span>
+  </button>
+
+  <!-- 顶部快捷操作: 一键 Compact 与上调上下文上限（仅图标，悬停气泡说明） -->
+  <button id="btn-topbar-compact" class="ag-unit ag-unit-quick" type="button" hidden aria-label="Compact 压缩上下文" data-i18n-aria="topbar.quick.compactTitle" aria-describedby="topbar-action-tooltip">
+    <svg class="topbar-quick-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M8 1.75v3.75M5.75 3.75L8 5.75l2.25-2M3 8h10M8 14.25v-3.75M5.75 12.25L8 10.25l2.25 2"></path>
+    </svg>
+  </button>
+  <button id="btn-topbar-raise-limit" class="ag-unit ag-unit-quick ag-unit-quick-raise" type="button" hidden aria-label="上调上下文上限" data-i18n-aria="session.quick.raiseLimit" aria-describedby="topbar-action-tooltip">
+    <svg class="topbar-quick-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M3 2.75h10M8 13.75V5.5M4.75 8.5L8 5.25 11.25 8.5"></path>
+    </svg>
   </button>
 
   <!-- 顶部基本单元 2: 输出速度 (tok/s) -->
@@ -1545,6 +1564,12 @@
     <div id="ctx-tip-title" class="ctx-tip-title" data-i18n="tip.title.default">上下文窗口：</div>
     <div id="ctx-tip-pct" class="ctx-tip-pct" data-i18n="tip.pct.notReady">数据尚未就绪</div>
     <div id="ctx-tip-detail" class="ctx-tip-detail" data-i18n="tip.detail.loading">正在读取当前会话上下文用量…</div>
+  </div>
+
+  <!-- 顶部快捷操作悬停说明与点击反馈气泡 -->
+  <div id="topbar-action-tooltip" role="tooltip" data-visible="false" data-placement="bottom" data-tone="default">
+    <div id="topbar-tip-title" class="topbar-tip-title"></div>
+    <div id="topbar-tip-desc" class="topbar-tip-desc"></div>
   </div>
 
   <!-- 窄屏溢出菜单 -->
@@ -1582,6 +1607,10 @@
       </div>
     </div>
 
+    <div id="version-sync-banner" class="version-sync-banner" hidden role="status">
+      <div class="version-sync-banner-text" id="version-sync-text"></div>
+    </div>
+
     <div id="view-context">
       <!-- 顶部 4 分页标签栏 -->
       <div id="ctx-tabs-bar" class="ctx-tabs-bar" role="tablist" aria-label="上下文面板分页" data-i18n-aria="tabs.aria">
@@ -1593,18 +1622,17 @@
 
       <!-- 分页 1: 当前会话 -->
       <div id="pane-ctx-session" class="ctx-tab-pane" role="tabpanel" aria-labelledby="tab-ctx-session">
-        <!-- 本轮与当前会话实时 API 等值参考行 -->
-        <div id="round-cost-bar" class="round-cost-bar" title="当前模型调用的 API 等值参考金额（按已返回用量或实时生成估算）" data-i18n-title="session.costBar.title">
-          <span id="round-cost-text" style="font-weight:600;color:var(--ag-text-primary)" data-i18n="session.roundCost.dash">本轮估值：—</span>
-          <span id="session-cost-text" style="font-size:11px;color:var(--ag-text-muted)" data-i18n="session.sessionCost.dash">当前会话合计：—</span>
-        </div>
-
         <!-- 卡片 1: 核心用量速览 -->
         <div id="key-summary">
           <div class="key-header"><span class="key-title" data-i18n="session.keySummary.title">⭐ 核心用量速览</span><span id="key-badge" class="key-pill pill-muted" data-i18n="session.badge.reading">读取中</span></div>
           <div class="key-bar-track"><div id="key-bar-fill" class="key-bar-fill"></div></div>
           <div class="key-stats"><div class="key-stat"><div class="key-stat-label" data-i18n="session.stat.used">当前已用</div><div id="key-used" class="key-stat-val">—</div></div><div class="key-stat"><div class="key-stat-label" data-i18n="session.stat.limit">预算上限</div><div id="key-limit" class="key-stat-val">—</div></div><div class="key-stat"><div class="key-stat-label" data-i18n="session.stat.remaining">剩余可用</div><div id="key-remaining" class="key-stat-val">—</div></div></div>
           <div id="key-takeaway" class="key-takeaway" data-i18n="session.keyTakeaway.loading">正在计算核心指标…</div>
+          <div id="key-quick-actions" class="key-quick-actions">
+            <button id="btn-session-compact" class="unlock-btn unlock-btn-secondary key-quick-btn" type="button" data-i18n="session.quick.compact">🗜️ Compact 压缩上下文</button>
+            <button id="btn-session-raise-limit" class="unlock-btn unlock-btn-primary key-quick-btn" type="button" hidden data-i18n="session.quick.raiseLimit">⬆️ 上调上下文上限</button>
+          </div>
+          <div id="key-quick-feedback" class="key-quick-feedback" hidden></div>
         </div>
 
         <!-- 卡片 2: 输出速度与延迟速览 -->
@@ -1952,7 +1980,7 @@
                     <div>最近请求携带 / 后端实际采用：按当前会话与模型轮次严格隔离对照，尚无对应发送时显示「尚无本次验证」。</div>
                     <div>服务端报错上限：仅当请求被服务端拒绝且报错给出明确数字时出现。</div>
                   </li>
-                  <li data-i18n-html="models.details.li5"><strong>工程范围与预设说明</strong>：128,000 / 256,000 / 512,000 属于插件预设；合法自定义工程范围为 16,384 – 2,097,152 任意整数 tokens，真实超长请求能否被服务端接受取决于各模型自身配额与风控策略。</li>
+                  <li data-i18n-html="models.details.li5"><strong>工程范围与预设说明</strong>：256,000 / 512,000 / 1,000,000 属于插件预设；合法自定义工程范围为 16,384 – 2,097,152 任意整数 tokens，真实超长请求能否被服务端接受取决于各模型自身配额与风控策略。</li>
                 </ol>
               </div>
 
@@ -2173,6 +2201,23 @@
           </div>
         </div>
 
+        <!-- 3.5 agy CLI 上下文联动解锁 -->
+        <div class="ctx-settings-card" id="cli-unlock-card">
+          <div class="ctx-settings-card-hdr">
+            <div class="ctx-settings-card-title" data-i18n="settings.cliUnlock.title">⌨️ agy CLI 上下文联动解锁</div>
+            <span id="cli-unlock-badge" class="key-pill pill-muted" data-i18n="settings.common.reading">读取中…</span>
+          </div>
+          <div id="cli-unlock-desc" class="ctx-settings-card-desc" data-i18n="settings.cliUnlock.desc">检测本机 agy 命令行二进制，解除 /model 上下文选择器机型白名单并修复 AGY_CLI_AUTO_COMPACT_OVERRIDE 环境变量读取，同时同步上下文窗口配置。</div>
+          <div id="cli-unlock-meta" class="ctx-client-lang-note">—</div>
+          <div class="ctx-settings-card-actions">
+            <button id="btn-cli-unlock-apply" class="unlock-btn unlock-btn-primary" type="button" data-i18n="settings.cliUnlock.applyBtn">一键修补并同步 agy CLI</button>
+            <button id="btn-cli-unlock-refresh" class="unlock-btn unlock-btn-secondary" type="button" data-i18n="models.btn.refreshStatus">刷新状态</button>
+          </div>
+          <div id="cli-unlock-result" class="unlock-result-box" style="display:none;">
+            <div id="cli-unlock-result-text" class="unlock-result-text"></div>
+          </div>
+        </div>
+
         <!-- 保留：兼容隐藏旧中文折叠触发节点 -->
         <div id="chinese-i18n-drawer" hidden>
           <button id="btn-toggle-chinese" type="button" hidden></button>
@@ -2292,10 +2337,6 @@
           <button id="src-tab-desktop" class="switch-pill-btn" type="button" data-i18n="tokens.src.desktop">桌面端</button>
           <button id="src-tab-cli" class="switch-pill-btn" type="button" data-i18n="tokens.src.cli">CLI</button>
         </div>
-        <div class="view-switch-bar">
-          <button id="tok-view-tokens" class="switch-pill-btn active" type="button" data-i18n="tokens.view.tokens">Token 统计</button>
-          <button id="tok-view-cost" class="switch-pill-btn" type="button" data-i18n="tokens.view.cost">API 参考金额</button>
-        </div>
       </div>
 
       <!-- 账号套餐状态摘要行 -->
@@ -2304,20 +2345,14 @@
           <span>💎</span>
           <span id="plan-summary-text" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Pro · ...</span>
         </div>
-        <!-- 黄框位置：实时联动的订阅费与汇率胶囊 -->
-        <div id="plan-summary-price-badge" class="plan-summary-price-badge" title="当前地区订阅费与最新汇率折算 (点击展开/收起详情)" data-i18n-title="plan.summary.priceBadgeTitle">
-          <span id="plan-summary-price-val">$19.99/月</span>
-          <span id="plan-summary-price-cny" style="font-size:9.5px;opacity:0.85;font-weight:400">(≈ ¥134.3 CNY)</span>
-        </div>
         <button id="btn-plan-detail-toggle" class="switch-pill-btn" type="button" style="padding:2px 6px;flex-shrink:0" data-i18n="plan.detail.toggleOpen">详情 ▼</button>
       </div>
 
-      <!-- 套餐详情卡片（可折叠，紧凑左对齐，支持就地自定义与获取方式设置） -->
+      <!-- 套餐详情卡片（仅显示套餐与额度池状态，不含货币费率） -->
       <div id="plan-detail-card" class="plan-detail-card collapsible-pane" style="display:none">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--ag-border-subcard)">
           <div style="display:flex;align-items:center;gap:6px">
             <span style="font-size:11.5px;font-weight:600;color:var(--ag-text-primary)" data-i18n="plan.detail.title">💎 AI 订阅与额度详情</span>
-            <span id="plan-save-feedback" style="font-size:10px;color:var(--ag-text-muted);display:none"></span>
           </div>
           <button id="btn-plan-detail-collapse-top" class="switch-pill-btn" type="button" style="padding:2px 8px;font-size:10.5px" data-i18n="plan.detail.toggleClose">详情收回 ▲</button>
         </div>
@@ -2326,105 +2361,6 @@
           <dd id="p-det-name" style="font-weight:600">Google AI Pro</dd>
           <dt data-i18n="plan.dt.account">当前账号：</dt>
           <dd id="p-det-account">—</dd>
-          <dt data-i18n="plan.dt.country">账号所在地区：</dt>
-          <dd style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap">
-            <span id="p-det-country" style="display:none">未知</span>
-            <select id="direct-country-select" aria-label="账号所在地区 (仅本地记录)" style="display:none">
-              <option value="未知">🌐 未设置 / 自动</option>
-              <option value="美国 (US)">🇺🇸 美国 (US)</option>
-              <option value="日本 (JP)">🇯🇵 日本 (JP)</option>
-              <option value="韩国 (KR)">🇰🇷 韩国 (KR)</option>
-              <option value="中国台湾 (TW)">🇹🇼 中国台湾 (TW)</option>
-              <option value="中国香港 (HK)">🇭🇰 中国香港 (HK)</option>
-              <option value="澳大利亚 (AU)">🇦🇺 澳大利亚 (AU)</option>
-              <option value="新加坡 (SG)">🇸🇬 新加坡 (SG)</option>
-              <option value="英国 (UK)">🇬🇧 英国 (UK)</option>
-              <option value="德国 (DE)">🇩🇪 德国 (DE)</option>
-              <option value="加拿大 (CA)">🇨🇦 加拿大 (CA)</option>
-              <option value="土耳其 (TR)">🇹🇷 土耳其 (TR)</option>
-              <option value="尼日利亚 (NG)">🇳🇬 尼日利亚 (NG)</option>
-              <option value="菲律宾 (PH)">🇵🇭 菲律宾 (PH)</option>
-              <option value="印度 (IN)">🇮🇳 印度 (IN)</option>
-              <option value="马来西亚 (MY)">🇲🇾 马来西亚 (MY)</option>
-              <option value="巴西 (BR)">🇧🇷 巴西 (BR)</option>
-              <option value="中国大陆 (CN)">🇨🇳 中国大陆 (CN)</option>
-            </select>
-            <div id="direct-country-wrap" class="ag-dropdown-wrapper" style="flex:1;min-width:0;max-width:270px">
-              <div id="direct-country-trigger" class="ag-dropdown-trigger" tabindex="0" title="用户记录或可靠来源识别的 Google 账号所属地区 (仅本地生效，不修改 Google 账号本身)" data-i18n-title="plan.country.title">
-                <span id="direct-country-label" class="ag-dropdown-label" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" data-i18n="plan.country.auto">🌐 未设置 / 自动</span>
-                <div class="ag-dropdown-arrow">
-                  <svg viewBox="0 0 10 6" width="10" height="6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l4 4 4-4"/></svg>
-                </div>
-              </div>
-              <div id="direct-country-menu" class="ag-dropdown-menu"></div>
-            </div>
-            <span id="p-det-country-tag" class="key-pill pill-muted" style="font-size:9.5px;padding:1px 5px;display:none;flex-shrink:0;white-space:nowrap" data-i18n="plan.tag.saved">已保存</span>
-          </dd>
-          <dt data-i18n="plan.dt.region">订阅国家：</dt>
-          <dd style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap">
-            <span id="p-det-region" style="display:none">未知</span>
-            <div id="direct-region-wrap" class="ag-dropdown-wrapper" style="flex:1;min-width:0;max-width:270px">
-              <div id="direct-region-trigger" class="ag-dropdown-trigger" tabindex="0" title="这份订阅的购买或订阅所在国家/地区 (可与账号所在地区不同)" data-i18n-title="plan.region.title">
-                <span id="direct-region-label" class="ag-dropdown-label" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" data-i18n="plan.region.unknown">🌏 未知 (点击选择订阅国家与币种建议)</span>
-                <div class="ag-dropdown-arrow">
-                  <svg viewBox="0 0 10 6" width="10" height="6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l4 4 4-4"/></svg>
-                </div>
-              </div>
-              <div id="direct-region-menu" class="ag-dropdown-menu"></div>
-            </div>
-            <span id="p-det-region-tag" class="key-pill pill-muted" style="font-size:9.5px;padding:1px 5px;display:none;flex-shrink:0;white-space:nowrap" data-i18n="plan.tag.custom">自定义</span>
-          </dd>
-          <dt data-i18n="plan.dt.currency">订阅币种：</dt>
-          <dd style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap">
-            <span id="p-det-currency" style="display:none">USD</span>
-            <select id="direct-currency-select" aria-label="订阅币种" data-i18n-aria="plan.currency.aria" style="display:none">
-              <option value="USD">USD ($ 美元)</option>
-              <option value="KRW">KRW (₩ 韩元)</option>
-              <option value="AUD">AUD (AU$ 澳元)</option>
-              <option value="JPY">JPY (¥ 日元)</option>
-              <option value="HKD">HKD (HK$ 港币)</option>
-              <option value="TWD">TWD (NT$ 台币)</option>
-              <option value="TRY">TRY (₺ 里拉)</option>
-              <option value="NGN">NGN (₦ 奈拉)</option>
-              <option value="CNY">CNY (¥ 人民币)</option>
-              <option value="EUR">EUR (€ 欧元)</option>
-              <option value="GBP">GBP (£ 英镑)</option>
-              <option value="SGD">SGD (S$ 新元)</option>
-              <option value="CAD">CAD (CA$ 加元)</option>
-              <option value="PHP">PHP (₱ 比索)</option>
-              <option value="INR">INR (₹ 卢比)</option>
-              <option value="MYR">MYR (RM 令吉)</option>
-              <option value="BRL">BRL (R$ 雷亚尔)</option>
-            </select>
-            <div id="direct-currency-wrap" class="ag-dropdown-wrapper" style="flex:1;min-width:0;max-width:270px">
-              <div id="direct-currency-trigger" class="ag-dropdown-trigger" tabindex="0" title="该订阅记录使用的计价与结算币种 (独立保存，可手动指定或自动跟随)" data-i18n-title="plan.currency.title">
-                <span id="direct-currency-label" class="ag-dropdown-label" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">USD</span>
-                <div class="ag-dropdown-arrow">
-                  <svg viewBox="0 0 10 6" width="10" height="6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l4 4 4-4"/></svg>
-                </div>
-              </div>
-              <div id="direct-currency-menu" class="ag-dropdown-menu"></div>
-            </div>
-            <span id="p-det-currency-tag" class="key-pill pill-muted" style="font-size:9.5px;padding:1px 5px;display:none;flex-shrink:0;white-space:nowrap" data-i18n="plan.tag.saved">已保存</span>
-          </dd>
-          <dt data-i18n="plan.dt.acq">获取方式：</dt>
-          <dd style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-            <span id="p-det-acq" data-i18n="plan.acq.normal">正常付费订阅</span>
-            <span id="p-det-acq-tag" class="key-pill pill-muted" style="font-size:9.5px;padding:1px 4px;display:none" data-i18n="plan.tag.promo">活动权益</span>
-          </dd>
-          <dt data-i18n="plan.dt.price">计费周期与价格：</dt>
-          <dd style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-            <span id="p-det-price">$19.99</span>
-            <span id="p-det-price-tag" class="key-pill pill-muted" style="font-size:9.5px;padding:1px 4px;display:none" data-i18n="plan.tag.regionRef">地区参考价</span>
-            <div id="price-mode-switch-group" style="display:inline-flex;align-items:center;gap:4px;margin-left:4px">
-              <button id="btn-mode-preset" class="switch-pill-btn active" type="button" style="padding:1px 6px;font-size:10px" data-i18n="plan.price.modePreset">跟随参考价</button>
-              <button id="btn-mode-custom" class="switch-pill-btn" type="button" style="padding:1px 6px;font-size:10px" data-i18n="plan.price.modeCustom">自定义实付</button>
-            </div>
-          </dd>
-          <dt id="p-dt-validity" style="display:none" data-i18n="plan.dt.validity">权益有效期：</dt>
-          <dd id="p-det-validity" style="display:none;color:var(--ag-text-secondary);font-size:11px">—</dd>
-          <dt id="p-dt-note" style="display:none" data-i18n="plan.dt.note">补充备注：</dt>
-          <dd id="p-det-note" style="display:none;color:var(--ag-text-secondary);font-size:11px">—</dd>
           <dt data-i18n="plan.dt.promptCredits">Prompt 额度池：</dt>
           <dd id="p-det-prompt-credits"><span id="p-det-credits">—</span></dd>
           <dt data-i18n="plan.dt.flowCredits">Flow 额度池：</dt>
@@ -2433,244 +2369,12 @@
           <dd id="p-det-time" style="font-size:11px;color:var(--ag-text-muted)">—</dd>
         </dl>
 
-        <!-- 底部操作栏：左侧提供详情收回按钮，右侧提供自定义订阅设置按钮 -->
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:6px;border-top:1px dashed var(--ag-border-subcard)">
+        <div style="display:flex;justify-content:flex-start;align-items:center;margin-top:8px;padding-top:6px;border-top:1px dashed var(--ag-border-subcard)">
           <button id="btn-plan-detail-collapse" class="switch-pill-btn" type="button" style="padding:3px 10px;font-size:11px" data-i18n="plan.detail.toggleClose">详情收回 ▲</button>
-          <button id="btn-edit-plan-custom" class="plan-edit-pill-btn" type="button">
-            <span style="font-size:12px">✎</span>
-            <span data-i18n="plan.btn.editCustom">自定义订阅设置</span>
-          </button>
-        </div>
-
-        <!-- 就地行内自定义编辑表单 -->
-        <div id="plan-custom-form" style="display:none;margin-top:8px;padding:10px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);border-radius:6px">
-          <div style="font-size:11px;font-weight:600;margin-bottom:6px;color:var(--ag-text-primary)" data-i18n="plan.form.title">
-            设置当前账号订阅信息
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
-            <div>
-              <label style="font-size:10px;color:var(--ag-text-muted);display:block;margin-bottom:2px" data-i18n="plan.form.acqLabel">获取方式 / 活动来源</label>
-              <select id="select-custom-acq" style="width:100%;font-size:11px;padding:4px;background:var(--ag-bg-input);border:1px solid var(--ag-border-subcard);border-radius:4px;color:var(--ag-text-primary)">
-                <option value="normal_paid" data-i18n="plan.acqOpt.normal_paid">正常付费订阅</option>
-                <option value="student_offer" data-i18n="plan.acqOpt.student_offer">学生认证优惠</option>
-                <option value="pixel_bundle" data-i18n="plan.acqOpt.pixel_bundle">Google Pixel 设备赠送</option>
-                <option value="chromebook_bundle" data-i18n="plan.acqOpt.chromebook_bundle">Chromebook Plus 设备赠送</option>
-                <option value="samsung_galaxy" data-i18n="plan.acqOpt.samsung_galaxy">Samsung Galaxy 设备指定活动</option>
-                <option value="jio_offer" data-i18n="plan.acqOpt.jio_offer">Jio 运营商套餐权益</option>
-                <option value="partner_carrier" data-i18n="plan.acqOpt.partner_carrier">其他运营商 / 合作伙伴权益</option>
-                <option value="family_sharing" data-i18n="plan.acqOpt.family_sharing">家庭组共享 / 他人赠送</option>
-                <option value="official_promo" data-i18n="plan.acqOpt.official_promo">官方限时试用 / 促销活动</option>
-                <option value="custom_source" data-i18n="plan.acqOpt.custom_source">其他 / 自由命名</option>
-              </select>
-            </div>
-            <div>
-              <label style="font-size:10px;color:var(--ag-text-muted);display:block;margin-bottom:2px" data-i18n="plan.form.acqCustomLabel">自定义活动 / 合作方名称</label>
-              <input id="input-custom-acq-name" type="text" placeholder="选填，如 Pixel 11 Pro 赠送" data-i18n-placeholder="plan.form.acqCustomPh" style="width:100%;font-size:11px;padding:4px 6px;box-sizing:border-box;background:var(--ag-bg-input);border:1px solid var(--ag-border-subcard);border-radius:4px;color:var(--ag-text-primary)">
-            </div>
-          </div>
-          <div style="margin-bottom:6px">
-            <label style="font-size:10.5px;color:var(--ag-text-primary);display:flex;align-items:center;gap:6px;cursor:pointer">
-              <input id="check-zero-extra" type="checkbox">
-              <span data-i18n="plan.form.zeroExtra">本权益期间无需另付订阅费</span>
-            </label>
-          </div>
-          <div style="margin-bottom:6px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
-              <label style="font-size:10px;color:var(--ag-text-muted)" data-i18n="plan.form.presetLabel">预设订阅国家与汇率 (可选快捷套用)</label>
-              <span id="region-cny-preview" style="font-size:9.5px;color:var(--ag-text-secondary)"></span>
-            </div>
-            <select id="select-custom-region-preset" style="width:100%;font-size:11px;padding:4px;margin-bottom:4px;background:var(--ag-bg-input);border:1px solid var(--ag-border-subcard);border-radius:4px;color:var(--ag-text-primary)">
-              <option value="" data-i18n="plan.form.presetPlaceholder">-- 选择预设地区 (自动填入价格与汇率) --</option>
-              <option value="US">🇺🇸 美国 (US) · $19.99/月 (折合 ≈ ¥134.3)</option>
-              <option value="KR">🇰🇷 韩国 (KR) · ₩29,000/月 (折合 ≈ ¥147.9)</option>
-              <option value="HK">🇭🇰 中国香港 (HK) · HK$158/月 (折合 ≈ ¥135.4)</option>
-              <option value="JP">🇯🇵 日本 (JP) · ¥2,900/月 (折合 ≈ ¥123.3)</option>
-              <option value="TR">🇹🇷 土耳其 (TR) · ₺869.99/月 (折合 ≈ ¥115.7)</option>
-              <option value="NG">🇳🇬 尼日利亚 (NG) · ₦28,500/月 (折合 ≈ ¥119.7)</option>
-              <option value="TW">🇹🇼 中国台湾 (TW) · NT$650/月 (折合 ≈ ¥136.5)</option>
-              <option value="PH">🇵🇭 菲律宾 (PH) · ₱1,100/月 (折合 ≈ ¥128.7)</option>
-              <option value="IN">🇮🇳 印度 (IN) · ₹1,950/月 (折合 ≈ ¥148.2)</option>
-              <option value="GB">🇬🇧 英国 (UK) · £18.99/月 (折合 ≈ ¥166.2)</option>
-              <option value="EU">🇪🇺 欧洲 (EU) · €21.99/月 (折合 ≈ ¥165.4)</option>
-              <option value="BR">🇧🇷 巴西 (BR) · R$96.99/月 (折合 ≈ ¥114.4)</option>
-              <option value="SG">🇸🇬 新加坡 (SG) · S$27.99/月 (折合 ≈ ¥143.3)</option>
-              <option value="CA">🇨🇦 加拿大 (CA) · CA$26.99/月 (折合 ≈ ¥131.7)</option>
-              <option value="AU">🇦🇺 澳大利亚 (AU) · AU$32.99/月 (折合 ≈ ¥146.8)</option>
-              <option value="MY">🇲🇾 马来西亚 (MY) · RM 97.99/月 (折合 ≈ ¥151.9)</option>
-              <option value="CN">🇨🇳 中国大陆/自定义 (CNY) · ¥140/月</option>
-              <option value="custom" data-i18n="plan.form.presetCustom">✎ 自定义输入地区</option>
-            </select>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px">
-            <div>
-              <label style="font-size:10px;color:var(--ag-text-muted);display:block;margin-bottom:2px" data-i18n="plan.form.countryLabel">账号所在地区 (仅本地记录)</label>
-              <input id="input-custom-country" type="text" placeholder="例如：美国 (US)" data-i18n-placeholder="plan.form.countryPh" title="仅作为本地显示记录，不修改实际 Google 账号" data-i18n-title="plan.country.title" style="width:100%;font-size:11px;padding:4px 6px;box-sizing:border-box;background:var(--ag-bg-input);border:1px solid var(--ag-border-subcard);border-radius:4px;color:var(--ag-text-primary)">
-            </div>
-            <div>
-              <label style="font-size:10px;color:var(--ag-text-muted);display:block;margin-bottom:2px" data-i18n="plan.form.regionLabel">订阅国家 (购买/结算地区)</label>
-              <input id="input-custom-region" type="text" placeholder="例如：韩国 / 澳大利亚" data-i18n-placeholder="plan.form.regionPh" title="实际购买或支付订阅所在的国家或地区" data-i18n-title="plan.region.title" style="width:100%;font-size:11px;padding:4px 6px;box-sizing:border-box;background:var(--ag-bg-input);border:1px solid var(--ag-border-subcard);border-radius:4px;color:var(--ag-text-primary)">
-            </div>
-            <div>
-              <label style="font-size:10px;color:var(--ag-text-muted);display:block;margin-bottom:2px" data-i18n="plan.form.currencyLabel">订阅币种与实付金额</label>
-              <div style="display:flex;gap:4px">
-                <select id="select-custom-currency" title="订阅计价/结算币种" data-i18n-title="plan.currency.title" style="font-size:11px;padding:3px;background:var(--ag-bg-input);border:1px solid var(--ag-border-subcard);border-radius:4px;color:var(--ag-text-primary)">
-                  <option value="USD">USD</option>
-                  <option value="KRW">KRW</option>
-                  <option value="HKD">HKD</option>
-                  <option value="JPY">JPY</option>
-                  <option value="TRY">TRY</option>
-                  <option value="NGN">NGN</option>
-                  <option value="TWD">TWD</option>
-                  <option value="PHP">PHP</option>
-                  <option value="INR">INR</option>
-                  <option value="CNY">CNY</option>
-                  <option value="EUR">EUR</option>
-                  <option value="GBP">GBP</option>
-                  <option value="SGD">SGD</option>
-                  <option value="BRL">BRL</option>
-                  <option value="CAD">CAD</option>
-                  <option value="AUD">AUD</option>
-                  <option value="MYR">MYR</option>
-                </select>
-                <input id="input-custom-paid" type="number" step="0.01" placeholder="实付金额" data-i18n-placeholder="plan.form.paidPh" style="width:100%;font-size:11px;padding:4px 6px;box-sizing:border-box;background:var(--ag-bg-input);border:1px solid var(--ag-border-subcard);border-radius:4px;color:var(--ag-text-primary)">
-              </div>
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
-            <div>
-              <label style="font-size:10px;color:var(--ag-text-muted);display:block;margin-bottom:2px" data-i18n="plan.form.cycleLabel">计费周期</label>
-              <select id="select-custom-cycle" style="width:100%;font-size:11px;padding:4px 6px;background:var(--ag-bg-input);border:1px solid var(--ag-border-subcard);border-radius:4px;color:var(--ag-text-primary)">
-                <option value="月付" data-i18n="plan.cycleOpt.monthly">月付</option>
-                <option value="年付" data-i18n="plan.cycleOpt.yearly">年付</option>
-                <option value="免费/赠送" data-i18n="plan.cycleOpt.free">免费 / 促销赠送</option>
-                <option value="随套餐包含" data-i18n="plan.cycleOpt.included">随套餐包含</option>
-                <option value="其他周期" data-i18n="plan.cycleOpt.other">其他周期</option>
-              </select>
-            </div>
-            <div>
-              <label style="font-size:10px;color:var(--ag-text-muted);display:block;margin-bottom:2px" data-i18n="plan.form.validEndLabel">权益到期日</label>
-              <input id="input-valid-end" type="date" style="width:100%;font-size:11px;padding:3px 6px;box-sizing:border-box;background:var(--ag-bg-input);border:1px solid var(--ag-border-subcard);border-radius:4px;color:var(--ag-text-primary)">
-            </div>
-          </div>
-          <div style="margin-bottom:6px">
-            <label style="font-size:10px;color:var(--ag-text-muted);display:block;margin-bottom:2px" data-i18n="plan.form.noteLabel">补充说明备注</label>
-            <input id="input-custom-note" type="text" placeholder="例如：Pixel 11 Pro 赠送 6 个月 / 家庭拼车" data-i18n-placeholder="plan.form.notePh" style="width:100%;font-size:11px;padding:4px 6px;box-sizing:border-box;background:var(--ag-bg-input);border:1px solid var(--ag-border-subcard);border-radius:4px;color:var(--ag-text-primary)">
-          </div>
-          <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:6px">
-            <button id="btn-custom-plan-clear" class="switch-pill-btn" type="button" style="padding:2px 8px;font-size:11px;color:#ef4444" data-i18n="plan.form.clear">清除自定义</button>
-            <button id="btn-custom-plan-cancel" class="switch-pill-btn" type="button" style="padding:2px 8px;font-size:11px" data-i18n="plan.form.cancel">取消</button>
-            <button id="btn-custom-plan-save" class="switch-pill-btn active" type="button" style="padding:2px 10px;font-size:11px" data-i18n="plan.form.save">保存</button>
-          </div>
         </div>
       </div>
 
-      <!-- API 费用估算卡片（整个费用面板默认收为小摘要，展开后才显示详情） -->
-      <div id="cost-estimate-card" style="display:none;background:var(--ag-bg-card);border:1px solid var(--ag-border-card);border-radius:8px;padding:12px;margin-bottom:10px">
-        <!-- 紧凑小摘要区（默认常驻展示） -->
-        <div id="cost-compact-summary">
-          <!-- 1. 标题与范围标签 -->
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <span id="cost-card-title" style="font-size:12.5px;font-weight:600;color:var(--ag-text-primary)" data-i18n="cost.title">💰 本期 API 参考金额</span>
-            <span id="cost-period-tag" class="key-pill pill-muted" style="font-size:10px" data-i18n="cost.periodTag">本月自然月</span>
-          </div>
-          <!-- 2. 来源与时间短行 -->
-          <div id="cost-scope-desc" style="font-size:11px;color:var(--ag-text-muted);margin-bottom:6px">—</div>
-          <!-- 3. 主要参考金额及常驻“非实付”标识 -->
-          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
-            <div id="cost-grand-val" style="font-size:22px;font-weight:700;color:var(--ag-text-primary);letter-spacing:-0.5px">$0.00</div>
-            <span id="cost-non-paid-badge" class="key-pill pill-muted" style="font-size:10px;padding:1px 6px" data-i18n="cost.nonPaidBadge">API折算 · 非实付</span>
-          </div>
-          <!-- 4. 一行参考模型/情景假设 -->
-          <div id="cost-grand-sub" style="font-size:11px;color:var(--ag-text-secondary);margin-bottom:6px;line-height:1.35">—</div>
-          <!-- 5. 一行订阅实付及补充入口 -->
-          <div id="cost-sub-line-wrap" style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:var(--ag-bg-subcard);border-radius:6px;margin:6px 0 8px">
-            <div style="display:flex;align-items:center;gap:4px">
-              <span id="cost-sub-line" style="font-size:11px;color:var(--ag-text-primary)" data-i18n="cost.subUnknown">订阅实付：未填写</span>
-              <span id="cost-sub-spend-val" style="display:none">—</span>
-              <span id="cost-sub-compare-note" style="display:none"></span>
-              <span id="cost-sub-spend-lbl" style="display:none"></span>
-            </div>
-            <button id="btn-cost-fill-sub" class="switch-pill-btn" type="button" style="padding:1px 6px;font-size:10.5px" data-i18n="cost.btnFill">补充</button>
-          </div>
-          <!-- 6. 展开详情入口 -->
-          <div id="cost-expand-bar" style="display:flex;justify-content:flex-end">
-            <button id="btn-cost-details-toggle" class="switch-pill-btn" type="button" style="padding:2px 10px;font-size:10.5px" data-i18n="cost.btnExpand">展开详情 ▼</button>
-          </div>
-        </div>
-
-        <!-- 详细选项与分析区（展开后完整呈现，默认收起） -->
-        <div id="cost-details-pane" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--ag-border-subcard)">
-          <!-- 高级控制条：范围与覆盖率 -->
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
-            <span style="font-size:11px;color:var(--ag-text-muted)" data-i18n="cost.scopeLabel">统计范围:</span>
-            <div style="display:flex;align-items:center;gap:4px">
-              <button id="cost-btn-scope-period" class="switch-pill-btn active" type="button" style="padding:1px 6px;font-size:10.5px" data-i18n="cost.scopePeriod">本期</button>
-              <button id="cost-btn-scope-all" class="switch-pill-btn" type="button" style="padding:1px 6px;font-size:10.5px" data-i18n="cost.scopeAll">全量历史</button>
-              <span id="cost-coverage-pill" class="key-pill pill-muted" style="font-size:10.5px">100%</span>
-            </div>
-          </div>
-
-          <!-- 估值模式快捷切换（中性“参考模型估算”） -->
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--ag-border-subcard)">
-            <span style="font-size:10.5px;color:var(--ag-text-muted)" data-i18n="cost.modeLabel">估值模式:</span>
-            <div class="source-switch-bar">
-              <button id="cost-btn-mode-ref" class="switch-pill-btn active" type="button" style="padding:1px 6px;font-size:10px" data-i18n="cost.modeRef">参考模型估算</button>
-              <button id="cost-btn-mode-hybrid" class="switch-pill-btn" type="button" style="padding:1px 6px;font-size:10px" data-i18n="cost.modeHybrid">混合模式</button>
-              <button id="cost-btn-mode-identified" class="switch-pill-btn" type="button" style="padding:1px 6px;font-size:10px" data-i18n="cost.modeIdentified">仅已识别模型</button>
-            </div>
-          </div>
-
-          <!-- 用量与参考差额指标条（注明包含缓存读取） -->
-          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;padding:6px 8px;background:var(--ag-bg-subcard);border-radius:6px;margin-bottom:8px">
-            <span id="cost-usage-summary" style="font-size:11px;font-weight:600;color:var(--ag-text-primary)">—</span>
-            <span id="cost-diff-summary" style="font-size:10.5px;color:var(--ag-text-muted)">—</span>
-          </div>
-
-          <!-- 分类单价与公式明细卡片（输入、缓存读取、输出） -->
-          <div id="ref-cost-breakdown-cards" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px">
-            <div class="t-card" style="padding:6px">
-              <div style="font-size:10px;color:var(--ag-text-muted)"><span data-i18n="cost.card.input">输入 Token</span> ($0.75/M)</div>
-              <div id="ref-cost-input-val" style="font-size:12px;font-weight:600;color:var(--ag-text-primary)">$0.00</div>
-              <div id="ref-cost-input-tok" style="font-size:9.5px;color:var(--ag-text-muted)">0 tok</div>
-            </div>
-            <div class="t-card" style="padding:6px">
-              <div style="font-size:10px;color:var(--ag-text-muted)"><span data-i18n="cost.card.cache">缓存读取 (优惠)</span> ($0.075/M)</div>
-              <div id="ref-cost-cache-val" style="font-size:12px;font-weight:600;color:var(--ag-text-primary)">$0.00</div>
-              <div id="ref-cost-cache-tok" style="font-size:9.5px;color:var(--ag-text-muted)">0 tok</div>
-            </div>
-            <div class="t-card" style="padding:6px">
-              <div style="font-size:10px;color:var(--ag-text-muted)"><span data-i18n="cost.card.output">输出 Token</span> ($3.75/M)</div>
-              <div id="ref-cost-output-val" style="font-size:12px;font-weight:600;color:var(--ag-text-primary)">$0.00</div>
-              <div id="ref-cost-output-tok" style="font-size:9.5px;color:var(--ag-text-muted)">0 tok</div>
-            </div>
-          </div>
-
-          <!-- 详细分析与未计价原因 -->
-          <div id="cost-breakdown-info" style="font-size:10.5px;color:var(--ag-text-secondary);line-height:1.4;padding-top:6px;border-top:1px solid var(--ag-border-subcard)" data-i18n="cost.analyzing">
-            正在分析请求模型与计价覆盖率…
-          </div>
-
-          <div style="font-size:10px;color:var(--ag-text-muted);line-height:1.4;margin-top:8px" data-i18n="cost.disclaimer">
-            注：此折算反映按公开零售价调用同等资源之费用，包月订阅/活动赠送与 API 零售非同类计费模式，该差额不等于真实节省现金；缓存读取按 10% 优惠计价；不含缓存存储费与搜索落地费用。缓存可在多次请求中重复读取相同上下文，该总量不代表独立文本量或用户输入字数。
-          </div>
-
-          <!-- 底部收起详情按钮 -->
-          <div style="display:flex;justify-content:center;margin-top:10px">
-            <button id="btn-cost-details-collapse" class="switch-pill-btn" type="button" style="padding:2px 14px;font-size:10.5px" data-i18n="cost.btnCollapse">收起详情 ▴</button>
-          </div>
-        </div>
-
-        <!-- 隐藏辅助兼容层 -->
-        <div id="ref-cost-drawer-body" style="display:none">
-          <span id="ref-cost-grand-val">$0.00</span>
-          <span id="ref-cost-mode-label">参考模型折算</span>
-          <button id="btn-toggle-ref-cost-drawer" type="button" style="display:none"></button>
-          <button id="btn-ref-mode-all" type="button" style="display:none"></button>
-          <button id="btn-ref-mode-hybrid" type="button" style="display:none"></button>
-        </div>
-      </div>
-
-      <!-- 专属 Token 统计页（包含卡片统计、热力图与调色抽屉，费用模式下完全不渲染） -->
+      <!-- 专属 Token 统计页（卡片统计、热力图与调色抽屉） -->
       <div id="tokens-main-view">
         <div class="token-stat-cards" id="token-stat-cards">
           <div class="t-card">
@@ -2678,25 +2382,21 @@
             <div style="font-size:9.5px;color:var(--ag-text-muted);margin:-2px 0 4px" data-i18n="tokens.card.includeCache">含缓存读取</div>
             <div class="t-card-val" id="t-total-val">--</div>
             <div class="t-card-sub" id="t-total-sub" data-i18n="common.loading">读取中...</div>
-            <div class="t-card-cost" id="t-total-cost" data-i18n="tokens.card.costPlaceholder">≈ $0.00 (¥0.00) · 日均 $0.00</div>
           </div>
           <div class="t-card">
             <div class="t-card-lbl"><span data-i18n="tokens.card.today">今日使用</span><span style="color:var(--ag-custom-token-accent,#0284c7)">Today</span></div>
             <div class="t-card-val" id="t-today-val">--</div>
             <div class="t-card-sub" id="t-today-sub" data-i18n="common.loading">读取中...</div>
-            <div class="t-card-cost" id="t-today-cost">≈ $0.00 (¥0.00)</div>
           </div>
           <div class="t-card">
             <div class="t-card-lbl"><span data-i18n="tokens.card.month">本月使用</span><span style="color:var(--ag-custom-token-accent,var(--ag-token-accent-default))">Month</span></div>
             <div class="t-card-val" id="t-month-val">--</div>
             <div class="t-card-sub" id="t-month-sub" data-i18n="common.loading">读取中...</div>
-            <div class="t-card-cost" id="t-month-cost" data-i18n="tokens.card.costPlaceholder">≈ $0.00 (¥0.00) · 日均 $0.00</div>
           </div>
           <div class="t-card">
             <div class="t-card-lbl"><span data-i18n="tokens.card.year">年度使用</span><span style="color:var(--ag-custom-token-accent,var(--ag-token-accent-default))">Year</span></div>
             <div class="t-card-val" id="t-year-val">--</div>
             <div class="t-card-sub" id="t-year-sub" data-i18n="common.loading">读取中...</div>
-            <div class="t-card-cost" id="t-year-cost" data-i18n="tokens.card.costPlaceholder">≈ $0.00 (¥0.00) · 日均 $0.00</div>
           </div>
         </div>
 
@@ -2738,24 +2438,13 @@
             <span id="h-sum-tokens" class="heat-sum-val">-- Tokens</span>
           </div>
           <div class="heat-sum-item">
-            <span class="heat-sum-label" data-i18n="tokens.heat.sumCost">预估费用:</span>
-            <span id="h-sum-cost" class="heat-sum-val">≈ $0.00 (¥0.00)</span>
-          </div>
-          <div class="heat-sum-item">
             <span class="heat-sum-label" data-i18n="tokens.heat.sumDailyAvg">折合每天:</span>
-            <span id="h-sum-daily-avg" class="heat-sum-val">$0.00</span>
+            <span id="h-sum-daily-avg" class="heat-sum-val">0 Tokens</span>
           </div>
           <div class="heat-sum-item">
             <span class="heat-sum-label" data-i18n="tokens.heat.sumActiveAvg">活跃日均:</span>
-            <span id="h-sum-active-avg" class="heat-sum-val" data-i18n="tokens.heat.activeAvgPlaceholder">$0.00 (0天)</span>
+            <span id="h-sum-active-avg" class="heat-sum-val" data-i18n="tokens.heat.activeAvgPlaceholder">0 Tokens (0天)</span>
           </div>
-          <div id="h-sum-sub-ratio-wrap" class="heat-sum-item" style="display:none">
-            <span class="heat-sum-label" data-i18n="tokens.heat.sumSubRatio">订阅性价比:</span>
-            <span id="h-sum-sub-ratio" class="heat-sum-val" style="color:var(--ag-token-accent-default,#a78bfa)">--</span>
-          </div>
-        </div>
-        <div class="heat-cost-disclaimer" data-i18n="tokens.heat.disclaimer">
-          注：按日聚合按基础档估算，未拆分长上下文分档，结果偏下限。有逐请求记录时优先精确入账。
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11px;color:var(--ag-text-muted);flex-wrap:wrap;gap:6px">
           <span data-i18n="tokens.heat.tip">点击或悬浮格子查看当日详细 Token 构成</span>
@@ -3015,12 +2704,24 @@
     'tab.speed': { 'zh-CN': '速度对比', 'zh-TW': '速度對比', en: 'Speed' },
     'tab.settings': { 'zh-CN': '配置', 'zh-TW': '配置', en: 'setting' },
 
-    // 分页 1: 当前会话
-    'session.costBar.title': { 'zh-CN': '当前模型调用的 API 等值参考金额（按已返回用量或实时生成估算）', 'zh-TW': '目前模型呼叫的 API 等值參考金額（依已回傳用量或即時生成估算）', en: 'Estimated API-equivalent cost for the current model (based on returned usage or live output)' },
-    'session.roundCost': { 'zh-CN': '本轮估值：{val}', 'zh-TW': '本輪估值：{val}', en: 'This turn: {val}' },
-    'session.sessionCost': { 'zh-CN': '当前会话合计：{val}', 'zh-TW': '目前工作階段合計：{val}', en: 'Session total: {val}' },
-    'session.roundCost.dash': { 'zh-CN': '本轮估值：—', 'zh-TW': '本輪估值：—', en: 'This turn: —' },
-    'session.sessionCost.dash': { 'zh-CN': '当前会话合计：—', 'zh-TW': '目前工作階段合計：—', en: 'Session total: —' },
+    // 分页 1: 当前会话与版本同步提示
+    'versionSync.mismatch': { 'zh-CN': '⚠️ 检测到官方 Antigravity 已更新至 v{officialVer}（当前哈基米基于 v{hakimiVer}）。如需同步新版底座，请运行：bash ./build-hakimi.sh --force --restart', 'zh-TW': '⚠️ 偵測到官方 Antigravity 已更新至 v{officialVer}（目前哈基米基於 v{hakimiVer}）。如需同步新版底座，請執行：bash ./build-hakimi.sh --force --restart', en: '⚠️ Official Antigravity updated to v{officialVer} (Hakimi is on v{hakimiVer}). Rebuild with: bash ./build-hakimi.sh --force --restart' },
+    'session.quick.compact': { 'zh-CN': '🗜️ Compact 压缩上下文', 'zh-TW': '🗜️ Compact 壓縮上下文', en: '🗜️ Compact Context' },
+    'session.quick.compactBusy': { 'zh-CN': '⏳ 正在压缩…', 'zh-TW': '⏳ 正在壓縮…', en: '⏳ Compacting…' },
+    'session.quick.compactDone': { 'zh-CN': '✔ 已向当前会话发送 /compact 指令，上下文即将更新。', 'zh-TW': '✔ 已向目前工作階段發送 /compact 指令，上下文即將更新。', en: '✔ Sent /compact command to active chat; context will refresh shortly.' },
+    'session.quick.compactFail': { 'zh-CN': '✖ 触发压缩失败：{err}', 'zh-TW': '✖ 觸發壓縮失敗：{err}', en: '✖ Failed to trigger compact: {err}' },
+    'session.quick.compactNoSession': { 'zh-CN': '请先打开一个对话会话并确保后台已就绪。', 'zh-TW': '請先開啟一個對話工作階段並確保後台已就緒。', en: 'Open an active chat and wait until backend is ready.' },
+    'session.quick.raiseLimit': { 'zh-CN': '⬆️ 上调上下文上限', 'zh-TW': '⬆️ 上調上下文上限', en: '⬆️ Raise Context Limit' },
+    'session.quick.raiseTarget': { 'zh-CN': '⬆️ 上调上限至 {target}', 'zh-TW': '⬆️ 上調上限至 {target}', en: '⬆️ Raise limit to {target}' },
+    'session.quick.raiseDone': { 'zh-CN': '✔ 已将上下文上限调整为 {target}，下一条消息生效。', 'zh-TW': '✔ 已將上下文上限調整為 {target}，下一則訊息生效。', en: '✔ Raised context limit to {target}; applies on next message.' },
+    'session.quick.raiseNeedRestart': { 'zh-CN': '✔ 目标已设为 {target} 并解锁底座动态跟随，请重启客户端生效。', 'zh-TW': '✔ 目標已設為 {target} 並解鎖底座動態跟隨，請重啟用戶端生效。', en: '✔ Target set to {target} and dynamic unlock applied. Restart client to take effect.' },
+    'session.quick.raiseFail': { 'zh-CN': '✖ 上调上限失败：{err}', 'zh-TW': '✖ 上調上限失敗：{err}', en: '✖ Failed to raise limit: {err}' },
+    'topbar.quick.compactTitle': { 'zh-CN': 'Compact 压缩上下文', 'zh-TW': 'Compact 壓縮上下文', en: 'Compact Context' },
+    'topbar.quick.compactDesc': { 'zh-CN': '向当前会话发送 /compact，清理历史冗余释放空间', 'zh-TW': '向目前對話發送 /compact，清理歷史冗餘釋放空間', en: 'Send /compact to summarize chat history and free space' },
+    'topbar.quick.compactBusyDesc': { 'zh-CN': '正在向当前会话发送 /compact 指令…', 'zh-TW': '正在向目前對話發送 /compact 指令…', en: 'Sending /compact command to active chat…' },
+    'topbar.quick.raiseTitle': { 'zh-CN': '上调上下文上限至 {target}', 'zh-TW': '上調上下文上限至 {target}', en: 'Raise Context Limit to {target}' },
+    'topbar.quick.raiseDesc': { 'zh-CN': '一键扩容当前上下文预算上限（下一条消息生效）', 'zh-TW': '一鍵擴容目前上下文預算上限（下一則訊息生效）', en: 'Expand context budget limit in one click (applies on next message)' },
+    'topbar.quick.raiseBusyTitle': { 'zh-CN': '正在上调上限至 {target}…', 'zh-TW': '正在上調上限至 {target}…', en: 'Raising limit to {target}…' },
     'session.keySummary.title': { 'zh-CN': '⭐ 核心用量速览', 'zh-TW': '⭐ 核心用量速覽', en: '⭐ Context Summary' },
     'session.badge.reading': { 'zh-CN': '读取中', 'zh-TW': '讀取中', en: 'Loading' },
     'session.stat.used': { 'zh-CN': '当前已用', 'zh-TW': '目前已用', en: 'Used' },
@@ -3166,7 +2867,7 @@
       'zh-TW': '<strong>驗證範圍</strong>：<div>已驗證：用戶端重啟後讀到了新設定，並在之後的對話中觀測到對應預算。</div><div>未驗證：真實超長請求能否被伺服器端完整接受；帳號風險未知。</div>',
       en: '<strong>Verification scope</strong>:<div>Verified: client read the new setting after restart and live turns showed the updated budget.</div><div>Unverified: whether the server accepts full ultra-long requests; account risk is unknown.</div>'
     },
-    'models.details.li5': { 'zh-CN': '<strong>精确数值</strong>：512K = 512,000 tokens；可设置范围 16,384 – 2,097,152 tokens；跟随模型不固定数值。', 'zh-TW': '<strong>精確數值</strong>：512K = 512,000 tokens；可設定範圍 16,384 – 2,097,152 tokens；跟隨模型不固定數值。', en: '<strong>Exact values</strong>: 512K = 512,000 tokens; allowed range 16,384 – 2,097,152 tokens; Follow Model has no fixed cap.' },
+    'models.details.li5': { 'zh-CN': '<strong>精确数值</strong>：256K = 256,000 tokens；512K = 512,000 tokens；1M = 1,000,000 tokens；可设置范围 16,384 – 2,097,152 tokens；跟随模型不固定数值。', 'zh-TW': '<strong>精確數值</strong>：256K = 256,000 tokens；512K = 512,000 tokens；1M = 1,000,000 tokens；可設定範圍 16,384 – 2,097,152 tokens；跟隨模型不固定數值。', en: '<strong>Exact values</strong>: 256K = 256,000; 512K = 512,000; 1M = 1,000,000 tokens; allowed range 16,384 – 2,097,152 tokens; Follow Model has no fixed cap.' },
     'models.btn.restoreOriginal': { 'zh-CN': '客户端恢复原始设置', 'zh-TW': '用戶端恢復原始設定', en: 'Restore Client Default' },
     'models.btn.refreshStatus': { 'zh-CN': '刷新状态', 'zh-TW': '重新整理狀態', en: 'Refresh' },
     'models.status.detecting': { 'zh-CN': '正在检测当前 Antigravity 状态…', 'zh-TW': '正在偵測目前 Antigravity 狀態…', en: 'Detecting current Antigravity status…' },
@@ -3283,8 +2984,6 @@
     'tokens.src.all': { 'zh-CN': '全部', 'zh-TW': '全部', en: 'All' },
     'tokens.src.desktop': { 'zh-CN': '桌面端', 'zh-TW': '桌面端', en: 'Desktop' },
     'tokens.src.cli': { 'zh-CN': 'CLI', 'zh-TW': 'CLI', en: 'CLI' },
-    'tokens.view.tokens': { 'zh-CN': 'Token 统计', 'zh-TW': 'Token 統計', en: 'Token Stats' },
-    'tokens.view.cost': { 'zh-CN': 'API 参考金额', 'zh-TW': 'API 參考金額', en: 'API Est. Cost' },
     'tokens.card.total': { 'zh-CN': '累计处理 Token', 'zh-TW': '累計處理 Token', en: 'Total Tokens' },
     'tokens.card.includeCache': { 'zh-CN': '含缓存读取', 'zh-TW': '含快取讀取', en: 'Incl. cache reads' },
     'tokens.card.today': { 'zh-CN': '今日使用', 'zh-TW': '今日使用', en: 'Today' },
@@ -3297,11 +2996,8 @@
     'tokens.heat.yearly': { 'zh-CN': '今年', 'zh-TW': '今年', en: 'Year' },
     'tokens.heat.cum': { 'zh-CN': '累计总量', 'zh-TW': '累計總量', en: 'Cumulative' },
     'tokens.heat.sumTokens': { 'zh-CN': '区间合计:', 'zh-TW': '區間合計:', en: 'Range total:' },
-    'tokens.heat.sumCost': { 'zh-CN': '预估费用:', 'zh-TW': '預估費用:', en: 'Est. cost:' },
     'tokens.heat.sumDailyAvg': { 'zh-CN': '折合每天:', 'zh-TW': '折合每天:', en: 'Daily avg:' },
     'tokens.heat.sumActiveAvg': { 'zh-CN': '活跃日均:', 'zh-TW': '活躍日均:', en: 'Active avg:' },
-    'tokens.heat.sumSubRatio': { 'zh-CN': '订阅性价比:', 'zh-TW': '訂閱性價比:', en: 'Plan value:' },
-    'tokens.heat.disclaimer': { 'zh-CN': '注：按日聚合按基础档估算，未拆分长上下文分档，结果偏下限。有逐请求记录时优先精确入账。', 'zh-TW': '註：按日彙總依基礎檔估算，未拆分長上下文分檔，結果偏下限。有逐請求記錄時優先精確入帳。', en: 'Note: Daily aggregates use base tier pricing (lower bound) unless per-request records are available.' },
     'tokens.heat.tip': { 'zh-CN': '点击或悬浮格子查看当日详细 Token 构成', 'zh-TW': '點擊或懸停格子檢視當日詳細 Token 構成', en: 'Click or hover a cell to view daily token breakdown' },
     'tokens.heat.less': { 'zh-CN': '少', 'zh-TW': '少', en: 'Less' },
     'tokens.heat.more': { 'zh-CN': '多', 'zh-TW': '多', en: 'More' },
@@ -3320,17 +3016,6 @@
     'theme.autoTitle': { 'zh-CN': '当前主题：跟随宿主 ({mode})\n点击切换为：浅色模式', 'zh-TW': '目前主題：跟隨宿主 ({mode})\n點擊切換為：淺色模式', en: 'Theme: Follow IDE ({mode})\nClick to switch to Light' },
     'theme.lightTitle': { 'zh-CN': '当前主题：浅色模式 (固定)\n点击切换为：深色模式', 'zh-TW': '目前主題：淺色模式 (固定)\n點擊切換為：深色模式', en: 'Theme: Light (Fixed)\nClick to switch to Dark' },
     'theme.darkTitle': { 'zh-CN': '当前主题：深色模式 (固定)\n点击切换为：跟随宿主', 'zh-TW': '目前主題：深色模式 (固定)\n點擊切換為：跟隨宿主', en: 'Theme: Dark (Fixed)\nClick to switch to Follow IDE' },
-
-    // 本轮/会话估值
-    'cost.streamingEst': { 'zh-CN': '生成中暂估', 'zh-TW': '生成中暫估', en: 'Streaming est.' },
-    'cost.returnedEst': { 'zh-CN': '按已返回用量估算', 'zh-TW': '依已回傳用量估算', en: 'Based on returned usage' },
-    'cost.latestTurn': { 'zh-CN': '最近调用 {val} · {label}', 'zh-TW': '最近呼叫 {val} · {label}', en: 'Latest turn {val} · {label}' },
-    'cost.unpriced': { 'zh-CN': '最近调用：模型费率未收录', 'zh-TW': '最近呼叫：模型費率未收錄', en: 'Latest turn: unpriced model' },
-    'cost.latestDash': { 'zh-CN': '最近调用估值：—', 'zh-TW': '最近呼叫估值：—', en: 'Latest turn: —' },
-    'cost.sessionTotal': { 'zh-CN': '当前会话合计约 ${val}', 'zh-TW': '目前工作階段合計約 ${val}', en: 'Session total ≈ ${val}' },
-    'cost.modelTip': { 'zh-CN': '模型：{model}\n输入：{input} tok\n缓存：{cache} tok\n输出：{output} tok\n参考金额：${cost}', 'zh-TW': '模型：{model}\n輸入：{input} tok\n快取：{cache} tok\n輸出：{output} tok\n參考金額：${cost}', en: 'Model: {model}\nInput: {input} tok\nCache: {cache} tok\nOutput: {output} tok\nEst. cost: ${cost}' },
-    'cost.unpricedTip': { 'zh-CN': '模型：{model}（公开费率未收录）', 'zh-TW': '模型：{model}（公開費率未收錄）', en: 'Model: {model} (public rate unavailable)' },
-    'cost.missingModel': { 'zh-CN': '缺少模型信息', 'zh-TW': '缺少模型資訊', en: 'Missing model info' },
 
     // 模块状态（客户端语言 / 代理）
     'mod.readFail': { 'zh-CN': '⚠️ 读取失败', 'zh-TW': '⚠️ 讀取失敗', en: '⚠️ Read Failed' },
@@ -3537,11 +3222,10 @@
       'heat.prompt': { 'zh-CN': '提示词', 'zh-TW': '提示詞', en: 'Prompt' },
       'heat.output': { 'zh-CN': '输出', 'zh-TW': '輸出', en: 'Output' },
       'heat.cache': { 'zh-CN': '缓存', 'zh-TW': '快取', en: 'Cache' },
-      'heat.weeklyTotal': { 'zh-CN': 'Weekly Total · 周累计 (折合日均 ${avg})', 'zh-TW': 'Weekly Total · 週累計 (折合日均 ${avg})', en: 'Weekly Total (daily avg ${avg})' },
+      'heat.weeklyTotal': { 'zh-CN': '周累计 · 折合日均 {avg} Tokens', 'zh-TW': '週累計 · 折合日均 {avg} Tokens', en: 'Weekly Total · Avg {avg} Tokens/d' },
       'heat.cumSuffix': { 'zh-CN': ' (累计)', 'zh-TW': ' (累計)', en: ' (Cumulative)' },
-      'heat.cumTotal': { 'zh-CN': 'Cumulative Total · 截至当日累计 (折合日均 ${avg})', 'zh-TW': 'Cumulative Total · 截至當日累計 (折合日均 ${avg})', en: 'Cumulative Total to Date (daily avg ${avg})' },
-      'heat.activeDays': { 'zh-CN': '${avg} ({days}天)', 'zh-TW': '${avg} ({days}天)', en: '${avg} ({days}d)' },
-      'heat.roi': { 'zh-CN': '{ratio}x 回本', 'zh-TW': '{ratio}x 回本', en: '{ratio}x ROI' },
+      'heat.cumTotal': { 'zh-CN': '截至当日累计 · 折合日均 {avg} Tokens', 'zh-TW': '截至當日累計 · 折合日均 {avg} Tokens', en: 'Cumulative to Date · Avg {avg} Tokens/d' },
+      'heat.activeDays': { 'zh-CN': '{avg} Tokens ({days}天)', 'zh-TW': '{avg} Tokens ({days}天)', en: '{avg} Tokens ({days}d)' },
       'heat.peak': { 'zh-CN': '峰值', 'zh-TW': '峰值', en: 'Peak' },
 
       // 模型卡片折叠详情、历史分组与按钮状态补齐
@@ -3554,96 +3238,24 @@
       'header.theme.aria': { 'zh-CN': '切换浅色/深色主题', 'zh-TW': '切換淺色/深色主題', en: 'Toggle light/dark theme' },
       'header.theme.title': { 'zh-CN': '当前：跟随IDE（点击切换：浅色 / 深色 / 自动）', 'zh-TW': '目前：跟隨IDE（點擊切換：淺色 / 深色 / 自動）', en: 'Current: Follow IDE (click to cycle Light / Dark / Auto)' },
 
-      // 订阅详情与地区/币种选择
+      // 订阅与额度详情
       'plan.detail.toggleOpen': { 'zh-CN': '详情 ▼', 'zh-TW': '詳情 ▼', en: 'Details ▼' },
       'plan.detail.toggleClose': { 'zh-CN': '详情收回 ▲', 'zh-TW': '詳情收回 ▲', en: 'Hide ▲' },
       'plan.detail.title': { 'zh-CN': '💎 AI 订阅与额度详情', 'zh-TW': '💎 AI 訂閱與額度詳情', en: '💎 AI Subscription & Credits' },
       'plan.summary.identified': { 'zh-CN': '已自动识别', 'zh-TW': '已自動識別', en: 'Auto-detected' },
-      'plan.summary.custom': { 'zh-CN': '自定义生效', 'zh-TW': '自訂生效', en: 'Custom' },
       'plan.summary.unknown': { 'zh-CN': '未识别/默认', 'zh-TW': '未識別/預設', en: 'Default / Unknown' },
       'plan.summary.justNow': { 'zh-CN': '刚刚更新', 'zh-TW': '剛剛更新', en: 'Just now' },
-      'plan.summary.perMonth': { 'zh-CN': '/月', 'zh-TW': '/月', en: '/mo' },
-      'plan.summary.freeWithPlan': { 'zh-CN': '(随套餐免费)', 'zh-TW': '(隨方案免費)', en: '(Included)' },
       'plan.dt.plan': { 'zh-CN': '当前套餐：', 'zh-TW': '目前方案：', en: 'Plan:' },
       'plan.dt.account': { 'zh-CN': '当前账号：', 'zh-TW': '目前帳號：', en: 'Account:' },
-      'plan.dt.country': { 'zh-CN': '账号所在地区：', 'zh-TW': '帳號所在地區：', en: 'Account country:' },
-      'plan.dt.region': { 'zh-CN': '订阅国家：', 'zh-TW': '訂閱國家：', en: 'Billing country:' },
-      'plan.dt.currency': { 'zh-CN': '订阅币种：', 'zh-TW': '訂閱幣別：', en: 'Currency:' },
-      'plan.dt.acq': { 'zh-CN': '获取方式：', 'zh-TW': '取得方式：', en: 'Source:' },
-      'plan.dt.price': { 'zh-CN': '计费周期与价格：', 'zh-TW': '計費週期與價格：', en: 'Billing & price:' },
-      'plan.dt.validity': { 'zh-CN': '权益有效期：', 'zh-TW': '權益有效期：', en: 'Valid until:' },
-      'plan.dt.note': { 'zh-CN': '补充备注：', 'zh-TW': '補充備註：', en: 'Note:' },
       'plan.dt.promptCredits': { 'zh-CN': 'Prompt 额度池：', 'zh-TW': 'Prompt 額度池：', en: 'Prompt credits:' },
       'plan.dt.flowCredits': { 'zh-CN': 'Flow 额度池：', 'zh-TW': 'Flow 額度池：', en: 'Flow credits:' },
       'plan.dt.updated': { 'zh-CN': '状态更新时间：', 'zh-TW': '狀態更新時間：', en: 'Updated:' },
       'plan.account.unknown': { 'zh-CN': '未识别当前登录邮箱', 'zh-TW': '未識別目前登入信箱', en: 'Signed-in email not detected' },
-      'plan.country.auto': { 'zh-CN': '🌐 未设置 / 自动', 'zh-TW': '🌐 未設定 / 自動', en: '🌐 Unset / Auto' },
-      'plan.region.unknown': { 'zh-CN': '🌏 未知 (点击选择订阅国家与币种建议)', 'zh-TW': '🌏 未知 (點擊選擇訂閱國家與幣別建議)', en: '🌏 Unknown (select billing country & currency)' },
       'plan.tag.saved': { 'zh-CN': '已保存', 'zh-TW': '已儲存', en: 'Saved' },
-      'plan.tag.custom': { 'zh-CN': '自定义', 'zh-TW': '自訂', en: 'Custom' },
-      'plan.tag.promo': { 'zh-CN': '活动权益', 'zh-TW': '活動權益', en: 'Promo' },
-      'plan.tag.manualFree': { 'zh-CN': '手动确认 · 免费', 'zh-TW': '手動確認 · 免費', en: 'Manual · Free' },
-      'plan.tag.userPaid': { 'zh-CN': '用户实付', 'zh-TW': '用戶實付', en: 'Actual paid' },
-      'plan.tag.official': { 'zh-CN': '官方定价', 'zh-TW': '官方定價', en: 'Official price' },
-      'plan.tag.publicRef': { 'zh-CN': '公开参考价', 'zh-TW': '公開參考價', en: 'Public ref' },
-      'plan.tag.regionRef': { 'zh-CN': '地区参考价', 'zh-TW': '地區參考價', en: 'Regional ref' },
-      'plan.acq.normal': { 'zh-CN': '正常付费订阅', 'zh-TW': '正常付費訂閱', en: 'Standard Paid Plan' },
-      'plan.cycle.monthly': { 'zh-CN': '月付', 'zh-TW': '月繳', en: 'Monthly' },
-      'plan.cycle.yearly': { 'zh-CN': '年付', 'zh-TW': '年繳', en: 'Yearly' },
-      'plan.cycle.oneTime': { 'zh-CN': '单次', 'zh-TW': '單次', en: 'One-time' },
-      'plan.cny.approx': { 'zh-CN': '折合 ≈ {val}', 'zh-TW': '約 ≈ {val}', en: 'approx. {val}' },
       'models.restartConfirm.title': { 'zh-CN': '重启 Antigravity 客户端', 'zh-TW': '重新啟動 Antigravity 用戶端', en: 'Restart Antigravity Client' },
-      'plan.price.modePreset': { 'zh-CN': '跟随参考价', 'zh-TW': '跟隨參考價', en: 'Use reference' },
-      'plan.price.modeCustom': { 'zh-CN': '自定义实付', 'zh-TW': '自訂實付', en: 'Custom paid' },
-      'plan.btn.editCustom': { 'zh-CN': '自定义订阅设置', 'zh-TW': '自訂訂閱設定', en: 'Customize plan' },
       'plan.credits.avail': { 'zh-CN': '{avail} 可用 / {monthly} 月额度', 'zh-TW': '{avail} 可用 / {monthly} 月額度', en: '{avail} left / {monthly} monthly' },
-      'plan.validity.expired': { 'zh-CN': '至 {date} · ⚠️ 权益已到期', 'zh-TW': '至 {date} · ⚠️ 權益已到期', en: 'Until {date} · ⚠️ Expired' },
-      'plan.validity.active': { 'zh-CN': '至 {date} · 有效期内', 'zh-TW': '至 {date} · 有效期內', en: 'Until {date} · Active' },
-      'plan.form.title': { 'zh-CN': '设置当前账号订阅信息', 'zh-TW': '設定目前帳號訂閱資訊', en: 'Configure Account Subscription' },
-      'plan.form.acqLabel': { 'zh-CN': '获取方式 / 活动来源', 'zh-TW': '取得方式 / 活動來源', en: 'Acquisition / Promo Source' },
-      'plan.form.acqCustomLabel': { 'zh-CN': '自定义活动 / 合作方名称', 'zh-TW': '自訂活動 / 合作方名稱', en: 'Custom Promo / Partner Name' },
-      'plan.form.acqCustomPh': { 'zh-CN': '选填，如 Pixel 11 Pro 赠送', 'zh-TW': '選填，如 Pixel 11 Pro 贈送', en: 'Optional, e.g. Pixel bundle' },
-      'plan.form.zeroExtra': { 'zh-CN': '本权益期间无需另付订阅费', 'zh-TW': '本權益期間無需另付訂閱費', en: 'No extra subscription fee during this period' },
-      'plan.form.presetLabel': { 'zh-CN': '预设订阅国家与汇率 (可选快捷套用)', 'zh-TW': '預設訂閱國家與匯率 (可選快速套用)', en: 'Region & Exchange Rate Preset (optional)' },
-      'plan.form.countryLabel': { 'zh-CN': '账号所在地区 (仅本地记录)', 'zh-TW': '帳號所在地區 (僅本機記錄)', en: 'Account Country (local only)' },
-      'plan.form.regionLabel': { 'zh-CN': '订阅国家 (购买/结算地区)', 'zh-TW': '訂閱國家 (購買/結算地區)', en: 'Billing Country' },
-      'plan.form.currencyLabel': { 'zh-CN': '订阅币种与实付金额', 'zh-TW': '訂閱幣別與實付金額', en: 'Currency & Paid Amount' },
-      'plan.form.paidPh': { 'zh-CN': '实付金额', 'zh-TW': '實付金額', en: 'Amount' },
-      'plan.form.cycleLabel': { 'zh-CN': '计费周期', 'zh-TW': '計費週期', en: 'Billing Cycle' },
-      'plan.form.validEndLabel': { 'zh-CN': '权益到期日', 'zh-TW': '權益到期日', en: 'Expiration Date' },
-      'plan.form.noteLabel': { 'zh-CN': '补充说明备注', 'zh-TW': '補充說明備註', en: 'Notes' },
-      'plan.form.notePh': { 'zh-CN': '例如：Pixel 11 Pro 赠送 6 个月 / 家庭拼车', 'zh-TW': '例如：Pixel 11 Pro 贈送 6 個月 / 家庭共享', en: 'e.g. Device promo / family sharing' },
-      'plan.form.clear': { 'zh-CN': '清除自定义', 'zh-TW': '清除自訂', en: 'Clear custom' },
-      'plan.form.cancel': { 'zh-CN': '取消', 'zh-TW': '取消', en: 'Cancel' },
-      'plan.form.save': { 'zh-CN': '保存', 'zh-TW': '儲存', en: 'Save' },
-
-      // API 参考金额与展开详情
-      'cost.title': { 'zh-CN': '💰 本期 API 参考金额', 'zh-TW': '💰 本期 API 參考金額', en: '💰 Period API Reference Cost' },
-      'cost.periodTag': { 'zh-CN': '本月自然月', 'zh-TW': '本月自然月', en: 'This Calendar Month' },
-      'cost.nonPaidBadge': { 'zh-CN': 'API折算 · 非实付', 'zh-TW': 'API換算 · 非實付', en: 'API Est. · Not Billed' },
-      'cost.subUnknown': { 'zh-CN': '订阅实付：未填写', 'zh-TW': '訂閱實付：未填寫', en: 'Plan paid: Not set' },
-      'cost.btnFill': { 'zh-CN': '补充', 'zh-TW': '補充', en: 'Edit' },
-      'cost.btnExpand': { 'zh-CN': '展开详情 ▼', 'zh-TW': '展開詳情 ▼', en: 'Show details ▼' },
-      'cost.btnCollapse': { 'zh-CN': '收起详情 ▴', 'zh-TW': '收起詳情 ▴', en: 'Hide details ▴' },
-      'cost.scopeLabel': { 'zh-CN': '统计范围:', 'zh-TW': '統計範圍:', en: 'Scope:' },
-      'cost.scopePeriod': { 'zh-CN': '本期', 'zh-TW': '本期', en: 'This period' },
-      'cost.scopeAll': { 'zh-CN': '全量历史', 'zh-TW': '全量歷史', en: 'All history' },
-      'cost.modeLabel': { 'zh-CN': '估值模式:', 'zh-TW': '估值模式:', en: 'Pricing mode:' },
-      'cost.modeRef': { 'zh-CN': '参考模型估算', 'zh-TW': '參考模型估算', en: 'Reference model' },
-      'cost.modeHybrid': { 'zh-CN': '混合模式', 'zh-TW': '混合模式', en: 'Hybrid' },
-      'cost.modeIdentified': { 'zh-CN': '仅已识别模型', 'zh-TW': '僅已識別模型', en: 'Identified only' },
-      'cost.card.input': { 'zh-CN': '输入 Token', 'zh-TW': '輸入 Token', en: 'Input Tokens' },
-      'cost.card.cache': { 'zh-CN': '缓存读取 (优惠)', 'zh-TW': '快取讀取 (優惠)', en: 'Cache Read (discounted)' },
-      'cost.card.output': { 'zh-CN': '输出 Token', 'zh-TW': '輸出 Token', en: 'Output Tokens' },
-      'cost.analyzing': { 'zh-CN': '正在分析请求模型与计价覆盖率…', 'zh-TW': '正在分析請求模型與計價覆蓋率…', en: 'Analyzing model calls and pricing coverage…' },
-      'cost.disclaimer': {
-        'zh-CN': '注：此折算反映按公开零售价调用同等资源之费用，包月订阅/活动赠送与 API 零售非同类计费模式，该差额不等于真实节省现金；缓存读取按 10% 优惠计价；不含缓存存储费与搜索落地费用。缓存可在多次请求中重复读取相同上下文，该总量不代表独立文本量或用户输入字数。',
-        'zh-TW': '註：此換算反映依公開零售價呼叫同等資源之費用，包月訂閱/活動贈送與 API 零售非同類計費模式，該差額不等於真實節省現金；快取讀取依 10% 優惠計價；不含快取儲存費與搜尋落地費用。快取可在多次請求中重複讀取相同上下文，該總量不代表獨立文字量或使用者輸入字數。',
-        en: 'Note: Estimates reflect public API retail rates for equivalent usage. Subscriptions/promos differ from pay-as-you-go API billing; differences do not equal cash saved. Cache reads are priced at 10%; storage and grounding fees are excluded. Repeated cache reads do not represent unique text.'
-      },
 
       // Token 统计与热力图控制
-      'tokens.titleCost': { 'zh-CN': 'API 价格折算', 'zh-TW': 'API 價格換算', en: 'API Equivalent Cost' },
       'tokens.firstUse': { 'zh-CN': '首次使用：{date}', 'zh-TW': '首次使用：{date}', en: 'First use: {date}' },
       'tokens.heat.presetLabel': { 'zh-CN': '5 档色阶预设：', 'zh-TW': '5 檔色階預設：', en: '5-step presets:' },
       'tokens.heat.presetPurple': { 'zh-CN': '紫色系', 'zh-TW': '紫色系', en: 'Purple' },
@@ -3665,31 +3277,7 @@
       'tokens.heat.accentColors': { 'zh-CN': '累计与强调指标色', 'zh-TW': '累計與強調指標色', en: 'Total & accent colors' },
       'tokens.colors.followTheme': { 'zh-CN': '跟随主题', 'zh-TW': '跟隨主題', en: 'Follow theme' },
 
-      // 动态费用明细与 Token 卡片补齐
-      'cost.titleAll': { 'zh-CN': '💰 全量 API 参考金额', 'zh-TW': '💰 全量 API 參考金額', en: '💰 All-Time API Reference Cost' },
-      'cost.allHistory': { 'zh-CN': '全历史累计', 'zh-TW': '全歷史累計', en: 'All history' },
-      'cost.approx': { 'zh-CN': '约 ${val}', 'zh-TW': '約 ${val}', en: '~${val}' },
-      'cost.notReady': { 'zh-CN': '数据未就绪', 'zh-TW': '資料尚未就緒', en: 'Not ready' },
-      'cost.noRecords': { 'zh-CN': '暂无记录', 'zh-TW': '暫無記錄', en: 'No records' },
-      'cost.unpriced': { 'zh-CN': '暂无法估值', 'zh-TW': '暫無法估值', en: 'Unpriced' },
-      'cost.refSub': { 'zh-CN': '统一按 {model} 估算 (输入 ${in} / 缓存 ${ca} / 输出 ${out} 每百万 Token)', 'zh-TW': '統一依 {model} 估算 (輸入 ${in} / 快取 ${ca} / 輸出 ${out} 每百萬 Token)', en: 'Estimated via {model} (In ${in} / Cache ${ca} / Out ${out} per 1M)' },
-      'cost.hybridSub': { 'zh-CN': '混合模式：已识别 ${known} + 未知折算 ${res}', 'zh-TW': '混合模式：已識別 ${known} + 未知換算 ${res}', en: 'Hybrid: Identified ${known} + Residual ${res}' },
-      'cost.hybridBadge': { 'zh-CN': '混合模式折算', 'zh-TW': '混合模式換算', en: 'Hybrid mode' },
-      'cost.identSub': { 'zh-CN': '仅计入 {n} 条已知真实模型调用', 'zh-TW': '僅計入 {n} 筆已知真實模型呼叫', en: 'Only {n} identified model call(s) included' },
-      'cost.identSubNone': { 'zh-CN': '当前范围内请求缺少模型型号（未按 $0 计入）', 'zh-TW': '目前範圍內請求缺少模型型號（未依 $0 計入）', en: 'Requests lack model IDs (not counted as $0)' },
-      'cost.covPct': { 'zh-CN': '{pct}% 计价覆盖', 'zh-TW': '{pct}% 計價覆蓋', en: '{pct}% priced' },
-      'cost.tokCacheDiscount': { 'zh-CN': '{tok} tok (优惠)', 'zh-TW': '{tok} tok (優惠)', en: '{tok} tok (disc.)' },
-      'cost.tokResidual': { 'zh-CN': '剩余 {tok} tok', 'zh-TW': '剩餘 {tok} tok', en: 'Rem. {tok} tok' },
-      'cost.usageSummary': { 'zh-CN': '累计处理 Token: {total} (含 {cache} 缓存读取)', 'zh-TW': '累計處理 Token: {total} (含 {cache} 快取讀取)', en: 'Total tokens: {total} (incl. {cache} cache)' },
-      'cost.diffAll': { 'zh-CN': '全量累计不直接与单月费用做差额比较 · 避免跨月虚高', 'zh-TW': '全量累計不直接與單月費用做差額比較 · 避免跨月虛高', en: 'All-time totals are not compared against monthly fees' },
-      'cost.diffFree': { 'zh-CN': '与此 API 方案参考差额 约 +${val} (免费权益使用中 · 不计算无限倍数)', 'zh-TW': '與此 API 方案參考差額 約 +${val} (免費權益使用中 · 不計算無限倍數)', en: 'Diff vs API: ~+${val} (free promo active)' },
-      'cost.diffPaid': { 'zh-CN': '与此 API 方案参考差额 {sign}${val} (API折算 - 实际支出 · 仅供参考比较)', 'zh-TW': '與此 API 方案參考差額 {sign}${val} (API換算 - 實際支出 · 僅供參考比較)', en: 'Diff vs API: {sign}${val} (API est. - paid · reference only)' },
-      'cost.diffUnknown': { 'zh-CN': '跨币种或实付未知 · 并列展示不计算差额', 'zh-TW': '跨幣別或實付未知 · 並列顯示不計算差額', en: 'Cross-currency or paid amount unknown' },
-      'cost.subLineFree': { 'zh-CN': '订阅额外实付：{sym}0 ({src})', 'zh-TW': '訂閱額外實付：{sym}0 ({src})', en: 'Extra plan paid: {sym}0 ({src})' },
-      'cost.subLinePaid': { 'zh-CN': '订阅实付：{sym}{val}{cny} ({cycle}{exp})', 'zh-TW': '訂閱實付：{sym}{val}{cny} ({cycle}{exp})', en: 'Plan paid: {sym}{val}{cny} ({cycle}{exp})' },
-      'cost.breakdownPrefix': { 'zh-CN': '已识别真实模型明细：{details}{note}。', 'zh-TW': '已識別真實模型明細：{details}{note}。', en: 'Identified models: {details}{note}.' },
-      'cost.breakdownNone': { 'zh-CN': '暂无已匹配真实模型', 'zh-TW': '暫無已匹配真實模型', en: 'No matched model calls yet' },
-      'tokens.dailyAvg': { 'zh-CN': ' · 日均 ${val}', 'zh-TW': ' · 日均 ${val}', en: ' · Avg ${val}/d' },
+      // Token 数据与来源标签
       'tokens.firstUseNone': { 'zh-CN': '首次使用：--', 'zh-TW': '首次使用：--', en: 'First use: --' },
       'tokens.srcAllLabel': { 'zh-CN': '全部来源', 'zh-TW': '全部來源', en: 'All Sources' },
       'tokens.srcDesktopLabel': { 'zh-CN': '桌面端', 'zh-TW': '桌面端', en: 'Desktop' },
@@ -3817,8 +3405,7 @@
       'common.notProvided': { 'zh-CN': '未提供', 'zh-TW': '未提供', en: 'Not provided' },
       'common.loading': { 'zh-CN': '读取中...', 'zh-TW': '讀取中...', en: 'Loading...' },
       'tokens.heat.firstUsePlaceholder': { 'zh-CN': '首次使用：--', 'zh-TW': '首次使用：--', en: 'First use: --' },
-      'tokens.card.costPlaceholder': { 'zh-CN': '≈ $0.00 (¥0.00) · 日均 $0.00', 'zh-TW': '≈ $0.00 (¥0.00) · 日均 $0.00', en: '≈ $0.00 (¥0.00) · $0.00/d' },
-      'tokens.heat.activeAvgPlaceholder': { 'zh-CN': '$0.00 (0天)', 'zh-TW': '$0.00 (0天)', en: '$0.00 (0d)' },
+      'tokens.heat.activeAvgPlaceholder': { 'zh-CN': '0 Tokens (0天)', 'zh-TW': '0 Tokens (0天)', en: '0 Tokens (0d)' },
       'tokens.card.todaySub': { 'zh-CN': '{n} 会话实时累加', 'zh-TW': '{n} 會話即時累加', en: '{n} chat(s) live' },
       'tokens.card.monthSub': { 'zh-CN': '日均约 {val}', 'zh-TW': '日均約 {val}', en: '~{val}/day avg' },
       'tokens.card.yearSub': { 'zh-CN': '{n} 天活动记录', 'zh-TW': '{n} 天活動記錄', en: '{n} active day(s)' },
@@ -3828,22 +3415,9 @@
       'heatmap.pop.inProgress': { 'zh-CN': '（进行中）', 'zh-TW': '（進行中）', en: ' (Current)' },
       'heatmap.pop.peak': { 'zh-CN': '（年度峰值）', 'zh-TW': '（年度峰值）', en: ' (Peak)' },
       'heatmap.pop.future': { 'zh-CN': '未来月份（尚未产生用量）', 'zh-TW': '未來月份（尚未產生用量）', en: 'Future month (no usage)' },
-      'heatmap.pop.monthlyDet': { 'zh-CN': '月度合计 · 折合日均 ${avg} (活跃 {days} 天)', 'zh-TW': '月度合計 · 折合日均 ${avg} (活躍 {days} 天)', en: 'Monthly Total · Avg ${avg}/d ({days} active days)' },
-      'cost.subSpendLabel': { 'zh-CN': '本人同期实际支出', 'zh-TW': '本人同期實際支出', en: 'Your Actual Spend' },
-      'cost.freePromo': { 'zh-CN': '免费活动', 'zh-TW': '免費活動', en: 'Free promo' },
-      'cost.subSpend': { 'zh-CN': '订阅支出', 'zh-TW': '訂閱支出', en: 'Plan spend' },
-      'cost.paidLabel': { 'zh-CN': '实付', 'zh-TW': '實付', en: 'Paid' },
-      'cost.paidUnknown': { 'zh-CN': '实付未知', 'zh-TW': '實付未知', en: 'Paid unknown' },
-      'cost.publicRefMonthly': { 'zh-CN': '公开参考价 ${p}/月（实付未确认）', 'zh-TW': '公開參考價 ${p}/月（實付未確認）', en: 'Public ref ${p}/mo (paid unconfirmed)' },
-      'cost.unknown': { 'zh-CN': '未知', 'zh-TW': '未知', en: 'Unknown' },
-      'cost.noPlanData': { 'zh-CN': '未获取到套餐与实付数据', 'zh-TW': '未取得方案與實付資料', en: 'No plan or spend data available' },
-      'cost.allNoCompare': { 'zh-CN': ' · 全量累计不直接对比单月支出', 'zh-TW': ' · 全量累計不直接對比單月支出', en: ' · All-time not compared to monthly spend' },
-      'cost.expiredTag': { 'zh-CN': ' · ⚠️ 权益已到期', 'zh-TW': ' · ⚠️ 權益已到期', en: ' · ⚠️ Expired' },
-      'cost.freeActive': { 'zh-CN': '{src} · 用户确认 · 免费权益使用中{extra}', 'zh-TW': '{src} · 使用者確認 · 免費權益使用中{extra}', en: '{src} · Confirmed · Free active{extra}' },
-      'cost.covFull': { 'zh-CN': '100% 折算覆盖', 'zh-TW': '100% 換算覆蓋', en: '100% priced' },
-      'cost.refApprox': { 'zh-CN': '约 ${val}', 'zh-TW': '約 ${val}', en: '~${val}' },
+      'heatmap.pop.monthlyDet': { 'zh-CN': '月度合计 · 折合日均 {avg} Tokens (活跃 {days} 天)', 'zh-TW': '月度合計 · 折合日均 {avg} Tokens (活躍 {days} 天)', en: 'Monthly Total · Avg {avg} Tokens/d ({days} active days)' },
 
-      // 调色板与下拉选择器
+      // 调色板与 agy CLI 解锁文案
       'colors.resetLevel': { 'zh-CN': '恢复该档预设', 'zh-TW': '恢復該檔預設', en: 'Reset step' },
       'colors.followTheme': { 'zh-CN': '跟随主题', 'zh-TW': '跟隨主題', en: 'Follow theme' },
       'colors.lvl0': { 'zh-CN': '色阶第 1 档（少/无用量）', 'zh-TW': '色階第 1 檔（少/無用量）', en: 'Step 1 (None/Min)' },
@@ -3855,20 +3429,18 @@
       'colors.eyedropperUnsupported': { 'zh-CN': '当前环境不支持原生吸管，可直接粘贴 HEX', 'zh-TW': '目前環境不支援原生滴管，可直接貼上 HEX', en: 'Eyedropper unsupported; paste HEX directly' },
       'colors.appliedHex': { 'zh-CN': '已应用 {hex}', 'zh-TW': '已套用 {hex}', en: 'Applied {hex}' },
       'colors.copied': { 'zh-CN': '✔ 已复制 {label}: {val}', 'zh-TW': '✔ 已複製 {label}: {val}', en: '✔ Copied {label}: {val}' },
-      'dropdown.countrySearch': { 'zh-CN': '🔍 搜索账号所在地区或代码 (如: 美国、TW、JP)...', 'zh-TW': '🔍 搜尋帳號所在地區或代碼 (如: 美國、TW、JP)...', en: '🔍 Search country or code (e.g. US, TW, JP)...' },
-      'dropdown.countryEmpty': { 'zh-CN': '未找到匹配的账号所在地区', 'zh-TW': '未找到匹配的帳號所在地區', en: 'No matching country found' },
-      'dropdown.regionSearch': { 'zh-CN': '🔍 搜索订阅国家/地区、货币或缩写 (如: 台湾、澳、USD)...', 'zh-TW': '🔍 搜尋訂閱國家/地區、貨幣或縮寫 (如: 台灣、澳、USD)...', en: '🔍 Search billing region or currency (e.g. TW, USD)...' },
-      'dropdown.regionEmpty': { 'zh-CN': '未找到匹配的订阅国家/地区', 'zh-TW': '未找到匹配的訂閱國家/地區', en: 'No matching billing region found' },
-      'dropdown.currencySearch': { 'zh-CN': '🔍 搜索币种名称或代码 (如: USD、NTD、人民币)...', 'zh-TW': '🔍 搜尋幣別名稱或代碼 (如: USD、NTD、台幣)...', en: '🔍 Search currency code or name (e.g. USD, CNY)...' },
-      'dropdown.currencyEmpty': { 'zh-CN': '未找到匹配的币种', 'zh-TW': '未找到匹配的幣別', en: 'No matching currency found' },
-      'dropdown.autoSaved': { 'zh-CN': '✔ 已自动保存', 'zh-TW': '✔ 已自動儲存', en: '✔ Auto-saved' },
-      'dropdown.saveFailed': { 'zh-CN': '保存失败', 'zh-TW': '儲存失敗', en: 'Save failed' },
-      'dropdown.saveFailedDetail': { 'zh-CN': '✖ 保存失败：{msg}', 'zh-TW': '✖ 儲存失敗：{msg}', en: '✖ Save failed: {msg}' },
-      'dropdown.writeCfgFailed': { 'zh-CN': '无法写入配置文件', 'zh-TW': '無法寫入設定檔', en: 'Cannot write settings file' },
-      'dropdown.noPersistBridge': { 'zh-CN': '未连接持久化服务，无法保存', 'zh-TW': '未連線持久化服務，無法儲存', en: 'Persistence bridge unavailable' },
-      'dropdown.persistErr': { 'zh-CN': '持久化异常', 'zh-TW': '持久化異常', en: 'Persistence error' },
-      'dropdown.perMonth': { 'zh-CN': '/月', 'zh-TW': '/月', en: '/mo' },
-      'dropdown.regionUnknownShort': { 'zh-CN': '🌏 未知 (点击选择订阅地区与货币)', 'zh-TW': '🌏 未知 (點擊選擇訂閱地區與貨幣)', en: '🌏 Unknown (select region & currency)' },
+      'settings.cliUnlock.title': { 'zh-CN': '⌨️ agy CLI 上下文联动解锁', 'zh-TW': '⌨️ agy CLI 上下文連動解鎖', en: '⌨️ agy CLI Context Unlock' },
+      'settings.cliUnlock.desc': { 'zh-CN': '检测本机 agy 命令行二进制，解除 /model 上下文选择器机型白名单并修复 AGY_CLI_AUTO_COMPACT_OVERRIDE 环境变量读取，同时同步上下文窗口配置。', 'zh-TW': '偵測本機 agy 命令列二進位檔，解除 /model 上下文選擇器機型白名單並修復 AGY_CLI_AUTO_COMPACT_OVERRIDE 環境變數讀取，同時同步上下文視窗設定。', en: 'Detects local agy CLI binary, bypasses /model context selector allowlist, fixes AGY_CLI_AUTO_COMPACT_OVERRIDE env reading, and syncs CLI context config.' },
+      'settings.cliUnlock.applyBtn': { 'zh-CN': '一键修补并同步 agy CLI', 'zh-TW': '一鍵修補並同步 agy CLI', en: 'Patch & Sync agy CLI' },
+      'settings.cliUnlock.busy': { 'zh-CN': '正在修补并重签名 agy CLI…', 'zh-TW': '正在修補並重簽章 agy CLI…', en: 'Patching & codesigning agy CLI…' },
+      'settings.cliUnlock.patched': { 'zh-CN': '🟢 已解锁 ({ok}/{total})', 'zh-TW': '🟢 已解鎖 ({ok}/{total})', en: '🟢 Unlocked ({ok}/{total})' },
+      'settings.cliUnlock.unpatched': { 'zh-CN': '⚪ 未修补', 'zh-TW': '⚪ 未修補', en: '⚪ Unpatched' },
+      'settings.cliUnlock.partial': { 'zh-CN': '⚠️ 部分匹配', 'zh-TW': '⚠️ 部分符合', en: '⚠️ Partial Match' },
+      'settings.cliUnlock.notFound': { 'zh-CN': '⚪ 未安装 agy CLI', 'zh-TW': '⚪ 未安裝 agy CLI', en: '⚪ agy CLI Not Found' },
+      'settings.cliUnlock.unsupported': { 'zh-CN': '⚠️ 架构不支持', 'zh-TW': '⚠️ 架構不支援', en: '⚠️ Unsupported Arch' },
+      'settings.cliUnlock.brokenLinks': { 'zh-CN': '检测到失效软链接：{paths}', 'zh-TW': '偵測到失效軟連結：{paths}', en: 'Broken symlink(s): {paths}' },
+      'settings.cliUnlock.metaPath': { 'zh-CN': '二进制路径：{path}', 'zh-TW': '二進位路徑：{path}', en: 'Binary: {path}' },
+      'settings.cliUnlock.metaCfg': { 'zh-CN': '已同步 CLI 配置：{n} 项', 'zh-TW': '已同步 CLI 設定：{n} 項', en: 'Synced CLI configs: {n}' },
 
       // 速度图表 Aria 与 设置/更新弹窗
       'speed.barSvg.aria': { 'zh-CN': '各模型与档位速度对比柱状图', 'zh-TW': '各模型與檔位速度對比長條圖', en: 'Model & effort speed comparison bar chart' },
@@ -3965,37 +3537,7 @@
       'cp.hslAria': { 'zh-CN': 'HSL 色值', 'zh-TW': 'HSL 色值', en: 'HSL value' },
       'cp.copyHsl': { 'zh-CN': '复制 HSL', 'zh-TW': '複製 HSL', en: 'Copy HSL' },
 
-      // 订阅表单与热力图补充
-      'plan.summary.priceBadgeTitle': { 'zh-CN': '当前订阅月费及人民币折合汇率参考 (点击展开/收起详情)', 'zh-TW': '目前訂閱月費及人民幣折合匯率參考 (點擊展開/收起詳情)', en: 'Current monthly fee & CNY estimate (click to toggle details)' },
-      'plan.country.title': { 'zh-CN': '仅作为本地显示记录，不修改实际 Google 账号', 'zh-TW': '僅作為本機顯示記錄，不修改實際 Google 帳號', en: 'Local display record only; does not change your Google account' },
-      'plan.region.title': { 'zh-CN': '实际购买或支付订阅所在的国家或地区', 'zh-TW': '實際購買或支付訂閱所在的國家或地區', en: 'Country/region where the subscription is billed' },
-      'plan.currency.aria': { 'zh-CN': '选择订阅币种', 'zh-TW': '選擇訂閱幣別', en: 'Select subscription currency' },
-      'plan.currency.title': { 'zh-CN': '订阅计价/结算币种', 'zh-TW': '訂閱計價/結算幣別', en: 'Subscription billing currency' },
-      'plan.country.unknown': { 'zh-CN': '未知', 'zh-TW': '未知', en: 'Unknown' },
-      'plan.region.unknown': { 'zh-CN': '未知', 'zh-TW': '未知', en: 'Unknown' },
-      'plan.cnyApprox': { 'zh-CN': '折合 ≈ ¥{val} CNY/月', 'zh-TW': '折合 ≈ ¥{val} CNY/月', en: '≈ ¥{val} CNY/mo' },
-      'plan.cnyShort': { 'zh-CN': '≈ ¥{val} CNY', 'zh-TW': '≈ ¥{val} CNY', en: '≈ ¥{val} CNY' },
-      'plan.acqOpt.normal_paid': { 'zh-CN': '正常官方付费订阅', 'zh-TW': '正常官方付費訂閱', en: 'Standard paid subscription' },
-      'plan.acqOpt.student_offer': { 'zh-CN': '学生教育优惠 (Google AI Pro 学生方案)', 'zh-TW': '學生教育優惠 (Google AI Pro 學生方案)', en: 'Student discount (Google AI Pro)' },
-      'plan.acqOpt.pixel_bundle': { 'zh-CN': 'Pixel 手机购机赠送权益', 'zh-TW': 'Pixel 手機購機贈送權益', en: 'Pixel phone bundle perk' },
-      'plan.acqOpt.chromebook_bundle': { 'zh-CN': 'Chromebook 购机赠送权益', 'zh-TW': 'Chromebook 購機贈送權益', en: 'Chromebook bundle perk' },
-      'plan.acqOpt.samsung_galaxy': { 'zh-CN': 'Samsung Galaxy 手机赠送权益', 'zh-TW': 'Samsung Galaxy 手機贈送權益', en: 'Samsung Galaxy perk' },
-      'plan.acqOpt.jio_offer': { 'zh-CN': 'Jio 运营商优惠活动', 'zh-TW': 'Jio 電信優惠活動', en: 'Jio carrier promotion' },
-      'plan.acqOpt.partner_carrier': { 'zh-CN': '合作运营商 / 活动赠送', 'zh-TW': '合作電信商 / 活動贈送', en: 'Carrier / partner promotion' },
-      'plan.acqOpt.family_sharing': { 'zh-CN': 'Google 家庭共享成员', 'zh-TW': 'Google 家庭共享成員', en: 'Google Family Sharing' },
-      'plan.acqOpt.official_promo': { 'zh-CN': '官方试用 / 促销优惠', 'zh-TW': '官方試用 / 促銷優惠', en: 'Official trial / promo' },
-      'plan.acqOpt.custom_source': { 'zh-CN': '其他自定义渠道', 'zh-TW': '其他自訂管道', en: 'Other custom source' },
-      'plan.form.presetPlaceholder': { 'zh-CN': '-- 选择预设地区 (自动填入价格与汇率) --', 'zh-TW': '-- 選擇預設地區 (自動填入價格與匯率) --', en: '-- Choose preset region (auto-fills price & rate) --' },
-      'plan.form.presetCustom': { 'zh-CN': '✎ 自定义输入地区', 'zh-TW': '✎ 自訂輸入地區', en: '✎ Custom region' },
-      'plan.form.countryPh': { 'zh-CN': '例如：美国 (US)', 'zh-TW': '例如：美國 (US)', en: 'e.g. United States (US)' },
-      'plan.form.regionPh': { 'zh-CN': '例如：韩国 / 澳大利亚', 'zh-TW': '例如：韓國 / 澳洲', en: 'e.g. South Korea / Australia' },
-      'plan.form.presetLine': { 'zh-CN': '{flag} {name} ({id}) · {sym}{price}/月 (≈ ¥{cny})', 'zh-TW': '{flag} {name} ({id}) · {sym}{price}/月 (≈ ¥{cny})', en: '{flag} {name} ({id}) · {sym}{price}/mo (≈ ¥{cny})' },
-      'plan.form.presetLineCny': { 'zh-CN': '{flag} {name} (CNY) · ¥{price}/月', 'zh-TW': '{flag} {name} (CNY) · ¥{price}/月', en: '{flag} {name} (CNY) · ¥{price}/mo' },
-      'plan.cycleOpt.monthly': { 'zh-CN': '月付', 'zh-TW': '月付', en: 'Monthly' },
-      'plan.cycleOpt.yearly': { 'zh-CN': '年付', 'zh-TW': '年付', en: 'Yearly' },
-      'plan.cycleOpt.free': { 'zh-CN': '免费 / 促销赠送', 'zh-TW': '免費 / 促銷贈送', en: 'Free / Promo' },
-      'plan.cycleOpt.included': { 'zh-CN': '随套餐包含', 'zh-TW': '隨方案包含', en: 'Included in bundle' },
-      'plan.cycleOpt.other': { 'zh-CN': '其他周期', 'zh-TW': '其他週期', en: 'Other cycle' },
+      // 热力图与色彩自定义补充
       'tokens.heat.prevTitle': { 'zh-CN': '上一个周期', 'zh-TW': '上一個週期', en: 'Previous period' },
       'tokens.heat.nextTitle': { 'zh-CN': '下一个周期', 'zh-TW': '下一個週期', en: 'Next period' },
       'tokens.heat.tabsAria': { 'zh-CN': '热力图时间维度', 'zh-TW': '熱力圖時間維度', en: 'Heatmap time dimension' },
@@ -4086,50 +3628,6 @@
     '完整重启 Antigravity 后启用附件扫描': { 'zh-TW': '完整重新啟動 Antigravity 後啟用附件掃描', en: 'Fully restart Antigravity to enable attachment scanning' },
     '扫描未返回有效结果': { 'zh-TW': '掃描未回傳有效結果', en: 'Scan returned no valid result' }
   };
-
-  function localizeBillingCycleLabel(cycle) {
-    if (!cycle) return t('plan.cycleOpt.monthly');
-    const c = String(cycle).trim();
-    if (c === '月付' || c === '月繳' || c === 'Monthly' || c === 'monthly') return t('plan.cycleOpt.monthly');
-    if (c === '年付' || c === '年繳' || c === 'Yearly' || c === 'yearly') return t('plan.cycleOpt.yearly');
-    if (c === '免费/赠送' || c === '随套餐赠送/免费' || c === 'Free / Promo' || c === 'free') {
-      if (currentPanelLanguage === 'zh-CN') return '免费/赠送';
-      if (currentPanelLanguage === 'zh-TW') return '免費/贈送';
-      return 'Free / Promo';
-    }
-    if (c === '随套餐包含' || c === 'Included in bundle') return t('plan.cycleOpt.included');
-    if (c === '单次' || c === '單次' || c === 'One-time' || c === 'one_time') return t('plan.cycle.oneTime');
-    if (c === '其他周期' || c === 'Other cycle') return t('plan.cycleOpt.other');
-    if (c === '未知' || c === 'Unknown') return t('speed.unknown');
-    return c;
-  }
-
-  function localizeAcquisitionSource(val) {
-    if (!val) return t('plan.acq.normal');
-    const s = String(val).trim();
-    const directKey = `plan.acqOpt.${s}`;
-    const directHit = t(directKey);
-    if (directHit && directHit !== directKey) return directHit;
-
-    if (s.includes('学生') || s.includes('教育') || s.includes('Student')) return t('plan.acqOpt.student_offer');
-    if (s.includes('Pixel')) return t('plan.acqOpt.pixel_bundle');
-    if (s.includes('Chromebook')) return t('plan.acqOpt.chromebook_bundle');
-    if (s.includes('Samsung') || s.includes('三星')) return t('plan.acqOpt.samsung_galaxy');
-    if (s.includes('Jio')) return t('plan.acqOpt.jio_offer');
-    if (s.includes('家庭') || s.includes('Family')) return t('plan.acqOpt.family_sharing');
-    if (s.includes('促销') || s.includes('试用') || s.includes('Promo') || s.includes('Trial')) return t('plan.acqOpt.official_promo');
-    if (s.includes('正常') || s.includes('付费') || s.includes('Standard') || s.includes('Paid')) return t('plan.acq.normal');
-    if (s.includes('自定义') || s.includes('Custom')) return t('plan.acqOpt.custom_source');
-    return s;
-  }
-
-  function localizeCnyFormatted(str) {
-    if (!str) return '';
-    const s = String(str).trim();
-    const cleanVal = s.replace(/^[折合約\s≈()（）]+/, '').replace(/[()（）]/g, '').trim();
-    if (!cleanVal) return '';
-    return t('plan.cny.approx', { val: cleanVal });
-  }
 
   function localizeUnknownLabel(val) {
     if (val === null || val === undefined || val === '') return t('speed.unknown');
@@ -6238,8 +5736,6 @@
   let heatPageOffset = 0;
   let heatMonthOffset = 0;
   let heatYearOffset = 0;
-  let activeCostModel = 'gemini-3.8-flash';
-  let activeCostMode = 'ref';
 
   // =========================================================================
   // 模块 1: 0 级主题跟随、面板与菜单统一背景色、热力图 5 档色阶与自定义颜色选取器
@@ -7518,36 +7014,6 @@
     return 400;
   }
 
-  function renderSessionCost() {
-    const roundCostBar = el('round-cost-bar');
-    const roundCostText = el('round-cost-text');
-    const sessionCostText = el('session-cost-text');
-    if (!roundCostText || !sessionCostText) return;
-    const activeCalls = state.sessionCalls || [];
-    const latestCall = activeCalls[activeCalls.length - 1];
-    const sessTotal = state.sessionCostTotal || 0;
-    if (latestCall && latestCall.isPriced) {
-      const roundCost = latestCall.costUSD || 0;
-      const roundCostStr = roundCost < 0.01 ? '<$0.01' : `≈$${roundCost.toFixed(4)}`;
-      const estLabel = latestCall.status === 'streaming' ? t('cost.streamingEst') : t('cost.returnedEst');
-      roundCostText.textContent = t('cost.latestTurn', { val: roundCostStr, label: estLabel });
-      roundCostText.title = t('cost.modelTip', {
-        model: latestCall.model,
-        input: fmt(latestCall.inputTokens),
-        cache: fmt(latestCall.cacheTokens),
-        output: fmt(latestCall.outputTokens),
-        cost: roundCost.toFixed(6)
-      });
-    } else if (latestCall) {
-      roundCostText.textContent = t('cost.unpriced');
-      roundCostText.title = latestCall.model ? t('cost.unpricedTip', { model: latestCall.model }) : t('cost.missingModel');
-    } else {
-      roundCostText.textContent = t('cost.latestDash');
-      roundCostText.title = '';
-    }
-    sessionCostText.textContent = sessTotal > 0 ? t('cost.sessionTotal', { val: sessTotal.toFixed(4) }) : t('session.sessionCost.dash');
-  }
-
   function applyLayoutMode(nextMode) {
     if (!nextMode) return;
     const prev = state.layoutMode;
@@ -7561,16 +7027,29 @@
       }
       syncSpeedBadgeText();
     }
-    renderSessionCost();
+  }
+
+  function getTopbarVisibleQuickWidth() {
+    if (!state.route) return 0;
+    let count = 0;
+    const btnCompact = el('btn-topbar-compact');
+    const btnRaise = el('btn-topbar-raise-limit');
+    if (btnCompact && !btnCompact.hidden) count++;
+    if (btnRaise && !btnRaise.hidden) count++;
+    return count * 28;
   }
 
   function updateResponsiveLayout() {
     if (state.disposed) return;
     syncWindowControlsOverlay();
     const avail = measureAvailableWidth();
-    const nextMode = computeNextLayoutMode(avail, state.layoutMode);
+    const nextMode = computeNextLayoutMode(avail - getTopbarVisibleQuickWidth(), state.layoutMode);
     applyLayoutMode(nextMode);
     if (state.tooltipOpen) positionContextTooltip();
+    if (el('topbar-action-tooltip')?.getAttribute('data-visible') === 'true') {
+      const anchor = activeTopbarTipKind === 'raise' ? el('btn-topbar-raise-limit') : el('btn-topbar-compact');
+      positionTopbarActionTooltip(anchor);
+    }
     if (isAnyPanelOpen() || !el('overflow-menu')?.hidden) positionFloatingPanels();
   }
 
@@ -7625,6 +7104,7 @@
   function showContextTooltip() {
     const tip = el('context-tooltip');
     if (!tip || !el('panel')?.hidden) return;
+    hideTopbarActionTooltip(true);
     state.tooltipOpen = true;
     tip.setAttribute('data-visible', 'true');
     positionContextTooltip();
@@ -7635,6 +7115,116 @@
     if (!tip) return;
     state.tooltipOpen = false;
     tip.setAttribute('data-visible', 'false');
+  }
+
+  let activeTopbarTipKind = null;
+  let isTopbarTipFeedback = false;
+  let topbarTipFeedbackTimer = null;
+
+  function positionTopbarActionTooltip(anchorEl) {
+    const tip = el('topbar-action-tooltip');
+    const target = (anchorEl && !anchorEl.hidden)
+      ? anchorEl
+      : (el('btn-topbar-compact') && !el('btn-topbar-compact').hidden ? el('btn-topbar-compact') : el('badge'));
+    if (!tip || !target || !target.getBoundingClientRect) return;
+    try {
+      const bRect = target.getBoundingClientRect();
+      if (bRect.width === 0 && bRect.height === 0) return;
+      const tRect = tip.getBoundingClientRect ? tip.getBoundingClientRect() : { width: 210, height: 52 };
+      const tipW = tRect.width || 210;
+      const tipH = tRect.height || 52;
+      const vw = (typeof window !== 'undefined' && window.innerWidth) || 1280;
+      const vh = (typeof window !== 'undefined' && window.innerHeight) || 800;
+      const gap = 7;
+
+      const spaceAbove = bRect.top;
+      const spaceBelow = vh - bRect.bottom;
+      let top;
+      if (spaceAbove >= tipH + gap + 6 || spaceAbove > spaceBelow) {
+        top = bRect.top - tipH - gap;
+        tip.setAttribute('data-placement', 'top');
+      } else {
+        top = bRect.bottom + gap;
+        tip.setAttribute('data-placement', 'bottom');
+      }
+      top = Math.max(6, Math.min(vh - tipH - 6, Math.round(top)));
+
+      let left = Math.round(bRect.left + bRect.width / 2 - tipW / 2);
+      left = Math.max(8, Math.min(vw - tipW - 8, left));
+
+      tip.style.top = `${top}px`;
+      tip.style.left = `${left}px`;
+    } catch {}
+  }
+
+  function syncTopbarActionTooltipContent(kind) {
+    const tip = el('topbar-action-tooltip');
+    const titleEl = el('topbar-tip-title');
+    const descEl = el('topbar-tip-desc');
+    if (!tip || !titleEl || !descEl) return;
+    tip.setAttribute('data-tone', 'default');
+    if (kind === 'compact') {
+      titleEl.textContent = isQuickCompactBusy ? t('session.quick.compactBusy') : t('topbar.quick.compactTitle');
+      descEl.textContent = isQuickCompactBusy ? t('topbar.quick.compactBusyDesc') : t('topbar.quick.compactDesc');
+      descEl.hidden = false;
+    } else if (kind === 'raise') {
+      const act = resolveSessionRaiseAction();
+      const targetLbl = act.targetLabel || '1M';
+      titleEl.textContent = isQuickRaiseBusy
+        ? t('topbar.quick.raiseBusyTitle', { target: targetLbl })
+        : t('topbar.quick.raiseTitle', { target: targetLbl });
+      descEl.textContent = t('topbar.quick.raiseDesc');
+      descEl.hidden = Boolean(isQuickRaiseBusy);
+    }
+  }
+
+  function showTopbarActionTooltip(kind, anchorEl) {
+    const tip = el('topbar-action-tooltip');
+    if (!tip) return;
+    hideContextTooltip();
+    if (topbarTipFeedbackTimer) {
+      clearTimeout(topbarTipFeedbackTimer);
+      topbarTipFeedbackTimer = null;
+    }
+    isTopbarTipFeedback = false;
+    activeTopbarTipKind = kind;
+    syncTopbarActionTooltipContent(kind);
+    tip.setAttribute('data-visible', 'true');
+    positionTopbarActionTooltip(anchorEl);
+  }
+
+  function showTopbarTransientFeedback(ok, msg, anchorEl) {
+    const tip = el('topbar-action-tooltip');
+    const titleEl = el('topbar-tip-title');
+    const descEl = el('topbar-tip-desc');
+    if (!tip || !titleEl || !descEl || !msg) return;
+    hideContextTooltip();
+    if (topbarTipFeedbackTimer) {
+      clearTimeout(topbarTipFeedbackTimer);
+      topbarTipFeedbackTimer = null;
+    }
+    isTopbarTipFeedback = true;
+    activeTopbarTipKind = null;
+    tip.setAttribute('data-tone', ok ? 'success' : 'error');
+    titleEl.textContent = msg;
+    descEl.textContent = '';
+    descEl.hidden = true;
+    tip.setAttribute('data-visible', 'true');
+    positionTopbarActionTooltip(anchorEl);
+    topbarTipFeedbackTimer = setTimeout(() => {
+      hideTopbarActionTooltip(true);
+    }, ok ? 2800 : 3800);
+  }
+
+  function hideTopbarActionTooltip(force = false) {
+    if (isTopbarTipFeedback && !force) return;
+    if (topbarTipFeedbackTimer) {
+      clearTimeout(topbarTipFeedbackTimer);
+      topbarTipFeedbackTimer = null;
+    }
+    isTopbarTipFeedback = false;
+    activeTopbarTipKind = null;
+    el('topbar-action-tooltip')?.setAttribute('data-visible', 'false');
   }
 
   let elevatedStackAncestor = null;
@@ -7785,6 +7375,7 @@
 
     if (target === 'tokens') {
       hideContextTooltip();
+      hideTopbarActionTooltip(true);
       closeColorPicker();
       pContext.hidden = true;
       pTokens.hidden = false;
@@ -7797,6 +7388,7 @@
       renderActiveHeatView(true);
     } else if (target === 'context') {
       hideContextTooltip();
+      hideTopbarActionTooltip(true);
       closeColorPicker();
       setPlanDetailExpanded(false, { skipReposition: true });
       pTokens.hidden = true;
@@ -7814,6 +7406,7 @@
       }
       if (isContextSettingsView) {
         void refreshModulesDisplay();
+        void refreshCliUnlockDisplay();
       }
     } else {
       setPlanDetailExpanded(false, { skipReposition: true });
@@ -7852,6 +7445,7 @@
     const willOpen = pOverflow.hidden;
     showPanel('none');
     hideContextTooltip();
+    hideTopbarActionTooltip(true);
     pOverflow.hidden = !willOpen;
     el('badge-overflow')?.setAttribute('aria-expanded', String(willOpen));
     syncHostStackingElevation(willOpen);
@@ -7863,77 +7457,6 @@
     openContextSettings?.({ openColors: true });
   });
   el('btn-panel-tokens-palette')?.addEventListener('click', () => toggleTokenColorsDrawer());
-
-  // =========================================================================
-  // 统一定制下拉组件控制器 (国家 / 订阅地区 / 币种 / 增强 Select)
-  // =========================================================================
-  const COUNTRY_OPTIONS = [
-    { value: '未知', label: '🌐 未设置 / 自动', labelTw: '🌐 未設定 / 自動', labelEn: '🌐 Auto / Unset', code: 'AUTO', aliases: ['自动', '未知', 'none', 'auto'] },
-    { value: '美国 (US)', label: '🇺🇸 美国 (US)', labelTw: '🇺🇸 美國 (US)', labelEn: '🇺🇸 United States (US)', code: 'US', aliases: ['美国', 'united states', 'usa'] },
-    { value: '日本 (JP)', label: '🇯🇵 日本 (JP)', labelTw: '🇯🇵 日本 (JP)', labelEn: '🇯🇵 Japan (JP)', code: 'JP', aliases: ['日本', 'japan'] },
-    { value: '韩国 (KR)', label: '🇰🇷 韩国 (KR)', labelTw: '🇰🇷 韓國 (KR)', labelEn: '🇰🇷 South Korea (KR)', code: 'KR', aliases: ['韩国', 'korea', 'south korea'] },
-    { value: '中国台湾 (TW)', label: '🇹🇼 中国台湾 (TW)', labelTw: '🇹🇼 中國台灣 (TW)', labelEn: '🇹🇼 Taiwan (TW)', code: 'TW', aliases: ['台湾', 'taiwan', 'tw'] },
-    { value: '中国香港 (HK)', label: '🇭🇰 中国香港 (HK)', labelTw: '🇭🇰 中國香港 (HK)', labelEn: '🇭🇰 Hong Kong (HK)', code: 'HK', aliases: ['香港', 'hong kong', 'hk'] },
-    { value: '澳大利亚 (AU)', label: '🇦🇺 澳大利亚 (AU)', labelTw: '🇦🇺 澳洲 (AU)', labelEn: '🇦🇺 Australia (AU)', code: 'AU', aliases: ['澳大利亚', '澳洲', 'australia', 'au'] },
-    { value: '新加坡 (SG)', label: '🇸🇬 新加坡 (SG)', labelTw: '🇸🇬 新加坡 (SG)', labelEn: '🇸🇬 Singapore (SG)', code: 'SG', aliases: ['新加坡', 'singapore', 'sg'] },
-    { value: '英国 (UK)', label: '🇬🇧 英国 (UK)', labelTw: '🇬🇧 英國 (UK)', labelEn: '🇬🇧 United Kingdom (UK)', code: 'UK', aliases: ['英国', 'united kingdom', 'uk', 'gb', 'britain'] },
-    { value: '德国 (DE)', label: '🇩🇪 德国 (DE)', labelTw: '🇩🇪 德國 (DE)', labelEn: '🇩🇪 Germany (DE)', code: 'DE', aliases: ['德国', 'germany', 'de'] },
-    { value: '加拿大 (CA)', label: '🇨🇦 加拿大 (CA)', labelTw: '🇨🇦 加拿大 (CA)', labelEn: '🇨🇦 Canada (CA)', code: 'CA', aliases: ['加拿大', 'canada', 'ca'] },
-    { value: '土耳其 (TR)', label: '🇹🇷 土耳其 (TR)', labelTw: '🇹🇷 土耳其 (TR)', labelEn: '🇹🇷 Turkey (TR)', code: 'TR', aliases: ['土耳其', 'turkey', 'tr'] },
-    { value: '尼日利亚 (NG)', label: '🇳🇬 尼日利亚 (NG)', labelTw: '🇳🇬 奈及利亞 (NG)', labelEn: '🇳🇬 Nigeria (NG)', code: 'NG', aliases: ['尼日利亚', 'nigeria', 'ng'] },
-    { value: '菲律宾 (PH)', label: '🇵🇭 菲律宾 (PH)', labelTw: '🇵🇭 菲律賓 (PH)', labelEn: '🇵🇭 Philippines (PH)', code: 'PH', aliases: ['菲律宾', 'philippines', 'ph'] },
-    { value: '印度 (IN)', label: '🇮🇳 印度 (IN)', labelTw: '🇮🇳 印度 (IN)', labelEn: '🇮🇳 India (IN)', code: 'IN', aliases: ['印度', 'india', 'in'] },
-    { value: '马来西亚 (MY)', label: '🇲🇾 马来西亚 (MY)', labelTw: '🇲🇾 馬來西亞 (MY)', labelEn: '🇲🇾 Malaysia (MY)', code: 'MY', aliases: ['马来西亚', 'malaysia', 'my'] },
-    { value: '巴西 (BR)', label: '🇧🇷 巴西 (BR)', labelTw: '🇧🇷 巴西 (BR)', labelEn: '🇧🇷 Brazil (BR)', code: 'BR', aliases: ['巴西', 'brazil', 'br'] },
-    { value: '中国大陆 (CN)', label: '🇨🇳 中国大陆 (CN)', labelTw: '🇨🇳 中國大陸 (CN)', labelEn: '🇨🇳 China Mainland (CN)', code: 'CN', aliases: ['中国大陆', '中国', 'china', 'cn'] }
-  ];
-
-  const CURRENCY_OPTIONS = [
-    { value: 'USD', code: 'USD', symbol: '$', name: '美元', nameEn: 'US Dollar', label: 'USD ($ 美元)', labelTw: 'USD ($ 美元)', labelEn: 'USD ($ US Dollar)', aliases: ['美元', 'usd', '$', 'dollar'] },
-    { value: 'KRW', code: 'KRW', symbol: '₩', name: '韩元', nameEn: 'Korean Won', label: 'KRW (₩ 韩元)', labelTw: 'KRW (₩ 韓元)', labelEn: 'KRW (₩ Won)', aliases: ['韩元', 'krw', '₩', 'won'] },
-    { value: 'AUD', code: 'AUD', symbol: 'AU$', name: '澳元', nameEn: 'Australian Dollar', label: 'AUD (AU$ 澳元)', labelTw: 'AUD (AU$ 澳元)', labelEn: 'AUD (AU$ AUD)', aliases: ['澳元', '澳洲', 'aud', 'au$', 'australian'] },
-    { value: 'JPY', code: 'JPY', symbol: '¥', name: '日元', nameEn: 'Japanese Yen', label: 'JPY (¥ 日元)', labelTw: 'JPY (¥ 日圓)', labelEn: 'JPY (¥ Yen)', aliases: ['日元', '日本', 'jpy', '¥', 'yen'] },
-    { value: 'HKD', code: 'HKD', symbol: 'HK$', name: '港币', nameEn: 'Hong Kong Dollar', label: 'HKD (HK$ 港币)', labelTw: 'HKD (HK$ 港幣)', labelEn: 'HKD (HK$ HKD)', aliases: ['港币', '香港', 'hkd', 'hk$'] },
-    { value: 'TWD', code: 'TWD', symbol: 'NT$', name: '台币', nameEn: 'New Taiwan Dollar', label: 'TWD (NT$ 台币)', labelTw: 'TWD (NT$ 新台幣)', labelEn: 'TWD (NT$ TWD)', aliases: ['台币', '台湾', 'twd', 'ntd', 'nt$'] },
-    { value: 'TRY', code: 'TRY', symbol: '₺', name: '里拉', nameEn: 'Turkish Lira', label: 'TRY (₺ 里拉)', labelTw: 'TRY (₺ 里拉)', labelEn: 'TRY (₺ Lira)', aliases: ['里拉', '土耳其', 'try', '₺', 'lira'] },
-    { value: 'NGN', code: 'NGN', symbol: '₦', name: '奈拉', nameEn: 'Nigerian Naira', label: 'NGN (₦ 奈拉)', labelTw: 'NGN (₦ 奈拉)', labelEn: 'NGN (₦ Naira)', aliases: ['奈拉', '尼日利亚', 'ngn', '₦', 'naira'] },
-    { value: 'CNY', code: 'CNY', symbol: '¥', name: '人民币', nameEn: 'Chinese Yuan', label: 'CNY (¥ 人民币)', labelTw: 'CNY (¥ 人民幣)', labelEn: 'CNY (¥ CNY)', aliases: ['人民币', '中国', 'cny', 'rmb', '¥', 'yuan'] },
-    { value: 'EUR', code: 'EUR', symbol: '€', name: '欧元', nameEn: 'Euro', label: 'EUR (€ 欧元)', labelTw: 'EUR (€ 歐元)', labelEn: 'EUR (€ Euro)', aliases: ['欧元', '欧洲', 'eur', '€', 'euro'] },
-    { value: 'GBP', code: 'GBP', symbol: '£', name: '英镑', nameEn: 'British Pound', label: 'GBP (£ 英镑)', labelTw: 'GBP (£ 英鎊)', labelEn: 'GBP (£ Pound)', aliases: ['英镑', '英国', 'gbp', '£', 'pound'] },
-    { value: 'SGD', code: 'SGD', symbol: 'S$', name: '新元', nameEn: 'Singapore Dollar', label: 'SGD (S$ 新元)', labelTw: 'SGD (S$ 新幣)', labelEn: 'SGD (S$ SGD)', aliases: ['新元', '新加坡', 'sgd', 's$'] },
-    { value: 'CAD', code: 'CAD', symbol: 'CA$', name: '加元', nameEn: 'Canadian Dollar', label: 'CAD (CA$ 加元)', labelTw: 'CAD (CA$ 加幣)', labelEn: 'CAD (CA$ CAD)', aliases: ['加元', '加拿大', 'cad', 'ca$'] },
-    { value: 'PHP', code: 'PHP', symbol: '₱', name: '比索', nameEn: 'Philippine Peso', label: 'PHP (₱ 比索)', labelTw: 'PHP (₱ 披索)', labelEn: 'PHP (₱ Peso)', aliases: ['比索', '菲律宾', 'php', '₱', 'peso'] },
-    { value: 'INR', code: 'INR', symbol: '₹', name: '卢比', nameEn: 'Indian Rupee', label: 'INR (₹ 卢比)', labelTw: 'INR (₹ 盧比)', labelEn: 'INR (₹ Rupee)', aliases: ['卢比', '印度', 'inr', '₹', 'rupee'] },
-    { value: 'MYR', code: 'MYR', symbol: 'RM', name: '令吉', nameEn: 'Malaysian Ringgit', label: 'MYR (RM 令吉)', labelTw: 'MYR (RM 令吉)', labelEn: 'MYR (RM Ringgit)', aliases: ['令吉', '马来西亚', 'myr', 'rm', 'ringgit'] },
-    { value: 'BRL', code: 'BRL', symbol: 'R$', name: '雷亚尔', nameEn: 'Brazilian Real', label: 'BRL (R$ 雷亚尔)', labelTw: 'BRL (R$ 雷亞爾)', labelEn: 'BRL (R$ Real)', aliases: ['雷亚尔', '巴西', 'brl', 'r$', 'real'] }
-  ];
-
-  function refreshRegionPresetSelectOptions() {
-    const sel = el('select-custom-region-preset');
-    if (!sel || !sel.options) return;
-    const core = typeof __AGContextMeterCore !== 'undefined' ? __AGContextMeterCore : null;
-    const presets = core?.SUBSCRIPTION_REGIONS_PRESET || [];
-    for (let i = 0; i < sel.options.length; i++) {
-      const opt = sel.options[i];
-      if (!opt || opt.value === '' || opt.value === 'custom') continue;
-      const p = presets.find(item => item.id === opt.value);
-      if (!p) continue;
-      const dispName = getPanelLanguage() === 'en' ? (p.nameEn || p.id || p.name) : p.name;
-      if (p.currency === 'CNY') {
-        opt.textContent = t('plan.form.presetLineCny', { flag: p.flag || '🌏', name: dispName, price: p.monthlyPrice });
-      } else {
-        const cny = core?.convertToCNY ? core.convertToCNY(p.monthlyPrice, p.currency, p.name) : (p.monthlyPrice * p.rateToCNY);
-        opt.textContent = t('plan.form.presetLine', {
-          flag: p.flag || '🌏',
-          name: dispName,
-          id: p.id,
-          sym: p.symbol,
-          price: p.monthlyPrice,
-          cny: Number(cny).toFixed(1)
-        });
-      }
-    }
-  }
 
   function hasClass(node, cls) {
     if (!node) return false;
@@ -8248,115 +7771,17 @@
     return controller;
   }
 
-  function formatOptionLabelByLang(opt) {
-    if (!opt) return '';
-    if (currentPanelLanguage === 'en') {
-      if (opt.labelEn) return opt.labelEn;
-      if (opt.code && opt.symbol) return `${opt.code} (${opt.symbol}${opt.nameEn ? ' ' + opt.nameEn : ''})`;
-      if (opt.value && opt.value !== '未知') {
-        const flagMatch = String(opt.label || '').match(/^([\u{1F1E6}-\u{1F1FF}]{2}|🌐|🌏)\s*/u);
-        const flag = flagMatch ? flagMatch[1] + ' ' : '';
-        return `${flag}${opt.code || opt.value}`;
-      }
-      return t('plan.country.auto');
-    }
-    if (currentPanelLanguage === 'zh-TW') {
-      if (opt.labelTw) return opt.labelTw;
-    }
-    return opt.label;
-  }
-
-  // 刷新国家直接选择器显示
-  function refreshDirectCountryDisplay(currentCountryVal) {
-    const label = el('direct-country-label');
-    if (!label) return;
-    const val = currentCountryVal || ANTIGRAVITY_TOKEN_DATA.planStatus?.country || '未知';
-    const matched = COUNTRY_OPTIONS.find(o => o.value === val);
-    label.textContent = matched ? formatOptionLabelByLang(matched) : (val !== '未知' ? `🌐 ${val}` : t('plan.country.auto'));
-  }
-
-  // 刷新订阅地区直接选择器显示
-  function refreshDirectRegionDisplay(currentRegionText) {
-    const directLabel = el('direct-region-label');
-    if (!directLabel) return;
-    const core = typeof __AGContextMeterCore !== 'undefined' ? __AGContextMeterCore : null;
-    const presets = core?.SUBSCRIPTION_REGIONS_PRESET || [];
-    const reg = currentRegionText || ANTIGRAVITY_TOKEN_DATA.planStatus?.region || '未知';
-    const matched = core?.findRegionPreset ? core.findRegionPreset(reg) : presets.find(p => p.id === reg || p.name === reg);
-    if (matched) {
-      const curCode = matched.currency === 'TWD' ? 'NTD' : matched.currency;
-      const cny = core?.convertToCNY ? core.convertToCNY(matched.monthlyPrice, matched.currency, matched.name) : (matched.monthlyPrice * matched.rateToCNY);
-      const dispName = currentPanelLanguage === 'en' ? (matched.nameEn || matched.id || matched.name) : matched.name;
-      if (matched.currency === 'CNY') {
-        directLabel.textContent = (matched.flag || '🌏') + ' ' + dispName + ' (' + curCode + ') · ¥' + matched.monthlyPrice + t('dropdown.perMonth');
-      } else {
-        directLabel.textContent = (matched.flag || '🌏') + ' ' + dispName + ' (' + curCode + ') · ' + matched.symbol + matched.monthlyPrice + ' (' + t('plan.cnyShort', { val: Number(cny).toFixed(1) }) + ')';
-      }
-    } else if (reg && reg !== '未知') {
-      directLabel.textContent = '🌏 ' + reg;
-    } else {
-      directLabel.textContent = t('dropdown.regionUnknownShort');
-    }
-  }
-
-  // 刷新币种直接选择器显示
-  function refreshDirectCurrencyDisplay(currentCurrencyVal) {
-    const label = el('direct-currency-label');
-    if (!label) return;
-    let val = currentCurrencyVal || ANTIGRAVITY_TOKEN_DATA.planStatus?.currency || 'USD';
-    if (val === 'NTD') val = 'TWD';
-    const matched = CURRENCY_OPTIONS.find(o => o.value === val);
-    label.textContent = matched ? formatOptionLabelByLang(matched) : val;
-  }
-
-  function renderDirectRegionMenu(filterText = '') {
-    const directWrap = el('direct-region-wrap');
-    if (directWrap?._controller) {
-      directWrap._controller.open();
-    }
-  }
-
   // =========================================================================
-  // 插件栏设置持久化（币种、国家、订阅地区）与详情面板生命周期管理
+  // 套餐详情面板生命周期管理
   // =========================================================================
   let planDetailExpanded = false;
-  let lastSavedCustomPlan = null;
-  let lastSaveResult = { ok: true, error: '' };
-  let saveFeedbackTimer = null;
 
-  function showPlanSaveFeedback(ok, message) {
-    lastSaveResult = { ok: Boolean(ok), error: ok ? '' : (message || t('dropdown.saveFailed')) };
-    const fb = el('plan-save-feedback');
-    if (!fb) return;
-    if (saveFeedbackTimer) {
-      clearTimeout(saveFeedbackTimer);
-      saveFeedbackTimer = null;
-    }
-    fb.style.display = 'inline-block';
-    fb.style.color = ok ? '#22c55e' : '#ef4444';
-    fb.textContent = ok ? (message || t('dropdown.autoSaved')) : t('dropdown.saveFailedDetail', { msg: message || t('dropdown.writeCfgFailed') });
-    if (ok) {
-      saveFeedbackTimer = setTimeout(() => {
-        if (fb) fb.style.display = 'none';
-        saveFeedbackTimer = null;
-      }, 2800);
-    }
-  }
-
-  function closeOpenRegionDropdowns() {
-    try {
-      const rootScope = (typeof shadow !== 'undefined' && shadow && shadow.querySelectorAll) ? shadow : document;
-      rootScope?.querySelectorAll?.('.ag-dropdown-wrapper.is-open')?.forEach(w => w.classList.remove('is-open'));
-    } catch {}
-  }
-
-  // 统一控制 AI Pro 详情面板展开与收回（手动按钮、切换预估费用、关闭面板共用同一套清理逻辑）
+  // 统一控制订阅与额度详情面板展开与收回
   function setPlanDetailExpanded(expanded, options = {}) {
-    const next = Boolean(expanded) && activeTokenView === 'tokens';
+    const next = Boolean(expanded);
     planDetailExpanded = next;
     const card = el('plan-detail-card');
     const btn = el('btn-plan-detail-toggle');
-    const form = el('plan-custom-form');
 
     if (card) {
       card.style.display = next ? 'block' : 'none';
@@ -8371,548 +7796,13 @@
       btn.setAttribute?.('aria-expanded', String(next));
     }
     if (!next) {
-      if (form) form.style.display = 'none';
-      closeOpenRegionDropdowns();
+      closeAllDropdowns();
     }
     if (!options.skipReposition) {
       positionFloatingPanels();
     }
     return planDetailExpanded;
   }
-
-  let currentSaveSeq = 0;
-
-  function getStoredCustomPlanSnapshot(email = 'default') {
-    if (lastSavedCustomPlan && typeof lastSavedCustomPlan === 'object') {
-      return { ...lastSavedCustomPlan };
-    }
-    try {
-      const key = email && email !== 'default' ? 'ag_custom_plan_' + String(email).toLowerCase() : 'ag_custom_plan_default';
-      const raw = localStorage?.getItem(key) || localStorage?.getItem('ag_custom_plan_default');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object') return parsed;
-      }
-    } catch {}
-    const ps = ANTIGRAVITY_TOKEN_DATA.planStatus || {};
-    const hasExplicitCustomPaid = Boolean(ps.isZeroExtraCost || (ps.actualPricePaid !== null && ps.actualPricePaid !== undefined && ps.actualPricePaid !== ''));
-    const pm = (ps.priceMode === 'custom' || ps.priceMode === 'preset')
-      ? ps.priceMode
-      : (ps.priceSource === 'custom' && hasExplicitCustomPaid ? 'custom' : 'preset');
-    return {
-      accountRegion: (ps.accountRegion && !ps.accountRegion.includes('未知')) ? ps.accountRegion : ((ps.country && !ps.country.includes('未知')) ? ps.country : undefined),
-      country: (ps.country && !ps.country.includes('未知')) ? ps.country : undefined,
-      subscriptionCountry: (ps.subscriptionCountry && !ps.subscriptionCountry.includes('未知')) ? ps.subscriptionCountry : ((ps.subscriptionRegion && !ps.subscriptionRegion.includes('未知')) ? ps.subscriptionRegion : ((ps.region && !ps.region.includes('未知')) ? ps.region : undefined)),
-      subscriptionRegion: (ps.subscriptionRegion && !ps.subscriptionRegion.includes('未知')) ? ps.subscriptionRegion : ((ps.region && !ps.region.includes('未知')) ? ps.region : undefined),
-      region: (ps.region && !ps.region.includes('未知')) ? ps.region : undefined,
-      subscriptionCurrency: ps.subscriptionCurrency || ps.currency || 'USD',
-      currency: ps.currency || 'USD',
-      currencySource: ps.currencySource || 'default',
-      currencySymbol: ps.currencySymbol || '$',
-      actualPricePaid: ps.actualPricePaid ?? null,
-      customActualPrice: (pm === 'custom' && ps.actualPricePaid !== null) ? ps.actualPricePaid : (lastSavedCustomPlan?.customActualPrice ?? null),
-      priceMode: pm,
-      billingCycle: (ps.billingCycle && !ps.billingCycle.includes('未知')) ? ps.billingCycle : '月付',
-      acquisitionSource: ps.acquisitionSource || 'normal_paid',
-      acquisitionSourceName: ps.acquisitionSourceName || undefined,
-      isZeroExtraCost: Boolean(ps.isZeroExtraCost),
-      validEndDate: ps.validEndDate || null,
-      customNote: ps.customNote || '',
-      priceSource: ps.priceSource || (pm === 'preset' ? 'preset_region' : 'custom')
-    };
-  }
-
-  async function persistSettingsToHost(payload = {}) {
-    const thisSeq = ++currentSaveSeq;
-    const ps = ANTIGRAVITY_TOKEN_DATA.planStatus || {};
-    const email = payload.email || ps.email || 'default';
-    const customObj = payload.customPlan || null;
-
-    // 保存前检查通信桥接，缺失时返回失败
-    const hasIpc = typeof window !== 'undefined' && typeof window.contextMeterAPI?.saveSettings === 'function';
-    const hasLive = typeof window !== 'undefined' && Boolean(window.__AGContextMeterLive?.port);
-    if (!hasIpc && !hasLive) {
-      showPlanSaveFeedback(false, t('dropdown.noPersistBridge'));
-      return { ok: false, error: 'NO_HOST_BRIDGE' };
-    }
-
-    try {
-      let res = null;
-      if (hasIpc) {
-        res = await window.contextMeterAPI.saveSettings({ ...payload, email, saveSeq: thisSeq });
-      } else if (hasLive) {
-        const live = window.__AGContextMeterLive;
-        const resp = await fetch(`http://127.0.0.1:${live.port}/save-settings`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-AG-Context-Token': live.token },
-          body: JSON.stringify({ ...payload, email, saveSeq: thisSeq })
-        });
-        if (!resp.ok) {
-          showPlanSaveFeedback(false, `HTTP ${resp.status}`);
-          return { ok: false, error: `HTTP ${resp.status}` };
-        }
-        res = await resp.json().catch(() => null);
-      }
-
-      // 请求序列检查：若在此保存期间发生更新的操作，丢弃旧回包，避免旧响应乱序覆盖
-      if (thisSeq < currentSaveSeq) {
-        return { ok: true, superseded: true };
-      }
-
-      if (!res || res.ok === false) {
-        const errMsg = translateBackendText(res?.error) || t('dropdown.writeCfgFailed');
-        showPlanSaveFeedback(false, errMsg);
-        return { ok: false, error: errMsg };
-      }
-
-      // 宿主落盘确认成功后，才更新内存已保存缓存与全局快照
-      if (payload.clearPlan) {
-        lastSavedCustomPlan = null;
-        if (typeof window !== 'undefined') {
-          window.__AGContextMeterSettings = { ok: true, customPlan: null };
-        }
-        try {
-          if (email && email !== 'default') localStorage?.removeItem('ag_custom_plan_' + String(email).toLowerCase());
-          localStorage?.removeItem('ag_custom_plan_default');
-        } catch {}
-      } else {
-        const savedPlan = res.customPlan || customObj;
-        lastSavedCustomPlan = { ...savedPlan };
-        if (typeof window !== 'undefined') {
-          window.__AGContextMeterSettings = { ok: true, customPlan: { ...savedPlan } };
-        }
-        try {
-          const jsonStr = JSON.stringify(savedPlan);
-          if (email && email !== 'default') {
-            localStorage?.setItem('ag_custom_plan_' + String(email).toLowerCase(), jsonStr);
-          }
-          localStorage?.setItem('ag_custom_plan_default', jsonStr);
-        } catch {}
-      }
-
-      showPlanSaveFeedback(true, t('dropdown.autoSaved'));
-      return res;
-    } catch (err) {
-      if (thisSeq >= currentSaveSeq) {
-        showPlanSaveFeedback(false, err?.message || t('dropdown.persistErr'));
-      }
-      return { ok: false, error: err?.message || t('dropdown.persistErr') };
-    }
-  }
-
-  function applyCustomPlanObjectLocally(customObj, email = 'default') {
-    const core = typeof __AGContextMeterCore !== 'undefined' ? __AGContextMeterCore : null;
-    const rawLive = ANTIGRAVITY_TOKEN_DATA.rawPlanStatus || null;
-    const cleanLive = rawLive
-      ? { ...rawLive, region: '未知', subscriptionRegion: '未知', country: '未知', actualPricePaid: null, regionSource: 'unknown', priceSource: 'unknown' }
-      : null;
-
-    if (core && core.resolveEffectivePlanStatus) {
-      ANTIGRAVITY_TOKEN_DATA.planStatus = core.resolveEffectivePlanStatus(cleanLive, customObj, { currentEmail: email });
-    } else if (customObj) {
-      const ps = ANTIGRAVITY_TOKEN_DATA.planStatus || {};
-      const sym = (core?.CURRENCY_SYMBOLS && customObj.currency) ? (core.CURRENCY_SYMBOLS[customObj.currency] || customObj.currencySymbol || '$') : (customObj.currencySymbol || '$');
-      ANTIGRAVITY_TOKEN_DATA.planStatus = {
-        ...ps,
-        country: customObj.country || ps.country || '未知',
-        countrySource: customObj.country ? 'custom' : (ps.countrySource || 'unknown'),
-        region: customObj.subscriptionRegion || customObj.region || ps.region || '未知',
-        subscriptionRegion: customObj.subscriptionRegion || customObj.region || ps.subscriptionRegion || '未知',
-        regionSource: (customObj.subscriptionRegion || customObj.region) ? 'custom' : (ps.regionSource || 'unknown'),
-        currency: customObj.currency || ps.currency || 'USD',
-        currencySource: customObj.currency ? 'custom' : (ps.currencySource || 'default'),
-        currencySymbol: sym,
-        actualPricePaid: customObj.actualPricePaid !== undefined ? customObj.actualPricePaid : ps.actualPricePaid,
-        priceSource: customObj.priceSource || 'custom'
-      };
-    }
-    renderPlanDetail(ANTIGRAVITY_TOKEN_DATA.planStatus);
-    renderActiveCostEstimateView();
-  }
-
-  // 明确切换价格模式：'preset' (跟随订阅国家参考价) 与 'custom' (自定义实付金额)
-  function switchPlanPriceMode(newMode) {
-    ++userActionSeq;
-    const ps = ANTIGRAVITY_TOKEN_DATA.planStatus || {};
-    const email = ps.email || 'default';
-    const prevCustom = getStoredCustomPlanSnapshot(email);
-    const core = typeof __AGContextMeterCore !== 'undefined' ? __AGContextMeterCore : null;
-    const targetMode = newMode === 'custom' ? 'custom' : 'preset';
-
-    let customObj = null;
-    if (targetMode === 'preset') {
-      // 切换为「跟随订阅国家参考价」：实时根据当前订阅国家派生官方参考价与币种
-      const currentReg = prevCustom.subscriptionCountry || prevCustom.subscriptionRegion || prevCustom.region || ps.region || '';
-      const matched = core?.findRegionPreset ? core.findRegionPreset(currentReg) : core?.SUBSCRIPTION_REGIONS_PRESET?.find(p => p.id === currentReg || p.name === currentReg);
-      const curCode = matched ? matched.currency : (prevCustom.subscriptionCurrency || prevCustom.currency || 'USD');
-      const curSymbol = matched ? matched.symbol : (core?.CURRENCY_SYMBOLS?.[curCode] || '$');
-      const paid = matched ? matched.monthlyPrice : null;
-
-      customObj = {
-        ...prevCustom,
-        priceMode: 'preset',
-        priceSource: 'preset_region',
-        actualPricePaid: paid,
-        subscriptionCurrency: curCode,
-        currency: curCode,
-        currencySource: 'preset_region',
-        currencySymbol: curSymbol,
-        billingCycle: '月付',
-        isZeroExtraCost: false,
-        updatedAt: new Date().toISOString()
-      };
-      applyCustomPlanObjectLocally(customObj, email);
-      void persistSettingsToHost({ email, customPlan: customObj });
-    } else {
-      // 切换为「自定义实付金额」：开启自定义模式并展开行内编辑表单
-      const isZero = Boolean(prevCustom.isZeroExtraCost || prevCustom.actualPricePaid === 0);
-      const paid = isZero ? 0 : (prevCustom.actualPricePaid !== null && prevCustom.actualPricePaid !== undefined ? prevCustom.actualPricePaid : (prevCustom.customActualPrice ?? null));
-
-      customObj = {
-        ...prevCustom,
-        priceMode: 'custom',
-        priceSource: 'custom',
-        actualPricePaid: paid,
-        customActualPrice: paid,
-        updatedAt: new Date().toISOString()
-      };
-      applyCustomPlanObjectLocally(customObj, email);
-      togglePlanCustomForm(true);
-      void persistSettingsToHost({ email, customPlan: customObj });
-    }
-  }
-
-  // 用户点选「订阅国家」：在参考价模式下实时派生价格与币种，在自定义模式下保持用户实付金额与币种
-  function applyDirectRegionSelection(regionItem) {
-    if (!regionItem) return;
-    ++userActionSeq;
-    const ps = ANTIGRAVITY_TOKEN_DATA.planStatus || {};
-    const email = ps.email || 'default';
-    const prevCustom = getStoredCustomPlanSnapshot(email);
-    const regionName = regionItem.name + ' (' + (regionItem.currency === 'TWD' ? 'NTD' : regionItem.currency) + ')';
-    const core = typeof __AGContextMeterCore !== 'undefined' ? __AGContextMeterCore : null;
-
-    const hasExplicitCustomPaid = Boolean(prevCustom.isZeroExtraCost || (prevCustom.actualPricePaid !== null && prevCustom.actualPricePaid !== undefined && prevCustom.actualPricePaid !== ''));
-    const currentPriceMode = (prevCustom.priceMode === 'custom' || prevCustom.priceMode === 'preset')
-      ? prevCustom.priceMode
-      : (prevCustom.priceSource === 'custom' && hasExplicitCustomPaid ? 'custom' : 'preset');
-
-    let curCode = regionItem.currency;
-    let curSymbol = core?.CURRENCY_SYMBOLS?.[curCode] || regionItem.symbol || '$';
-    let paid = null;
-    let priceSource = 'preset_region';
-    let isZero = false;
-    let cycle = '月付';
-
-    if (currentPriceMode === 'custom') {
-      // 自定义实付模式：切换国家严格保留用户此前设置的实付金额与币种，绝不静默覆盖！
-      isZero = Boolean(prevCustom.isZeroExtraCost || prevCustom.actualPricePaid === 0);
-      curCode = prevCustom.subscriptionCurrency || prevCustom.currency || regionItem.currency;
-      curSymbol = core?.CURRENCY_SYMBOLS?.[curCode] || '$';
-      paid = isZero ? 0 : (prevCustom.actualPricePaid !== null && prevCustom.actualPricePaid !== undefined ? prevCustom.actualPricePaid : null);
-      priceSource = 'custom';
-      cycle = isZero ? '随套餐赠送/免费' : (prevCustom.billingCycle || '月付');
-    } else {
-      // 跟随订阅国家参考价模式：实时从预设派生定价、币种与周期
-      curCode = regionItem.currency;
-      curSymbol = core?.CURRENCY_SYMBOLS?.[curCode] || regionItem.symbol || '$';
-      paid = regionItem.monthlyPrice;
-      priceSource = 'preset_region';
-      isZero = false;
-      cycle = '月付';
-    }
-
-    const customObj = {
-      ...prevCustom,
-      accountRegion: prevCustom.accountRegion || prevCustom.country || undefined,
-      country: prevCustom.country || prevCustom.accountRegion || undefined,
-      subscriptionCountry: regionName,
-      subscriptionRegion: regionName,
-      region: regionName,
-      acquisitionSource: prevCustom.acquisitionSource || ps.acquisitionSource || 'normal_paid',
-      acquisitionSourceName: prevCustom.acquisitionSourceName || ps.acquisitionSourceName || undefined,
-      isZeroExtraCost: isZero,
-      actualPricePaid: paid,
-      customActualPrice: currentPriceMode === 'custom' ? paid : (prevCustom.customActualPrice ?? null),
-      priceMode: currentPriceMode,
-      subscriptionCurrency: curCode,
-      currency: curCode,
-      currencySource: currentPriceMode === 'custom' ? 'custom' : 'preset_region',
-      currencySymbol: curSymbol,
-      billingCycle: isZero ? '随套餐赠送/免费' : cycle,
-      priceSource,
-      updatedAt: new Date().toISOString()
-    };
-
-    refreshDirectRegionDisplay(regionName);
-    refreshDirectCurrencyDisplay(curCode);
-    applyCustomPlanObjectLocally(customObj, email);
-
-    // 双向同步：更新订阅国家表单及币种（使用纯同步防护守卫，防级联循环）
-    runWithUiHydration(() => {
-      const directCurSel = el('direct-currency-select');
-      if (directCurSel) directCurSel.value = curCode === 'TWD' ? 'TWD' : curCode;
-      const form = el('plan-custom-form');
-      if (form) {
-        const regInput = el('input-custom-region');
-        const curSelect = el('select-custom-currency');
-        const paidInput = el('input-custom-paid');
-        const zeroCheck = el('check-zero-extra');
-        if (regInput) regInput.value = regionName;
-        if (curSelect) {
-          curSelect.value = curCode;
-          enhancedDropdowns.get('select-custom-currency')?.refresh?.();
-        }
-        if (paidInput && !zeroCheck?.checked) {
-          paidInput.value = (paid !== null && paid !== undefined) ? paid : '';
-        }
-        const prevEl = el('region-cny-preview');
-        if (prevEl && paid !== null && regionItem.rateToCNY) {
-          const cny = (paid * regionItem.rateToCNY).toFixed(1);
-          prevEl.textContent = t('plan.cnyApprox', { val: cny });
-        }
-      }
-    });
-
-    void persistSettingsToHost({ email, customPlan: customObj });
-  }
-
-  // 用户单独修改「账号所在地区」：仅修改本地记录，绝不影响订阅国家、订阅币种或订阅金额
-  function applyDirectCountrySelection(newCountryVal) {
-    ++userActionSeq;
-    const ps = ANTIGRAVITY_TOKEN_DATA.planStatus || {};
-    const email = ps.email || 'default';
-    const prevCustom = getStoredCustomPlanSnapshot(email);
-    const cleanCountry = (newCountryVal && newCountryVal !== '未知') ? String(newCountryVal).trim() : '';
-
-    const customObj = {
-      ...prevCustom,
-      accountRegion: cleanCountry || undefined,
-      country: cleanCountry || undefined,
-      updatedAt: new Date().toISOString()
-    };
-    if (!cleanCountry) {
-      delete customObj.accountRegion;
-      delete customObj.country;
-    }
-
-    refreshDirectCountryDisplay(cleanCountry || '未知');
-
-    runWithUiHydration(() => {
-      const countryInput = el('input-custom-country');
-      if (countryInput) countryInput.value = cleanCountry;
-      const directCountrySel = el('direct-country-select');
-      if (directCountrySel) directCountrySel.value = cleanCountry || '未知';
-    });
-
-    applyCustomPlanObjectLocally(customObj, email);
-    void persistSettingsToHost({ email, customPlan: customObj });
-  }
-
-  // 用户单独修改「订阅币种」：独立更新结算币种与符号，严格保持账号所在地区和订阅国家不变
-  function applyDirectCurrencySelection(newCurrencyVal) {
-    if (!newCurrencyVal) return;
-    ++userActionSeq;
-    const core = typeof __AGContextMeterCore !== 'undefined' ? __AGContextMeterCore : null;
-    const ps = ANTIGRAVITY_TOKEN_DATA.planStatus || {};
-    const email = ps.email || 'default';
-    const prevCustom = getStoredCustomPlanSnapshot(email);
-    let curCode = String(newCurrencyVal).trim().toUpperCase();
-    if (curCode === 'NTD') curCode = 'TWD';
-    const curSymbol = core?.CURRENCY_SYMBOLS?.[curCode] || '$';
-
-    refreshDirectCurrencyDisplay(curCode);
-
-    const hasExplicitCustomPaid = Boolean(prevCustom.isZeroExtraCost || (prevCustom.actualPricePaid !== null && prevCustom.actualPricePaid !== undefined && prevCustom.actualPricePaid !== ''));
-    const currentPriceMode = (prevCustom.priceMode === 'custom' || prevCustom.priceMode === 'preset')
-      ? prevCustom.priceMode
-      : (prevCustom.priceSource === 'custom' && hasExplicitCustomPaid ? 'custom' : 'preset');
-    let paid = prevCustom.actualPricePaid;
-    let priceSource = currentPriceMode === 'custom' ? 'custom' : 'preset_region';
-    const isZero = Boolean(prevCustom.isZeroExtraCost || prevCustom.actualPricePaid === 0);
-
-    if (isZero) {
-      paid = 0;
-      priceSource = 'custom';
-    } else if (currentPriceMode === 'preset') {
-      // 检查新币种在预设库中是否有基准定价
-      const matchedNewPreset = core?.SUBSCRIPTION_REGIONS_PRESET?.find(p => p.currency === curCode);
-      if (matchedNewPreset) {
-        paid = matchedNewPreset.monthlyPrice;
-        priceSource = 'preset_region';
-      } else {
-        paid = prevCustom.actualPricePaid;
-      }
-    } else {
-      paid = prevCustom.actualPricePaid;
-      priceSource = 'custom';
-    }
-
-    const customObj = {
-      ...prevCustom,
-      accountRegion: prevCustom.accountRegion || prevCustom.country || undefined,
-      country: prevCustom.country || prevCustom.accountRegion || undefined,
-      subscriptionCountry: prevCustom.subscriptionCountry || prevCustom.subscriptionRegion || prevCustom.region || undefined,
-      subscriptionRegion: prevCustom.subscriptionRegion || prevCustom.region || undefined,
-      region: prevCustom.subscriptionRegion || prevCustom.region || undefined,
-      subscriptionCurrency: curCode,
-      currency: curCode,
-      currencySource: 'custom',
-      currencySymbol: curSymbol,
-      actualPricePaid: paid,
-      customActualPrice: currentPriceMode === 'custom' ? paid : (prevCustom.customActualPrice ?? null),
-      priceMode: currentPriceMode,
-      priceSource,
-      updatedAt: new Date().toISOString()
-    };
-
-    runWithUiHydration(() => {
-      const formCurSel = el('select-custom-currency');
-      if (formCurSel) {
-        formCurSel.value = curCode;
-        enhancedDropdowns.get('select-custom-currency')?.refresh?.();
-      }
-      const directCurSel = el('direct-currency-select');
-      if (directCurSel) directCurSel.value = curCode;
-      const paidInput = el('input-custom-paid');
-      if (paidInput && !isZero) {
-        paidInput.value = (paid !== null && paid !== undefined) ? paid : '';
-      }
-    });
-
-    applyCustomPlanObjectLocally(customObj, email);
-    void persistSettingsToHost({ email, customPlan: customObj });
-  }
-
-  el('direct-country-select')?.addEventListener('change', (e) => {
-    if (isHydratingUiControls) return;
-    applyDirectCountrySelection(e.target?.value || '');
-  });
-
-  el('direct-currency-select')?.addEventListener('change', (e) => {
-    if (isHydratingUiControls) return;
-    applyDirectCurrencySelection(e.target?.value || 'USD');
-  });
-
-  // 绑定统一定制「账号所在地区」、「订阅国家」与「订阅币种」下拉组件
-  function initDirectCountryDropdown() {
-    return initDropdownController({
-      wrapId: 'direct-country-wrap',
-      triggerId: 'direct-country-trigger',
-      labelId: 'direct-country-label',
-      menuId: 'direct-country-menu',
-      selectId: 'direct-country-select',
-      searchPlaceholder: () => t('dropdown.countrySearch'),
-      getOptions: () => COUNTRY_OPTIONS.map(o => ({ ...o, label: formatOptionLabelByLang(o) })),
-      getSelectedValue: () => {
-        const ps = ANTIGRAVITY_TOKEN_DATA.planStatus || {};
-        return (ps.country && !String(ps.country).includes('未知')) ? String(ps.country).trim() : '未知';
-      },
-      getLabelText: (opt) => formatOptionLabelByLang(opt),
-      onSelect: (opt) => {
-        applyDirectCountrySelection(opt.value);
-      },
-      emptyText: () => t('dropdown.countryEmpty')
-    });
-  }
-
-  function initDirectRegionDropdown() {
-    const core = typeof __AGContextMeterCore !== 'undefined' ? __AGContextMeterCore : null;
-    const presets = core?.SUBSCRIPTION_REGIONS_PRESET || [];
-    return initDropdownController({
-      wrapId: 'direct-region-wrap',
-      triggerId: 'direct-region-trigger',
-      labelId: 'direct-region-label',
-      menuId: 'direct-region-menu',
-      searchPlaceholder: () => t('dropdown.regionSearch'),
-      getOptions: () => {
-        return presets.map(p => {
-          const curCode = p.currency === 'TWD' ? 'NTD' : p.currency;
-          const dispName = currentPanelLanguage === 'en' ? (p.id || p.name) : p.name;
-          let displayRight = '';
-          if (p.currency === 'CNY') {
-            displayRight = p.symbol + p.monthlyPrice + t('dropdown.perMonth');
-          } else {
-            const cny = core?.convertToCNY ? core.convertToCNY(p.monthlyPrice, p.currency, p.name) : (p.monthlyPrice * p.rateToCNY);
-            displayRight = p.symbol + p.monthlyPrice + t('dropdown.perMonth') + ' · ≈ ¥' + Number(cny).toFixed(1) + ' CNY';
-          }
-          return {
-            value: p.id,
-            rawItem: p,
-            label: (p.flag || '🌏') + ' ' + dispName + ' (' + curCode + ')',
-            displayLeft: (p.flag || '🌏') + ' ' + dispName + ' (' + curCode + ')',
-            displayRight,
-            code: p.id,
-            currency: curCode,
-            aliases: p.aliases || []
-          };
-        });
-      },
-      getSelectedValue: () => {
-        const currentReg = ANTIGRAVITY_TOKEN_DATA.planStatus?.region || '';
-        const matched = core?.findRegionPreset ? core.findRegionPreset(currentReg) : presets.find(p => p.id === currentReg || p.name === currentReg);
-        return matched ? matched.id : '';
-      },
-      filterItem: (it, kw) => {
-        const curCode = String(it.currency || '').toLowerCase();
-        const name = String(it.label || '').toLowerCase();
-        const id = String(it.code || '').toLowerCase();
-        const aliases = (it.aliases || []).map(a => String(a).toLowerCase());
-        return name.includes(kw) || id.includes(kw) || curCode.includes(kw) || aliases.some(a => a.includes(kw));
-      },
-      getLabelText: (opt) => {
-        const p = opt.rawItem;
-        if (!p) return opt.label;
-        const curCode = p.currency === 'TWD' ? 'NTD' : p.currency;
-        const dispName = currentPanelLanguage === 'en' ? (p.id || p.name) : p.name;
-        if (p.currency === 'CNY') {
-          return (p.flag || '🌏') + ' ' + dispName + ' (' + curCode + ') · ¥' + p.monthlyPrice + t('dropdown.perMonth');
-        }
-        const cny = core?.convertToCNY ? core.convertToCNY(p.monthlyPrice, p.currency, p.name) : (p.monthlyPrice * p.rateToCNY);
-        return (p.flag || '🌏') + ' ' + dispName + ' (' + curCode + ') · ' + p.symbol + p.monthlyPrice + ' (≈ ¥' + Number(cny).toFixed(1) + ' CNY)';
-      },
-      onSelect: (opt) => {
-        if (opt.rawItem) applyDirectRegionSelection(opt.rawItem);
-      },
-      emptyText: () => t('dropdown.regionEmpty')
-    });
-  }
-
-  function initDirectCurrencyDropdown() {
-    return initDropdownController({
-      wrapId: 'direct-currency-wrap',
-      triggerId: 'direct-currency-trigger',
-      labelId: 'direct-currency-label',
-      menuId: 'direct-currency-menu',
-      selectId: 'direct-currency-select',
-      searchPlaceholder: () => t('dropdown.currencySearch'),
-      getOptions: () => CURRENCY_OPTIONS.map(o => ({ ...o, label: formatOptionLabelByLang(o) })),
-      getSelectedValue: () => {
-        const ps = ANTIGRAVITY_TOKEN_DATA.planStatus || {};
-        let cur = ps.currency || 'USD';
-        if (cur === 'NTD') cur = 'TWD';
-        return cur;
-      },
-      filterItem: (it, kw) => {
-        const name = String(it.name || '').toLowerCase();
-        const code = String(it.code || '').toLowerCase();
-        const sym = String(it.symbol || '').toLowerCase();
-        const label = String(it.label || '').toLowerCase();
-        const aliases = (it.aliases || []).map(a => String(a).toLowerCase());
-        return name.includes(kw) || code.includes(kw) || sym.includes(kw) || label.includes(kw) || aliases.some(a => a.includes(kw));
-      },
-      getLabelText: (opt) => formatOptionLabelByLang(opt),
-      onSelect: (opt) => {
-        applyDirectCurrencySelection(opt.value);
-      },
-      emptyText: () => t('dropdown.currencyEmpty')
-    });
-  }
-
-  // 立即触发初始化三大原生定制下拉
-  initDirectCountryDropdown();
-  initDirectRegionDropdown();
-  initDirectCurrencyDropdown();
 
   // 全局点击外部关闭所有下拉
   if (typeof shadow !== 'undefined' && shadow && shadow.addEventListener) {
@@ -8931,9 +7821,6 @@
   }
 
   // 套餐详情卡片展开与收回（统一走 setPlanDetailExpanded）
-  el('plan-summary-price-badge')?.addEventListener('click', () => {
-    setPlanDetailExpanded(!planDetailExpanded);
-  });
   el('btn-plan-detail-toggle')?.addEventListener('click', () => {
     const card = el('plan-detail-card');
     const currentlyHidden = !card || card.style.display === 'none' || !card.style.display;
@@ -8946,662 +7833,26 @@
     setPlanDetailExpanded(false);
   });
 
-  // 原生质感自定义下拉选择增强器
-  const enhancedDropdowns = new Map();
-  function enhanceCustomSelect(selectId) {
-    const sel = el(selectId);
-    if (!sel || !sel.parentNode) return null;
-    if (enhancedDropdowns.has(selectId)) {
-      const existing = enhancedDropdowns.get(selectId);
-      existing.refresh();
-      return existing;
-    }
-
-    sel.style.display = 'none';
-
-    const wrap = document.createElement('div');
-    wrap.className = 'ag-dropdown-wrapper';
-    wrap.setAttribute('data-target-select', selectId);
-
-    const trigger = document.createElement('div');
-    trigger.className = 'ag-dropdown-trigger';
-    trigger.setAttribute('tabindex', '0');
-
-    const label = document.createElement('span');
-    label.className = 'ag-dropdown-label';
-    label.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1';
-
-    const arrow = document.createElement('div');
-    arrow.className = 'ag-dropdown-arrow';
-    arrow.innerHTML = '<svg viewBox="0 0 10 6" width="10" height="6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l4 4 4-4"/></svg>';
-
-    trigger.appendChild(label);
-    trigger.appendChild(arrow);
-    wrap.appendChild(trigger);
-
-    const menu = document.createElement('div');
-    menu.className = 'ag-dropdown-menu';
-    wrap.appendChild(menu);
-
-    const renderOptions = () => {
-      menu.innerHTML = '';
-      const selectedVal = sel.value;
-      const opts = Array.from(sel.options);
-      let activeText = '';
-
-      opts.forEach((opt) => {
-        const item = document.createElement('div');
-        item.className = 'ag-dropdown-item' + (opt.value === selectedVal ? ' is-selected' : '');
-
-        const textSpan = document.createElement('span');
-        if (opt.text.includes(' · ')) {
-          const parts = opt.text.split(' · ');
-          textSpan.textContent = parts[0];
-          const subSpan = document.createElement('span');
-          subSpan.className = 'ag-dropdown-item-sub';
-          subSpan.textContent = parts.slice(1).join(' · ');
-          item.appendChild(textSpan);
-          item.appendChild(subSpan);
-        } else {
-          textSpan.textContent = opt.text;
-          item.appendChild(textSpan);
-        }
-
-        const check = document.createElement('span');
-        check.className = 'ag-dropdown-item-check';
-        check.textContent = '✓';
-        item.appendChild(check);
-
-        if (opt.value === selectedVal) {
-          activeText = opt.text;
-        }
-
-        item.addEventListener('click', (e) => {
-          e?.stopPropagation?.();
-          sel.value = opt.value;
-          renderOptions();
-          wrap?.classList?.remove?.('is-open');
-          if (typeof Event !== 'undefined') sel.dispatchEvent(new Event('change', { bubbles: true })); else sel.dispatchEvent?.({ type: 'change' });
-        });
-
-        menu.appendChild(item);
-      });
-
-      label.textContent = activeText || sel.selectedOptions[0]?.text || sel.options[0]?.text || '';
-    };
-
-    renderOptions();
-
-    trigger.addEventListener('click', (e) => {
-      e?.stopPropagation?.();
-      const isOpen = Boolean(wrap?.classList?.contains?.('is-open'));
-      const rootScope = (typeof shadow !== 'undefined' && shadow && shadow.querySelectorAll) ? shadow : (typeof document !== 'undefined' ? document : null);
-      rootScope?.querySelectorAll?.('.ag-dropdown-wrapper.is-open')?.forEach(w => {
-        if (w !== wrap) w.classList.remove('is-open');
-      });
-      if (!isOpen) {
-        renderOptions();
-        wrap?.classList?.add?.('is-open');
-      } else {
-        wrap?.classList?.remove?.('is-open');
-      }
-    });
-
-    trigger.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        trigger.click();
-      } else if (e.key === 'Escape') {
-        wrap?.classList?.remove?.('is-open');
-      }
-    });
-
-    sel.parentNode.insertBefore(wrap, sel.nextSibling);
-
-    sel.addEventListener('change', () => {
-      renderOptions();
-    });
-
-    const handler = {
-      wrap,
-      refresh: renderOptions
-    };
-    enhancedDropdowns.set(selectId, handler);
-    return handler;
-  }
-
-  // 点击外部自动收起下拉浮层
-  if (typeof document !== 'undefined' && document.addEventListener) {
-    document.addEventListener('click', (e) => {
-      try {
-        if (!e.target?.closest?.('.ag-dropdown-wrapper')) {
-          const root = (typeof shadow !== 'undefined' && shadow && shadow.querySelectorAll) ? shadow : document;
-          root.querySelectorAll('.ag-dropdown-wrapper.is-open').forEach(w => w.classList.remove('is-open'));
-        }
-      } catch {}
-    });
-  }
-
-  // 就地行内自定义订阅表单交互（实际读取优先于手填，支持官方依据活动来源）
-  function togglePlanCustomForm(forceOpen) {
-    const form = el('plan-custom-form');
-    if (!form) return;
-    const curHidden = form.style.display === 'none' || !form.style.display;
-    const next = typeof forceOpen === 'boolean' ? forceOpen : curHidden;
-    form.style.display = next ? 'block' : 'none';
-    if (next) {
-      const ps = ANTIGRAVITY_TOKEN_DATA.planStatus || {};
-      const acqSelect = el('select-custom-acq');
-      const acqNameInput = el('input-custom-acq-name');
-      const zeroCheck = el('check-zero-extra');
-      const countryInput = el('input-custom-country');
-      const regInput = el('input-custom-region');
-      const paidInput = el('input-custom-paid');
-      const curSelect = el('select-custom-currency');
-      const cycleSelect = el('select-custom-cycle');
-      const validEndInput = el('input-valid-end');
-      const noteInput = el('input-custom-note');
-
-      runWithUiHydration(() => {
-        if (acqSelect && ps.acquisitionSource) acqSelect.value = ps.acquisitionSource;
-        if (acqNameInput) acqNameInput.value = (ps.acquisitionSourceName && ps.acquisitionSourceName !== '正常付费订阅') ? ps.acquisitionSourceName : '';
-        if (zeroCheck) zeroCheck.checked = Boolean(ps.isZeroExtraCost || ps.actualPricePaid === 0);
-        if (countryInput) countryInput.value = (ps.country && !ps.country.includes('未知')) ? ps.country : '';
-        if (regInput) regInput.value = (ps.region && !ps.region.includes('未知')) ? ps.region : '';
-        if (paidInput) {
-          paidInput.value = (ps.actualPricePaid !== null && ps.actualPricePaid !== undefined) ? ps.actualPricePaid : (zeroCheck?.checked ? '0' : '');
-          paidInput.disabled = Boolean(zeroCheck?.checked);
-        }
-        if (curSelect && ps.currency) curSelect.value = ps.currency;
-        if (cycleSelect && ps.billingCycle && !ps.billingCycle.includes('未知')) cycleSelect.value = ps.billingCycle.replace(/（.*）/, '').trim();
-        if (validEndInput) validEndInput.value = ps.validEndDate || '';
-        if (noteInput) noteInput.value = ps.customNote || '';
-        ['select-custom-acq', 'select-custom-region-preset', 'select-custom-currency', 'select-custom-cycle'].forEach(id => enhanceCustomSelect(id));
-      });
-      regInput?.focus?.();
-    }
-    positionFloatingPanels();
-  }
-
-  el('select-custom-region-preset')?.addEventListener('change', (e) => {
-    if (isHydratingUiControls) return;
-    const presetId = e.target?.value || '';
-    if (!presetId || presetId === 'custom') return;
-    const core = typeof __AGContextMeterCore !== 'undefined' ? __AGContextMeterCore : null;
-    const matched = core?.SUBSCRIPTION_REGIONS_PRESET?.find(p => p.id === presetId);
-    if (matched) {
-      applyDirectRegionSelection(matched);
-    }
-  });
-
-  el('check-zero-extra')?.addEventListener('change', (e) => {
-    if (isHydratingUiControls) return;
-    const paidInput = el('input-custom-paid');
-    if (e.target.checked) {
-      if (paidInput) {
-        paidInput.value = '0';
-        paidInput.disabled = true;
-      }
-    } else {
-      if (paidInput) {
-        paidInput.disabled = false;
-        if (paidInput.value === '0') paidInput.value = '';
-      }
-    }
-  });
-
-  el('select-custom-acq')?.addEventListener('change', (e) => {
-    if (isHydratingUiControls) return;
-    const val = e.target.value;
-    const zeroCheck = el('check-zero-extra');
-    const paidInput = el('input-custom-paid');
-    const cycleSelect = el('select-custom-cycle');
-    const freeBundlePresets = ['student_offer', 'pixel_bundle', 'chromebook_bundle', 'samsung_galaxy', 'jio_offer', 'official_promo'];
-    if (freeBundlePresets.includes(val)) {
-      if (zeroCheck) zeroCheck.checked = true;
-      if (paidInput) {
-        paidInput.value = '0';
-        paidInput.disabled = true;
-      }
-      if (cycleSelect) cycleSelect.value = '免费/赠送';
-    } else if (val === 'normal_paid') {
-      if (zeroCheck) zeroCheck.checked = false;
-      if (paidInput) {
-        paidInput.disabled = false;
-        if (!paidInput.value || paidInput.value === '0') paidInput.value = '19.99';
-      }
-      if (cycleSelect) cycleSelect.value = '月付';
-    }
-  });
-
-  el('btn-mode-preset')?.addEventListener('click', () => switchPlanPriceMode('preset'));
-  el('btn-mode-custom')?.addEventListener('click', () => switchPlanPriceMode('custom'));
-  el('btn-edit-plan-custom')?.addEventListener('click', () => togglePlanCustomForm());
-  el('btn-custom-plan-cancel')?.addEventListener('click', () => togglePlanCustomForm(false));
-
-  el('btn-custom-plan-save')?.addEventListener('click', () => {
-    ++userActionSeq;
-    const ps = ANTIGRAVITY_TOKEN_DATA.planStatus || {};
-    const email = ps.email || 'default';
-    const prevCustom = getStoredCustomPlanSnapshot(email);
-    const acq = el('select-custom-acq')?.value || 'normal_paid';
-    const acqName = el('input-custom-acq-name')?.value?.trim() || '';
-    const isZero = Boolean(el('check-zero-extra')?.checked);
-    const countryInputEl = el('input-custom-country');
-    const countryVal = countryInputEl ? countryInputEl.value.trim() : (prevCustom.accountRegion || prevCustom.country || '');
-    const regInputEl = el('input-custom-region');
-    const reg = regInputEl ? regInputEl.value.trim() : (prevCustom.subscriptionCountry || prevCustom.subscriptionRegion || prevCustom.region || '');
-    const rawPaid = el('input-custom-paid')?.value?.trim();
-    const paid = isZero ? 0 : (rawPaid !== '' && !Number.isNaN(Number(rawPaid)) ? Number(rawPaid) : null);
-    const cur = el('select-custom-currency')?.value || prevCustom.subscriptionCurrency || prevCustom.currency || 'USD';
-    const cycle = el('select-custom-cycle')?.value || (isZero ? '随套餐赠送/免费' : '月付');
-    const validEnd = el('input-valid-end')?.value?.trim() || '';
-    const note = el('input-custom-note')?.value?.trim() || '';
-
-    const customObj = {
-      ...prevCustom,
-      accountRegion: countryVal || undefined,
-      country: countryVal || undefined,
-      subscriptionCountry: reg || undefined,
-      subscriptionRegion: reg || undefined,
-      region: reg || undefined,
-      acquisitionSource: acq,
-      acquisitionSourceName: acqName || undefined,
-      isZeroExtraCost: isZero,
-      actualPricePaid: paid,
-      customActualPrice: paid,
-      priceMode: 'custom',
-      subscriptionCurrency: cur,
-      currency: cur,
-      currencySource: 'custom',
-      billingCycle: cycle,
-      validEndDate: validEnd || null,
-      customNote: note,
-      priceSource: 'custom',
-      updatedAt: new Date().toISOString()
-    };
-    if (!countryVal) {
-      delete customObj.accountRegion;
-      delete customObj.country;
-    }
-    if (!reg) {
-      delete customObj.subscriptionCountry;
-      delete customObj.subscriptionRegion;
-      delete customObj.region;
-    }
-
-    applyCustomPlanObjectLocally(customObj, email);
-    togglePlanCustomForm(false);
-    void persistSettingsToHost({ email, customPlan: customObj });
-  });
-
-  el('btn-custom-plan-clear')?.addEventListener('click', () => {
-    ++userActionSeq;
-    const ps = ANTIGRAVITY_TOKEN_DATA.planStatus || {};
-    const email = ps.email || 'default';
-    const rawLive = ANTIGRAVITY_TOKEN_DATA.rawPlanStatus || null;
-    const core = typeof __AGContextMeterCore !== 'undefined' ? __AGContextMeterCore : null;
-    if (core && core.resolveEffectivePlanStatus) {
-      ANTIGRAVITY_TOKEN_DATA.planStatus = core.resolveEffectivePlanStatus(rawLive, { priceMode: 'preset' }, { currentEmail: email });
-    }
-    togglePlanCustomForm(false);
-    renderPlanDetail(ANTIGRAVITY_TOKEN_DATA.planStatus);
-    renderActiveCostEstimateView();
-    void persistSettingsToHost({ email, clearPlan: true });
-  });
-
-  let lastBadgePriceState = null;
-  let activeBadgeRafId = null;
-  let activeBadgeTimerId = null;
-  let activeCnyTimerId = null;
-
-
-  function renderPlanSummaryPriceBadge(targetSymbol, targetNum, targetCycle, targetCnyText, options = {}) {
-    const priceValEl = el('plan-summary-price-val');
-    const priceCnyEl = el('plan-summary-price-cny');
-    const badgeEl = el('plan-summary-price-badge');
-    if (!priceValEl) return;
-
-    if (activeBadgeTimerId) {
-      clearTimeout(activeBadgeTimerId);
-      activeBadgeTimerId = null;
-    }
-    if (activeCnyTimerId) {
-      clearTimeout(activeCnyTimerId);
-      activeCnyTimerId = null;
-    }
-    if (activeBadgeRafId && typeof cancelAnimationFrame === 'function') {
-      cancelAnimationFrame(activeBadgeRafId);
-      activeBadgeRafId = null;
-    }
-
-    const formattedFinalNum = targetNum !== null && targetNum !== undefined
-      ? (Number(targetNum) % 1 === 0 ? String(Number(targetNum)) : Number(targetNum).toFixed(2))
-      : '';
-
-    // 轻量模拟环境安全兼容
-    if (typeof priceValEl.querySelector !== 'function') {
-      priceValEl.textContent = `${targetSymbol}${formattedFinalNum}${targetCycle}`;
-      if (priceCnyEl) priceCnyEl.textContent = targetCnyText;
-      lastBadgePriceState = {
-        symbol: targetSymbol,
-        num: targetNum !== null ? Number(targetNum) : 0,
-        cycle: targetCycle,
-        cnyText: targetCnyText
-      };
-      return;
-    }
-
-    const hasRaf = typeof requestAnimationFrame === 'function';
-    const forceDirect = options.forceDirect || !hasRaf || !lastBadgePriceState;
-
-    if (forceDirect) {
-      priceValEl.innerHTML = `<span class="badge-symbol-anim">${targetSymbol}</span><span class="badge-num-anim">${formattedFinalNum}</span><span class="badge-cycle-anim">${targetCycle}</span>`;
-      if (priceCnyEl) priceCnyEl.textContent = targetCnyText;
-      lastBadgePriceState = {
-        symbol: targetSymbol,
-        num: targetNum !== null ? Number(targetNum) : 0,
-        cycle: targetCycle,
-        cnyText: targetCnyText
-      };
-      return;
-    }
-
-    const startNum = (lastBadgePriceState && Number.isFinite(lastBadgePriceState.num))
-      ? lastBadgePriceState.num
-      : (Number(targetNum) || 0);
-    const endNum = targetNum !== null ? Number(targetNum) : 0;
-    const startSymbol = lastBadgePriceState?.symbol || targetSymbol;
-    const endSymbol = targetSymbol;
-
-    // 确保内部 DOM 结构完整
-    let symbolEl = priceValEl.querySelector?.('.badge-symbol-anim');
-    let numEl = priceValEl.querySelector?.('.badge-num-anim');
-    let cycleEl = priceValEl.querySelector?.('.badge-cycle-anim');
-
-    if (!symbolEl || !numEl || !cycleEl) {
-      priceValEl.innerHTML = `<span class="badge-symbol-anim">${startSymbol}</span><span class="badge-num-anim">${formattedFinalNum}</span><span class="badge-cycle-anim">${targetCycle}</span>`;
-      symbolEl = priceValEl.querySelector?.('.badge-symbol-anim');
-      numEl = priceValEl.querySelector?.('.badge-num-anim');
-      cycleEl = priceValEl.querySelector?.('.badge-cycle-anim');
-    }
-
-    if (cycleEl) cycleEl.textContent = targetCycle;
-
-    // 1. 货币符号消散再切换动画 (Symbol Dissolve & Crossfade)
-    if (startSymbol !== endSymbol && symbolEl && symbolEl.classList) {
-      symbolEl.classList.remove('is-entering');
-      symbolEl.classList.add('is-dissolving');
-
-      activeBadgeTimerId = setTimeout(() => {
-        symbolEl.textContent = endSymbol;
-        symbolEl.classList.remove('is-dissolving');
-        symbolEl.classList.add('is-entering');
-        try { void symbolEl.offsetWidth; } catch {}
-        setTimeout(() => {
-          symbolEl.classList?.remove?.('is-entering');
-        }, 180);
-        activeBadgeTimerId = null;
-      }, 160);
-    } else if (symbolEl) {
-      symbolEl.textContent = endSymbol;
-    }
-
-    // 2. CNY 折合平滑渐变
-    if (priceCnyEl && priceCnyEl.textContent !== targetCnyText) {
-      try {
-        priceCnyEl.style.transition = 'opacity 0.18s ease';
-        priceCnyEl.style.opacity = '0.2';
-        activeCnyTimerId = setTimeout(() => {
-          priceCnyEl.textContent = targetCnyText;
-          priceCnyEl.style.opacity = '0.85';
-          activeCnyTimerId = null;
-        }, 140);
-      } catch {
-        priceCnyEl.textContent = targetCnyText;
-      }
-    }
-
-    // 3. 数字滚动/递减递增动画 (Rolling Numeric Count Tween)
-    if (startNum !== endNum && numEl) {
-      if (badgeEl && badgeEl.classList) badgeEl.classList.add('is-animating');
-
-      const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-      const duration = 500;
-      const easeOut = t => 1 - Math.pow(1 - t, 4);
-
-      const step = now => {
-        const elapsed = Math.max(0, now - startTime);
-        const progress = Math.min(1, elapsed / duration);
-        const eased = easeOut(progress);
-        const currentVal = startNum + (endNum - startNum) * eased;
-
-        if (progress < 1) {
-          if (endNum % 1 !== 0) {
-            numEl.textContent = currentVal >= 100 ? String(Math.round(currentVal)) : currentVal.toFixed(2);
-          } else {
-            numEl.textContent = String(Math.round(currentVal));
-          }
-          activeBadgeRafId = requestAnimationFrame(step);
-        } else {
-          numEl.textContent = formattedFinalNum;
-          if (badgeEl && badgeEl.classList) badgeEl.classList.remove('is-animating');
-          activeBadgeRafId = null;
-        }
-      };
-
-      activeBadgeRafId = requestAnimationFrame(step);
-    } else if (numEl) {
-      numEl.textContent = formattedFinalNum;
-    }
-
-    lastBadgePriceState = {
-      symbol: targetSymbol,
-      num: endNum,
-      cycle: targetCycle,
-      cnyText: targetCnyText
-    };
-  }
-
   function renderPlanDetail(ps) {
     if (!ps) return;
     const sumTxt = el('plan-summary-text');
     if (sumTxt) {
       const modeTxt = ps.status === 'identified'
         ? t('plan.summary.identified')
-        : ps.hasCustomSettings
-          ? t('plan.summary.custom')
-          : t('plan.summary.unknown');
+        : t('plan.summary.unknown');
       sumTxt.textContent = `${ps.tierName || 'Pro'} · ${modeTxt} · ${t('plan.summary.justNow')}`;
     }
-    // 实时联动更新黄框位置的订阅费与汇率胶囊 (支持动效与符号消散)
-    const curSymbol = ps.currencySymbol || '$';
-    let targetSymbol = '$';
-    let targetNum = 19.99;
-    let targetCycle = t('plan.summary.perMonth');
-    let targetCny = '(≈ ¥134.3 CNY)';
-
-    if (ps.actualPricePaid === 0 || ps.isZeroExtraCost) {
-      targetSymbol = curSymbol;
-      targetNum = 0;
-      targetCycle = t('plan.summary.perMonth');
-      targetCny = t('plan.summary.freeWithPlan');
-    } else if (ps.actualPricePaid !== null && ps.actualPricePaid !== undefined) {
-      targetSymbol = curSymbol;
-      targetNum = Number(ps.actualPricePaid);
-      targetCycle = t('plan.summary.perMonth');
-      if (ps.currency === 'CNY') {
-        targetCny = '';
-      } else if (ps.cnyFormatted) {
-        const cnyClean = String(ps.cnyFormatted).replace(/^[折合約\s≈()（）]+/, '').replace(/[()（）]/g, '').trim();
-        const prefix = currentPanelLanguage === 'en' ? 'approx. ' : '≈ ';
-        targetCny = cnyClean ? `(${prefix}${cnyClean})` : '';
-      } else {
-        targetCny = '';
-      }
-    } else if (ps.officialPriceMonthly !== null && ps.officialPriceMonthly !== undefined) {
-      targetSymbol = '$';
-      targetNum = Number(ps.officialPriceMonthly);
-      targetCycle = t('plan.summary.perMonth');
-      targetCny = '(≈ ¥134.3 CNY)';
-    } else {
-      targetSymbol = '$';
-      targetNum = 19.99;
-      targetCycle = t('plan.summary.perMonth');
-      targetCny = '(≈ ¥134.3 CNY)';
-    }
-
-    renderPlanSummaryPriceBadge(targetSymbol, targetNum, targetCycle, targetCny);
 
     const detName = el('p-det-name');
     if (detName) detName.textContent = ps.tierName || 'Google AI Pro';
     const detAcc = el('p-det-account');
     if (detAcc) detAcc.textContent = ps.email || t('plan.account.unknown');
 
-    // 守卫：若当前不在 Token 统计视图或详情处于收起状态，严禁异步返回时撑开详情面板
+    // 守卫：若详情处于收起状态，严禁异步返回时撑开详情面板
     const cardEl = el('plan-detail-card');
-    if (cardEl && (activeTokenView !== 'tokens' || !planDetailExpanded)) {
+    if (cardEl && !planDetailExpanded) {
       cardEl.style.display = 'none';
       cardEl.classList?.remove?.('is-expanded');
-    }
-
-    const detCountry = el('p-det-country');
-    const tagCountry = el('p-det-country-tag');
-    const directCountrySel = el('direct-country-select');
-    const countryText = (ps.country && !String(ps.country).includes('未知')) ? String(ps.country).trim() : '未知';
-    if (detCountry) detCountry.textContent = countryText === '未知' ? t('plan.country.unknown') : countryText;
-    if (tagCountry) {
-      tagCountry.style.display = ps.countrySource === 'custom' ? 'inline-block' : 'none';
-      tagCountry.textContent = ps.countrySource === 'custom' ? t('plan.tag.custom') : '';
-    }
-
-    const detReg = el('p-det-region');
-    const tagReg = el('p-det-region-tag');
-    let regText = ps.subscriptionRegion || ps.region || '未知';
-    if (regText.includes('未在当前会话中获取') || regText.trim() === '未知') regText = '未知';
-    if (detReg) detReg.textContent = regText === '未知' ? t('plan.region.unknown') : regText;
-    if (tagReg) {
-      tagReg.style.display = ps.regionSource === 'custom' ? 'inline-block' : 'none';
-      tagReg.textContent = ps.regionSource === 'custom' ? t('plan.tag.custom') : '';
-    }
-
-    const detCur = el('p-det-currency');
-    const tagCur = el('p-det-currency-tag');
-    const directCurSel = el('direct-currency-select');
-    const curText = ps.currency || 'USD';
-    if (detCur) detCur.textContent = curText;
-    if (tagCur) {
-      tagCur.style.display = ps.currencySource === 'custom' ? 'inline-block' : 'none';
-      tagCur.textContent = ps.currencySource === 'custom' ? t('plan.tag.custom') : '';
-    }
-
-    // 使用纯同步回填守卫同步更新详情面板内的下拉控件值
-    runWithUiHydration(() => {
-      if (directCountrySel) {
-        if (countryText !== '未知' && directCountrySel.options) {
-          const exists = Array.from(directCountrySel.options).some(o => o.value === countryText);
-          if (!exists && typeof document.createElement === 'function') {
-            const opt = document.createElement('option');
-            opt.value = countryText;
-            opt.textContent = '🌐 ' + countryText;
-            directCountrySel.appendChild?.(opt);
-          }
-        }
-        directCountrySel.value = countryText;
-      }
-      if (directCurSel) {
-        directCurSel.value = curText === 'NTD' ? 'TWD' : curText;
-      }
-    });
-
-    // 刷新国家、订阅地区与币种直接选择器标签与选中高亮
-    if (typeof refreshDirectCountryDisplay === 'function') {
-      refreshDirectCountryDisplay(countryText);
-    }
-    if (typeof refreshDirectRegionDisplay === 'function') {
-      refreshDirectRegionDisplay(regText);
-    }
-    if (typeof refreshDirectCurrencyDisplay === 'function') {
-      refreshDirectCurrencyDisplay(curText);
-    }
-
-    const detAcq = el('p-det-acq');
-    const tagAcq = el('p-det-acq-tag');
-    if (detAcq) detAcq.textContent = localizeAcquisitionSource(ps.acquisitionSource || ps.acquisitionSourceName);
-    if (tagAcq) {
-      const isPromo = ps.acquisitionSource && ps.acquisitionSource !== 'normal_paid';
-      tagAcq.style.display = isPromo ? 'inline-block' : 'none';
-      tagAcq.textContent = isPromo ? t('plan.tag.promo') : '';
-    }
-
-    const detPrice = el('p-det-price');
-    const tagPrice = el('p-det-price-tag');
-    const isPresetMode = ps.priceMode === 'preset';
-    const btnModePreset = el('btn-mode-preset');
-    const btnModeCustom = el('btn-mode-custom');
-    if (btnModePreset) setPillActive(btnModePreset, isPresetMode);
-    if (btnModeCustom) setPillActive(btnModeCustom, !isPresetMode);
-
-    if (detPrice) {
-      const cycleText = localizeBillingCycleLabel(ps.billingCycle);
-      if (ps.actualPricePaid === 0 || ps.isZeroExtraCost) {
-        detPrice.textContent = `${curSymbol}0 · ${cycleText}`;
-      } else if (ps.actualPricePaid !== null && ps.actualPricePaid !== undefined) {
-        let cnyPart = '';
-        if (ps.currency !== 'CNY' && ps.cnyFormatted) {
-          const locCny = localizeCnyFormatted(ps.cnyFormatted);
-          cnyPart = locCny ? ` (${locCny})` : '';
-        }
-        const paidFormatted = Number(ps.actualPricePaid) % 1 === 0 ? Number(ps.actualPricePaid) : Number(ps.actualPricePaid).toFixed(2);
-        detPrice.textContent = `${curSymbol}${paidFormatted} · ${cycleText}${cnyPart}`;
-      } else if (ps.priceRangeNote && ps.priceRangeNote !== '未知') {
-        detPrice.textContent = ps.priceRangeNote.replace(/[（\(][^）\)]*[）\)]/g, '').trim();
-      } else if (ps.officialPriceMonthly !== null && ps.officialPriceMonthly !== undefined) {
-        detPrice.textContent = `${t('plan.tag.publicRef')} $${ps.officialPriceMonthly}${t('plan.summary.perMonth')}`;
-      } else {
-        detPrice.textContent = '—';
-      }
-    }
-    if (tagPrice) {
-      tagPrice.style.display = 'inline-block';
-      if (ps.actualPricePaid === 0 || ps.isZeroExtraCost) {
-        tagPrice.textContent = t('plan.tag.manualFree');
-      } else if (ps.priceMode === 'custom' || ps.priceSource === 'custom') {
-        tagPrice.textContent = t('plan.tag.userPaid');
-      } else if (ps.priceSource === 'preset_region' || isPresetMode) {
-        tagPrice.textContent = t('plan.tag.official');
-      } else {
-        tagPrice.textContent = t('plan.tag.publicRef');
-      }
-    }
-
-    const dtVal = el('p-dt-validity');
-    const ddVal = el('p-det-validity');
-    if (dtVal && ddVal) {
-      if (ps.validEndDate) {
-        dtVal.style.display = 'block';
-        ddVal.style.display = 'block';
-        ddVal.textContent = ps.isExpired
-          ? t('plan.validity.expired', { date: ps.validEndDate })
-          : t('plan.validity.active', { date: ps.validEndDate });
-        ddVal.style.color = ps.isExpired ? '#ef4444' : 'var(--ag-text-secondary)';
-      } else {
-        dtVal.style.display = 'none';
-        ddVal.style.display = 'none';
-      }
-    }
-
-    const dtNote = el('p-dt-note');
-    const ddNote = el('p-det-note');
-    if (dtNote && ddNote) {
-      if (ps.customNote) {
-        dtNote.style.display = 'block';
-        ddNote.style.display = 'block';
-        ddNote.textContent = String(ps.customNote);
-      } else {
-        dtNote.style.display = 'none';
-        ddNote.style.display = 'none';
-      }
     }
 
     const pPrompt = el('p-det-prompt-credits');
@@ -9617,9 +7868,7 @@
     }
     const detTime = el('p-det-time');
     if (detTime) {
-      const timeStr = ps.updatedAt ? new Date(ps.updatedAt).toLocaleString() : '—';
-      const verifyStr = ps.pricingTableVerifiedDate ? ` · ${ps.pricingTableVerifiedDate}` : '';
-      detTime.textContent = `${timeStr}${verifyStr}`;
+      detTime.textContent = ps.updatedAt ? new Date(ps.updatedAt).toLocaleString() : '—';
     }
   }
 
@@ -9650,99 +7899,11 @@
       const srcMap = bySrc[src] || bySrc.all || ANTIGRAVITY_TOKEN_DATA.dailyMap;
       ANTIGRAVITY_TOKEN_DATA.dailyMap = srcMap;
       renderActiveHeatView(true);
-      renderActiveCostEstimateView();
     }
   }
   el('src-tab-all')?.addEventListener('click', () => switchTokenSource('all'));
   el('src-tab-desktop')?.addEventListener('click', () => switchTokenSource('desktop'));
   el('src-tab-cli')?.addEventListener('click', () => switchTokenSource('cli'));
-
-  // 视图切换（Token 统计 / API 等值估算）
-  let activeTokenView = 'tokens';
-
-  // 费用面板紧凑摘要与展开详情切换
-  let costDetailsExpanded = false;
-  function toggleCostDetails(expand) {
-    if (expand === undefined) costDetailsExpanded = !costDetailsExpanded;
-    else costDetailsExpanded = Boolean(expand);
-
-    const pane = el('cost-details-pane');
-    const btn = el('btn-cost-details-toggle');
-    const pTokens = el('panel-tokens');
-
-    if (pane) {
-      pane.style.display = costDetailsExpanded ? 'block' : 'none';
-      if (costDetailsExpanded) pane.style.animation = 'agFadeIn .2s cubic-bezier(0.16,1,0.3,1)';
-    }
-    if (btn) btn.textContent = costDetailsExpanded ? t('cost.btnCollapse') : t('cost.btnExpand');
-    if (pTokens) {
-      const isCompact = activeTokenView === 'cost' && !costDetailsExpanded;
-      pTokens.classList?.toggle?.('cost-compact-view', isCompact);
-      const curCls = pTokens.getAttribute?.('class') || '';
-      if (isCompact) {
-        if (!curCls.includes('cost-compact-view')) pTokens.setAttribute?.('class', (curCls + ' cost-compact-view').trim());
-      } else {
-        pTokens.setAttribute?.('class', curCls.replace(/\bcost-compact-view\b/g, '').trim());
-      }
-    }
-    positionFloatingPanels();
-  }
-  el('cost-details-pane');
-  el('cost-non-paid-badge');
-  el('cost-scope-desc');
-  el('tokens-main-view');
-  el('btn-cost-details-toggle')?.addEventListener('click', () => toggleCostDetails());
-  el('btn-cost-details-collapse')?.addEventListener('click', () => toggleCostDetails(false));
-  el('btn-cost-fill-sub')?.addEventListener('click', () => {
-    switchTokenView('tokens');
-    setPlanDetailExpanded(true);
-    togglePlanCustomForm(true);
-  });
-  toggleCostDetails(false);
-
-  function switchTokenView(v) {
-    activeTokenView = v;
-    // 离开 Token 统计视图时关闭订阅详情与表单
-    if (v !== 'tokens') {
-      setPlanDetailExpanded(false, { skipReposition: true });
-    } else {
-      setPlanDetailExpanded(false, { skipReposition: true });
-    }
-    setPillActive(el('tok-view-tokens'), v === 'tokens');
-    setPillActive(el('tok-view-cost'), v === 'cost');
-    const costCard = el('cost-estimate-card');
-    const tokensMain = el('tokens-main-view');
-    const statCards = el('token-stat-cards');
-    const planBar = el('plan-summary-bar');
-    const titleTokens = el('panel-tokens-title');
-    const pTokens = el('panel-tokens');
-
-    if (costCard) {
-      costCard.style.display = v === 'cost' ? 'block' : 'none';
-      if (v === 'cost') costCard.style.animation = 'agFadeIn .18s cubic-bezier(0.16,1,0.3,1)';
-    }
-    if (tokensMain) {
-      tokensMain.style.display = v === 'tokens' ? 'block' : 'none';
-      if (v === 'tokens') tokensMain.style.animation = 'agFadeIn .18s cubic-bezier(0.16,1,0.3,1)';
-    }
-    if (statCards) statCards.style.display = v === 'tokens' ? 'grid' : 'none';
-    if (planBar) planBar.style.display = v === 'tokens' ? 'flex' : 'none';
-    if (titleTokens) titleTokens.textContent = v === 'cost' ? t('tokens.titleCost') : t('tokens.title');
-
-    if (pTokens) {
-      const isCompact = v === 'cost' && !costDetailsExpanded;
-      pTokens.classList?.toggle?.('cost-compact-view', isCompact);
-      const curCls = pTokens.getAttribute?.('class') || '';
-      if (isCompact) {
-        if (!curCls.includes('cost-compact-view')) pTokens.setAttribute?.('class', (curCls + ' cost-compact-view').trim());
-      } else {
-        pTokens.setAttribute?.('class', curCls.replace(/\bcost-compact-view\b/g, '').trim());
-      }
-    }
-    positionFloatingPanels();
-  }
-  el('tok-view-tokens')?.addEventListener('click', () => switchTokenView('tokens'));
-  el('tok-view-cost')?.addEventListener('click', () => switchTokenView('cost'));
 
   el('badge').addEventListener('click', toggleContext);
   el('badge-speed')?.addEventListener('click', toggleContext);
@@ -9769,9 +7930,44 @@
     hideContextTooltip();
   });
 
+  // 顶部快捷操作（仅图标）：悬停/聚焦展示说明气泡，点击直接触发动作并反馈
+  el('btn-topbar-compact')?.addEventListener('mouseenter', () => {
+    if (!isAnyPanelOpen()) showTopbarActionTooltip('compact', el('btn-topbar-compact'));
+  });
+  el('btn-topbar-compact')?.addEventListener('mouseleave', () => {
+    hideTopbarActionTooltip(false);
+  });
+  el('btn-topbar-compact')?.addEventListener('focus', () => {
+    if (!isAnyPanelOpen()) showTopbarActionTooltip('compact', el('btn-topbar-compact'));
+  });
+  el('btn-topbar-compact')?.addEventListener('blur', () => {
+    hideTopbarActionTooltip(false);
+  });
+  el('btn-topbar-compact')?.addEventListener('click', () => {
+    void triggerSessionCompact('topbar');
+  });
+
+  el('btn-topbar-raise-limit')?.addEventListener('mouseenter', () => {
+    if (!isAnyPanelOpen()) showTopbarActionTooltip('raise', el('btn-topbar-raise-limit'));
+  });
+  el('btn-topbar-raise-limit')?.addEventListener('mouseleave', () => {
+    hideTopbarActionTooltip(false);
+  });
+  el('btn-topbar-raise-limit')?.addEventListener('focus', () => {
+    if (!isAnyPanelOpen()) showTopbarActionTooltip('raise', el('btn-topbar-raise-limit'));
+  });
+  el('btn-topbar-raise-limit')?.addEventListener('blur', () => {
+    hideTopbarActionTooltip(false);
+  });
+  el('btn-topbar-raise-limit')?.addEventListener('click', () => {
+    void triggerSessionRaiseLimit('topbar');
+  });
+
   el('theme-toggle')?.addEventListener('click', cycleTheme);
   el('theme-toggle-tokens')?.addEventListener('click', cycleTheme);
   el('badge').addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
+  el('btn-topbar-compact')?.addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
+  el('btn-topbar-raise-limit')?.addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
   el('badge-tokens').addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
   el('badge-speed')?.addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
 
@@ -10204,6 +8400,39 @@
     }
   }
 
+  const lastCascadeConfigByConv = new Map();
+
+  function captureSendCascadeContext(rawInput) {
+    try {
+      if (!rawInput) return;
+      if (typeof Uint8Array !== 'undefined' && (rawInput instanceof Uint8Array || ArrayBuffer.isView?.(rawInput) || rawInput instanceof ArrayBuffer)) {
+        return;
+      }
+      let obj = null;
+      if (typeof rawInput === 'string') {
+        const trimmed = rawInput.trim();
+        if (!trimmed.startsWith('{')) return;
+        obj = JSON.parse(trimmed);
+      } else if (typeof rawInput === 'object') {
+        obj = rawInput;
+      }
+      if (!obj || typeof obj !== 'object') return;
+      const cid = obj.cascadeId || obj.cascade_id;
+      if (!cid || typeof cid !== 'string') return;
+      const cfg = obj.cascadeConfig || obj.cascade_config || null;
+      const meta = obj.metadata || null;
+      if (!cfg && !meta) return;
+      const snap = {};
+      if (cfg) snap.cascadeConfig = JSON.parse(JSON.stringify(cfg));
+      if (meta) snap.metadata = JSON.parse(JSON.stringify(meta));
+      if (lastCascadeConfigByConv.size >= 30 && !lastCascadeConfigByConv.has(cid)) {
+        const oldest = lastCascadeConfigByConv.keys().next().value;
+        if (oldest !== undefined) lastCascadeConfigByConv.delete(oldest);
+      }
+      lastCascadeConfigByConv.set(cid, snap);
+    } catch {}
+  }
+
   function installRequestInterceptor() {
     if (typeof window === 'undefined') return;
     if (window.__agRequestInterceptorInstalled) return;
@@ -10212,6 +8441,7 @@
     globalThis.__AG_METER_ON_SEND_MESSAGE__ = function(req, channel = 'client_object') {
       try {
         if (!req || typeof req !== 'object' || typeof budgetEngine.transformOutgoingSendRequest !== 'function') return null;
+        captureSendCascadeContext(req);
         const tx = budgetEngine.transformOutgoingSendRequest(req, buildInterceptorContext(channel, 'SendUserCascadeMessage'));
         if (!tx || !tx.handled) return null;
         const rec = recordBudgetTransformDispatch(tx);
@@ -10257,6 +8487,7 @@
               if (tx.modified && tx.output !== undefined) {
                 nextData = tx.output;
               }
+              captureSendCascadeContext(nextData);
               if (!isCoveredByRecentDecorator(tx)) {
                 rec = recordBudgetTransformDispatch(tx);
               }
@@ -10285,6 +8516,7 @@
             ? resource
             : (resource && resource.url ? resource.url : String(resource || ''));
           if (typeof budgetEngine.isTargetBudgetRpc === 'function' && budgetEngine.isTargetBudgetRpc(urlStr) && init?.body) {
+            captureSendCascadeContext(init.body);
             const headersObj = init?.headers;
             let contentType = '';
             if (headersObj) {
@@ -10353,6 +8585,7 @@
         try {
           const urlStr = this.__agRequestUrl || '';
           if (body && typeof budgetEngine.isTargetBudgetRpc === 'function' && budgetEngine.isTargetBudgetRpc(urlStr)) {
+            captureSendCascadeContext(body);
             const contentType = this.__agRequestHeaders?.['content-type'] || '';
             const tx = budgetEngine.transformOutgoingSendRequest(body, buildInterceptorContext('xhr', urlStr, contentType));
             if (tx && tx.handled) {
@@ -10950,6 +9183,7 @@
       renderSpeedComparisonTab();
     } else if (tabName === 'settings') {
       void refreshModulesDisplay();
+      void refreshCliUnlockDisplay();
       if (typeof refreshEnhanceStatus === 'function') void refreshEnhanceStatus();
     }
     positionFloatingPanels();
@@ -12791,6 +11025,7 @@
         if (unlockStatusDesc) unlockStatusDesc.textContent = t('status.client.unavailable');
         renderCompactSessionCard();
         renderClientStatusBar();
+        renderSessionQuickActions();
         if (!isContextSettingsView && activeContextTab === 'models') renderModelSettingsTab();
         return;
       }
@@ -12878,12 +11113,14 @@
         renderClientStatusBar();
         if (!isContextSettingsView && activeContextTab === 'models') renderModelSettingsTab();
       }
+      renderSessionQuickActions();
     } catch {
       if (thisSeq !== unlockReqSeq) return;
       unlockStatusFetchError = true;
       currentUnlockStatus = null;
       renderCompactSessionCard();
       renderClientStatusBar();
+      renderSessionQuickActions();
     }
   }
 
@@ -13586,37 +11823,23 @@
         const open = unlockDrawerBody.style.display === 'block';
         unlockDrawerArrow.textContent = open ? t('drawer.collapse') : t('drawer.expand');
       }
-      const btnCostDet = el('btn-cost-details-toggle');
-      const costDetBody = el('cost-details-pane');
-      if (btnCostDet && costDetBody) {
-        const open = costDetBody.style.display === 'block';
-        btnCostDet.textContent = open ? t('cost.btnCollapse') : t('cost.btnExpand');
-      }
       const btnPlanDet = el('btn-plan-detail-toggle');
       if (btnPlanDet) {
         btnPlanDet.textContent = planDetailExpanded ? t('plan.detail.toggleClose') : t('plan.detail.toggleOpen');
       }
     } catch {}
     try { if (typeof applyTheme === 'function') applyTheme(); } catch {}
+    try { renderVersionSyncBanner(); } catch {}
     try { render(); } catch {}
-    try { renderSessionCost(); } catch {}
     try { renderHeaderModelDropdown(); } catch {}
     try { renderModelSettingsTab(); } catch {}
     try { renderSpeedComparisonTab(); } catch {}
     try { if (currentUnlockStatus) { renderClientStatusBar(); renderCompactSessionCard(); } } catch {}
+    try { renderCliUnlockState(currentCliUnlockStatus); } catch {}
     try {
       if (typeof renderPlanDetail === 'function' && ANTIGRAVITY_TOKEN_DATA?.planStatus) {
         renderPlanDetail(ANTIGRAVITY_TOKEN_DATA.planStatus);
-      } else {
-        const pv = el('plan-summary-price-val');
-        if (pv && /^\$19\.99\/(月|mo)$/.test(String(pv.textContent || '').trim())) {
-          pv.textContent = `$19.99${t('plan.summary.perMonth')}`;
-        }
       }
-      if (typeof refreshRegionPresetSelectOptions === 'function') refreshRegionPresetSelectOptions();
-      if (typeof refreshDirectCountryDisplay === 'function') refreshDirectCountryDisplay();
-      if (typeof refreshDirectRegionDisplay === 'function') refreshDirectRegionDisplay();
-      if (typeof refreshDirectCurrencyDisplay === 'function') refreshDirectCurrencyDisplay();
     } catch {}
     try {
       if (typeof renderEnhanceSectionUI === 'function') renderEnhanceSectionUI();
@@ -13625,8 +11848,9 @@
       if (isChineseExpanded || isProxyExpanded || isContextSettingsView) {
         void refreshModulesDisplay();
       }
-      if (isContextSettingsView && typeof refreshEnhanceStatus === 'function') {
-        void refreshEnhanceStatus();
+      if (isContextSettingsView) {
+        void refreshCliUnlockDisplay();
+        if (typeof refreshEnhanceStatus === 'function') void refreshEnhanceStatus();
       }
     } catch {}
     try {
@@ -14260,6 +12484,24 @@
     void applyBrandTitleSetting(selectedBrandTitle || currentBrandTitle);
   });
 
+  let lastVersionSyncState = null;
+
+  function renderVersionSyncBanner(vs = lastVersionSyncState) {
+    const banner = el('version-sync-banner');
+    const textEl = el('version-sync-text');
+    if (!banner || !textEl) return;
+    if (vs && vs.outdated && vs.officialVersion && vs.hakimiVersion) {
+      textEl.textContent = t('versionSync.mismatch', {
+        officialVer: vs.officialVersion,
+        hakimiVer: vs.hakimiVersion
+      });
+      banner.hidden = false;
+    } else {
+      textEl.textContent = '';
+      banner.hidden = true;
+    }
+  }
+
   async function refreshModulesDisplay() {
     try {
       const res = await invokeModulesApi('status');
@@ -14274,6 +12516,8 @@
         }
         return;
       }
+      lastVersionSyncState = res.versionSync || null;
+      renderVersionSyncBanner(lastVersionSyncState);
       const cfg = res.data;
 
       currentChineseEnabled = Boolean(cfg.modules?.chinese?.enabled);
@@ -14407,10 +12651,142 @@
     void setClientLanguageTarget(!currentChineseEnabled);
   });
 
+  const cliUnlockBadge = el('cli-unlock-badge');
+  const cliUnlockMeta = el('cli-unlock-meta');
+  const btnCliUnlockApply = el('btn-cli-unlock-apply');
+  const btnCliUnlockRefresh = el('btn-cli-unlock-refresh');
+  const cliUnlockResultBox = el('cli-unlock-result');
+  const cliUnlockResultText = el('cli-unlock-result-text');
+
+  let currentCliUnlockStatus = null;
+  let isCliUnlockBusy = false;
+
+  async function invokeCliUnlockApi(action, opts = {}) {
+    if (action === 'status' && window.contextMeterAPI?.getCliUnlockStatus) {
+      return await window.contextMeterAPI.getCliUnlockStatus(opts);
+    }
+    if (action === 'apply' && window.contextMeterAPI?.applyCliUnlock) {
+      return await window.contextMeterAPI.applyCliUnlock(opts);
+    }
+    return { ok: false, error: t('models.err.noApplyBridge'), unavailable: true };
+  }
+
+  function renderCliUnlockState(res = currentCliUnlockStatus) {
+    if (!cliUnlockBadge || !cliUnlockMeta) return;
+    if (!res || !res.ok || !res.data) {
+      cliUnlockBadge.textContent = t('status.badge.unavailable');
+      cliUnlockBadge.className = 'key-pill pill-muted';
+      cliUnlockMeta.textContent = res?.error ? translateBackendText(res.error) : '—';
+      if (btnCliUnlockApply) btnCliUnlockApply.disabled = true;
+      return;
+    }
+
+    const d = res.data;
+    const hooks = [d.offersContextWindow, d.autoCompactEnv, d.regionUnlock].filter(
+      h => h && h.status && h.status !== 'missing'
+    );
+    const patchedCount = hooks.filter(h => h.status === 'patched').length;
+    const totalCount = hooks.length;
+
+    if (d.status === 'patched') {
+      cliUnlockBadge.textContent = t('settings.cliUnlock.patched', { ok: patchedCount, total: totalCount || 1 });
+      cliUnlockBadge.className = 'key-pill pill-ok';
+    } else if (d.status === 'partial') {
+      cliUnlockBadge.textContent = t('settings.cliUnlock.partial');
+      cliUnlockBadge.className = 'key-pill pill-warn';
+    } else if (d.status === 'not_found') {
+      cliUnlockBadge.textContent = t('settings.cliUnlock.notFound');
+      cliUnlockBadge.className = 'key-pill pill-muted';
+    } else if (d.status === 'unsupported') {
+      cliUnlockBadge.textContent = t('settings.cliUnlock.unsupported');
+      cliUnlockBadge.className = 'key-pill pill-danger';
+    } else {
+      cliUnlockBadge.textContent = t('settings.cliUnlock.unpatched');
+      cliUnlockBadge.className = 'key-pill pill-muted';
+    }
+
+    const metaParts = [];
+    if (d.realPath || d.binaryPath) {
+      metaParts.push(t('settings.cliUnlock.metaPath', { path: d.realPath || d.binaryPath }));
+    } else if (d.message) {
+      metaParts.push(translateBackendText(d.message));
+    }
+    if (Array.isArray(d.brokenSymlinks) && d.brokenSymlinks.length > 0) {
+      metaParts.push(t('settings.cliUnlock.brokenLinks', {
+        paths: d.brokenSymlinks.map(s => s.path).join(', ')
+      }));
+    }
+    if (d.configStatus?.configContextWindow) {
+      metaParts.push(`config: ${d.configStatus.configContextWindow}`);
+    }
+    cliUnlockMeta.textContent = metaParts.join(' · ') || '—';
+
+    if (btnCliUnlockApply) {
+      const blocked = d.status === 'not_found' || d.status === 'unsupported' || d.status === 'partial';
+      btnCliUnlockApply.disabled = isCliUnlockBusy || blocked;
+      btnCliUnlockApply.textContent = isCliUnlockBusy ? t('settings.cliUnlock.busy') : t('settings.cliUnlock.applyBtn');
+    }
+  }
+
+  async function refreshCliUnlockDisplay(opts = {}) {
+    try {
+      const res = await invokeCliUnlockApi('status', opts);
+      currentCliUnlockStatus = res;
+      renderCliUnlockState(res);
+      return res;
+    } catch (err) {
+      const fallback = { ok: false, error: err?.message || t('msg.unknownErr') };
+      currentCliUnlockStatus = fallback;
+      renderCliUnlockState(fallback);
+      return fallback;
+    }
+  }
+
+  btnCliUnlockRefresh?.addEventListener('click', () => {
+    void refreshCliUnlockDisplay();
+  });
+
+  btnCliUnlockApply?.addEventListener('click', async () => {
+    if (isCliUnlockBusy) return;
+    isCliUnlockBusy = true;
+    renderCliUnlockState(currentCliUnlockStatus);
+    if (cliUnlockResultBox) cliUnlockResultBox.style.display = 'none';
+    try {
+      const res = await invokeCliUnlockApi('apply', { mode: 'dynamic' });
+      if (!res || !res.ok) {
+        if (cliUnlockResultBox && cliUnlockResultText) {
+          cliUnlockResultBox.className = 'unlock-result-box result-error';
+          cliUnlockResultBox.style.display = 'block';
+          cliUnlockResultText.textContent = buildFriendlyWriteError(res?.error);
+        }
+      } else {
+        if (cliUnlockResultBox && cliUnlockResultText) {
+          cliUnlockResultBox.className = 'unlock-result-box result-success';
+          cliUnlockResultBox.style.display = 'block';
+          const syncN = Array.isArray(res.syncedConfigs) ? res.syncedConfigs.length : 0;
+          cliUnlockResultText.textContent = syncN > 0
+            ? `${res.message || ''} (${t('settings.cliUnlock.metaCfg', { n: syncN })})`
+            : (res.message || t('msg.applied'));
+        }
+      }
+      await refreshCliUnlockDisplay();
+    } catch (err) {
+      if (cliUnlockResultBox && cliUnlockResultText) {
+        cliUnlockResultBox.className = 'unlock-result-box result-error';
+        cliUnlockResultBox.style.display = 'block';
+        cliUnlockResultText.textContent = buildFriendlyWriteError(err?.message);
+      }
+    } finally {
+      isCliUnlockBusy = false;
+      renderCliUnlockState(currentCliUnlockStatus);
+    }
+  });
+
   // 静默初始化检测一次解锁状态与各模块状态
   setTimeout(() => {
     void refreshUnlockStatus();
     void refreshModulesDisplay();
+    void refreshCliUnlockDisplay();
   }, 500);
   setTimeout(() => {
     if (currentChineseEnabled) {
@@ -14479,315 +12855,6 @@
   el('heat-legend-scale')?.addEventListener('click', () => toggleTokenColorsDrawer(true));
 
   // 热力图视图切换（每天 / 每周 / 累计总量）
-
-  // 费用估算范围（默认本期：自然月）与估值模式（默认参考模型折算，首屏展示真实用量价值）
-  let activeCostScope = 'period'; // 'period' | 'all'
-  let costModelMode = 'ref'; // 'ref' | 'hybrid' | 'identified'
-  let activeRefMode = 'all'; // 兼容旧接口 'all' | 'hybrid'
-
-  function switchCostScope(scope) {
-    activeCostScope = scope;
-    setPillActive(el('cost-btn-scope-period'), scope === 'period');
-    setPillActive(el('cost-btn-scope-all'), scope === 'all');
-    renderActiveCostEstimateView();
-  }
-  el('cost-btn-scope-period')?.addEventListener('click', () => switchCostScope('period'));
-  el('cost-btn-scope-all')?.addEventListener('click', () => switchCostScope('all'));
-
-  function switchCostModelMode(mode) {
-    costModelMode = mode;
-    setPillActive(el('cost-btn-mode-ref'), mode === 'ref');
-    setPillActive(el('cost-btn-mode-hybrid'), mode === 'hybrid');
-    setPillActive(el('cost-btn-mode-identified'), mode === 'identified');
-    renderActiveCostEstimateView();
-  }
-  el('cost-btn-mode-ref')?.addEventListener('click', () => switchCostModelMode('ref'));
-  el('cost-btn-mode-hybrid')?.addEventListener('click', () => switchCostModelMode('hybrid'));
-  el('cost-btn-mode-identified')?.addEventListener('click', () => switchCostModelMode('identified'));
-
-  function toggleRefCostDrawer(forceOpen) {
-    const body = el('ref-cost-drawer-body');
-    const btn = el('btn-toggle-ref-cost-drawer');
-    if (!body) return;
-    const curHidden = body.style.display === 'none' || !body.style.display;
-    const next = typeof forceOpen === 'boolean' ? forceOpen : curHidden;
-    body.style.display = next ? 'block' : 'none';
-    if (btn) btn.textContent = next ? t('cost.btnCollapse') : t('cost.btnExpand');
-  }
-  el('btn-toggle-ref-cost-drawer')?.addEventListener('click', () => toggleRefCostDrawer());
-
-  function switchRefMode(mode) {
-    activeRefMode = mode;
-    costModelMode = mode === 'hybrid' ? 'hybrid' : 'ref';
-    setPillActive(el('btn-ref-mode-all'), mode === 'all');
-    setPillActive(el('btn-ref-mode-hybrid'), mode === 'hybrid');
-    renderActiveCostEstimateView();
-  }
-  el('btn-ref-mode-all')?.addEventListener('click', () => switchRefMode('all'));
-  el('btn-ref-mode-hybrid')?.addEventListener('click', () => switchRefMode('hybrid'));
-
-  function renderActiveCostEstimateView() {
-    const isPeriod = activeCostScope === 'period';
-    const titleEl = el('cost-card-title');
-    const periodTag = el('cost-period-tag');
-    const grandVal = el('cost-grand-val');
-    const grandSub = el('cost-grand-sub');
-    const covPill = el('cost-coverage-pill');
-    const subSpendVal = el('cost-sub-spend-val');
-    const subSpendLbl = el('cost-sub-spend-lbl');
-    const subNote = el('cost-sub-compare-note');
-    const usageSummary = el('cost-usage-summary');
-    const diffSummary = el('cost-diff-summary');
-    const breakdown = el('cost-breakdown-info');
-
-    // 分类卡片 DOM
-    const inVal = el('ref-cost-input-val');
-    const inTok = el('ref-cost-input-tok');
-    const caVal = el('ref-cost-cache-val');
-    const caTok = el('ref-cost-cache-tok');
-    const outVal = el('ref-cost-output-val');
-    const outTok = el('ref-cost-output-tok');
-
-    if (titleEl) titleEl.textContent = isPeriod ? t('cost.title') : t('cost.titleAll');
-    if (periodTag) {
-      const pKey = ANTIGRAVITY_TOKEN_DATA.currentPeriod?.label || t('cost.periodTag');
-      periodTag.textContent = isPeriod ? pKey : t('cost.allHistory');
-    }
-
-    // 1. 提取当前范围真实用量与折算数据
-    const curIn = isPeriod
-      ? Number(ANTIGRAVITY_TOKEN_DATA.summary?.currentMonthInput || 0)
-      : Number(ANTIGRAVITY_TOKEN_DATA.summary?.totalInputTokens || 0);
-    const curCa = isPeriod
-      ? Number(ANTIGRAVITY_TOKEN_DATA.summary?.currentMonthCache || 0)
-      : Number(ANTIGRAVITY_TOKEN_DATA.summary?.totalCacheTokens || 0);
-    const curOut = isPeriod
-      ? Number(ANTIGRAVITY_TOKEN_DATA.summary?.currentMonthOutput || 0)
-      : Number(ANTIGRAVITY_TOKEN_DATA.summary?.totalOutputTokens || 0);
-    const curTotal = isPeriod
-      ? Number(ANTIGRAVITY_TOKEN_DATA.summary?.monthTokens || (curIn + curCa + curOut))
-      : Number(ANTIGRAVITY_TOKEN_DATA.summary?.grandTotalTokens || (curIn + curCa + curOut));
-
-    const refAll = ANTIGRAVITY_TOKEN_DATA.referenceCost?.all || {};
-    const refMonth = ANTIGRAVITY_TOKEN_DATA.referenceCost?.currentMonth || {};
-    const refHybridAll = ANTIGRAVITY_TOKEN_DATA.referenceCost?.hybrid || {};
-    const refHybridMonth = ANTIGRAVITY_TOKEN_DATA.referenceCost?.currentMonthHybrid || refHybridAll;
-
-    const curRef = isPeriod ? refMonth : refAll;
-    const curHybrid = isPeriod ? refHybridMonth : refHybridAll;
-
-    const ceSourceMap = ANTIGRAVITY_TOKEN_DATA.costEstimateBySource || {};
-    const ceAll = ceSourceMap[activeTokenSource] || ceSourceMap.all || ANTIGRAVITY_TOKEN_DATA.costEstimate || {};
-    const cePeriod = ANTIGRAVITY_TOKEN_DATA.costEstimateCurrentMonth || ceAll;
-    const curIdentified = isPeriod ? cePeriod : ceAll;
-
-    let apiCost = 0;
-    let pillText = t('cost.covFull');
-    let pillClass = 'key-pill pill-good';
-
-    // 2. 估值模式计算
-    let effectiveRef = curRef;
-    if ((effectiveRef.totalCostUSD === undefined || effectiveRef.totalCostUSD === null) && curTotal > 0) {
-      const core = typeof __AGContextMeterCore !== 'undefined' ? __AGContextMeterCore : null;
-      if (core && core.calculateReferenceModelCost) {
-        effectiveRef = core.calculateReferenceModelCost({
-          inputTokens: curIn,
-          outputTokens: curOut,
-          cacheTokens: curCa,
-          totalTokens: curTotal
-        }, 'gemini-3.8-flash', { pricingDate: '2026-11-09', mode: 'all' });
-      }
-    }
-
-    const rateIn = Number(effectiveRef.matchedTier?.inputPerMillion ?? 0.75);
-    const rateCa = Number(effectiveRef.matchedTier?.cacheReadPerMillion ?? 0.075);
-    const rateOut = Number(effectiveRef.matchedTier?.outputPerMillion ?? 3.75);
-
-    // 更新小摘要来源与时间描述行及非实付常驻标识
-    const scopeDescEl = el('cost-scope-desc');
-    if (scopeDescEl) {
-      const srcName = activeTokenSource === 'desktop' ? t('tokens.srcDesktopLabel') : activeTokenSource === 'cli' ? 'CLI' : t('tokens.srcAllLabel');
-      const pLabel = isPeriod ? (ANTIGRAVITY_TOKEN_DATA.currentPeriod?.label || t('cost.periodTag')) : t('cost.allHistory');
-      scopeDescEl.textContent = `${srcName} · ${pLabel}`;
-    }
-    const nonPaidBadge = el('cost-non-paid-badge');
-    if (nonPaidBadge) nonPaidBadge.textContent = t('cost.nonPaidBadge');
-
-    if (costModelMode === 'ref') {
-      apiCost = Number(effectiveRef.totalCostUSD || 0);
-      if (grandVal) {
-        if (apiCost > 0) {
-          grandVal.textContent = t('cost.approx', { val: apiCost.toFixed(2) });
-          grandVal.title = `$${apiCost.toFixed(4)}`;
-        } else if (curTotal > 0 && curIn === 0 && curCa === 0 && curOut === 0) {
-          grandVal.textContent = t('cost.notReady');
-          grandVal.title = t('cost.notReady');
-        } else {
-          grandVal.textContent = '$0.00';
-          grandVal.title = t('cost.noRecords');
-        }
-      }
-      if (grandSub) {
-        grandSub.textContent = t('cost.refSub', {
-          model: effectiveRef.modelDisplayName || 'Gemini 3.8 Flash',
-          in: rateIn.toFixed(2),
-          ca: rateCa.toFixed(3),
-          out: rateOut.toFixed(2)
-        });
-      }
-      pillText = t('cost.modeRef');
-      pillClass = 'key-pill pill-muted';
-
-      if (inVal) inVal.textContent = `$${Number(effectiveRef.inputCostUSD || (curIn * rateIn / 1e6)).toFixed(2)}`;
-      if (inTok) inTok.textContent = `${fmtYi(curIn)} tok`;
-      if (caVal) caVal.textContent = `$${Number(effectiveRef.cacheCostUSD || (curCa * rateCa / 1e6)).toFixed(2)}`;
-      if (caTok) caTok.textContent = t('cost.tokCacheDiscount', { tok: fmtYi(curCa) });
-      if (outVal) outVal.textContent = `$${Number(effectiveRef.outputCostUSD || (curOut * rateOut / 1e6)).toFixed(2)}`;
-      if (outTok) outTok.textContent = `${fmtYi(curOut)} tok`;
-    } else if (costModelMode === 'hybrid') {
-      const h = curHybrid.hybrid || {};
-      apiCost = Number(h.combinedTotalUSD || effectiveRef.totalCostUSD || 0);
-      if (grandVal) {
-        grandVal.textContent = t('cost.approx', { val: apiCost.toFixed(2) });
-        grandVal.title = t('cost.hybridSub', { known: h.knownCostUSD || 0, res: h.unpricedResidualCostUSD || 0 });
-      }
-      if (grandSub) {
-        grandSub.textContent = t('cost.hybridSub', {
-          known: Number(h.knownCostUSD || 0).toFixed(2),
-          res: Number(h.unpricedResidualCostUSD || 0).toFixed(2)
-        });
-      }
-      pillText = t('cost.hybridBadge');
-      pillClass = 'key-pill pill-muted';
-
-      const rb = h.residualTokensBreakdown || {};
-      if (inVal) inVal.textContent = `$${Number(rb.inputCostUSD || (Number(rb.input || 0) * rateIn / 1e6)).toFixed(2)}`;
-      if (inTok) inTok.textContent = t('cost.tokResidual', { tok: fmtYi(rb.input || 0) });
-      if (caVal) caVal.textContent = `$${Number(rb.cacheCostUSD || (Number(rb.cache || 0) * rateCa / 1e6)).toFixed(2)}`;
-      if (caTok) caTok.textContent = t('cost.tokResidual', { tok: fmtYi(rb.cache || 0) });
-      if (outVal) outVal.textContent = `$${Number(rb.outputCostUSD || (Number(rb.output || 0) * rateOut / 1e6)).toFixed(2)}`;
-      if (outTok) outTok.textContent = t('cost.tokResidual', { tok: fmtYi(rb.output || 0) });
-    } else {
-      // 仅已识别真实模型
-      const pricedCount = Number(curIdentified.pricedRequestsCount || 0);
-      const unpricedCount = Number(curIdentified.unpricedRequestsCount || 0);
-      const totalCount = pricedCount + unpricedCount;
-      apiCost = Number(curIdentified.pricedCostUSD || 0);
-
-      if (grandVal) {
-        if (totalCount === 0) {
-          grandVal.textContent = t('cost.noRecords');
-        } else if (pricedCount === 0) {
-          grandVal.textContent = t('cost.unpriced');
-          grandVal.title = t('cost.identSubNone');
-        } else if (apiCost < 0.01 && apiCost > 0) {
-          grandVal.textContent = '<$0.01';
-          grandVal.title = `$${apiCost.toFixed(6)}`;
-        } else {
-          grandVal.textContent = `$${apiCost.toFixed(2)}`;
-          grandVal.title = `$${apiCost.toFixed(4)}`;
-        }
-      }
-      if (grandSub) {
-        grandSub.textContent = pricedCount > 0
-          ? t('cost.identSub', { n: pricedCount })
-          : t('cost.identSubNone');
-      }
-      if (pricedCount === 0) {
-        pillText = t('cost.covPct', { pct: 0 });
-        pillClass = 'key-pill pill-warn';
-      } else {
-        const pct = curIdentified.coveragePercent != null ? curIdentified.coveragePercent : 0;
-        pillText = t('cost.covPct', { pct });
-        pillClass = `key-pill ${pct >= 100 ? 'pill-good' : 'pill-warn'}`;
-      }
-
-      if (inVal) inVal.textContent = `$${((curIdentified.byCategory?.inputTokens || 0) * rateIn / 1e6).toFixed(2)}`;
-      if (inTok) inTok.textContent = `${fmtYi(curIdentified.byCategory?.inputTokens || 0)} tok`;
-      if (caVal) caVal.textContent = `$${((curIdentified.byCategory?.cacheTokens || 0) * rateCa / 1e6).toFixed(2)}`;
-      if (caTok) caTok.textContent = `${fmtYi(curIdentified.byCategory?.cacheTokens || 0)} tok`;
-      if (outVal) outVal.textContent = `$${((curIdentified.byCategory?.outputTokens || 0) * rateOut / 1e6).toFixed(2)}`;
-      if (outTok) outTok.textContent = `${fmtYi(curIdentified.byCategory?.outputTokens || 0)} tok`;
-    }
-
-    if (covPill) {
-      covPill.textContent = pillText;
-      covPill.className = pillClass;
-      covPill.setAttribute?.('class', pillClass);
-    }
-
-    // 3. 用户实际支出渲染（首屏并列右栏）
-    const ps = ANTIGRAVITY_TOKEN_DATA.planStatus || {};
-    const curSymbol = ps.currencySymbol || '$';
-    if (subSpendLbl) subSpendLbl.textContent = t('cost.subSpendLabel');
-
-    const extraNoCompare = isPeriod ? '' : t('cost.allNoCompare');
-    if (subSpendVal && subNote) {
-      if (ps.actualPricePaid === 0 || ps.isZeroExtraCost) {
-        subSpendVal.textContent = `${curSymbol}0`;
-        subNote.textContent = t('cost.freeActive', { src: ps.acquisitionSourceName || t('cost.freePromo'), extra: extraNoCompare });
-      } else if (ps.actualPricePaid !== null && ps.actualPricePaid !== undefined) {
-        subSpendVal.textContent = `${curSymbol}${Number(ps.actualPricePaid).toFixed(2)}`;
-        const expTag = ps.isExpired ? t('cost.expiredTag') : '';
-        subNote.textContent = `${ps.acquisitionSourceName || t('cost.subSpend')} · ${t('cost.paidLabel')} (${ps.billingCycle || t('plan.summary.perMonth')})${expTag}${extraNoCompare}`;
-      } else if (ps.officialPriceMonthly !== null && ps.officialPriceMonthly !== undefined) {
-        subSpendVal.textContent = t('cost.paidUnknown');
-        subNote.textContent = `${t('cost.publicRefMonthly', { p: ps.officialPriceMonthly })}${extraNoCompare}`;
-      } else {
-        subSpendVal.textContent = t('cost.unknown');
-        subNote.textContent = t('cost.noPlanData');
-      }
-    }
-
-    const subLine = el('cost-sub-line');
-    if (subLine) {
-      if (ps.actualPricePaid === 0 || ps.isZeroExtraCost) {
-        subLine.textContent = t('cost.subLineFree', { sym: curSymbol, src: ps.acquisitionSourceName || t('plan.tag.promo') });
-      } else if (ps.actualPricePaid !== null && ps.actualPricePaid !== undefined) {
-        const cnyPart = (ps.currency !== 'CNY' && ps.cnyFormatted) ? ` (${ps.cnyFormatted})` : '';
-        subLine.textContent = t('cost.subLinePaid', {
-          sym: curSymbol,
-          val: Number(ps.actualPricePaid).toFixed(2),
-          cny: cnyPart,
-          cycle: ps.billingCycle || t('plan.summary.perMonth'),
-          exp: ps.isExpired ? ' · ⚠️' : ''
-        });
-      } else {
-        subLine.textContent = t('cost.subUnknown');
-      }
-    }
-
-    // 4. 用量与参考差额指标条（注明累计处理 Token，含缓存读取）
-    if (usageSummary) {
-      usageSummary.textContent = t('cost.usageSummary', { total: fmtYi(curTotal), cache: fmtYi(curCa) });
-    }
-    if (diffSummary) {
-      if (!isPeriod) {
-        diffSummary.textContent = t('cost.diffAll');
-      } else if (ps.actualPricePaid === 0 || ps.isZeroExtraCost) {
-        diffSummary.textContent = t('cost.diffFree', { val: apiCost.toFixed(2) });
-      } else if (ps.actualPricePaid !== null && ps.currency === 'USD') {
-        const diff = apiCost - Number(ps.actualPricePaid);
-        diffSummary.textContent = t('cost.diffPaid', { sign: diff >= 0 ? '+' : '', val: diff.toFixed(2) });
-      } else {
-        diffSummary.textContent = t('cost.diffUnknown');
-      }
-    }
-
-    // 5. 详细未计价原因说明
-    if (breakdown) {
-      const modelKeys = Object.keys(curIdentified.byModel || {});
-      const modelDetails = modelKeys.map(k => `${k}: $${curIdentified.byModel[k].costUSD} (${fmt(curIdentified.byModel[k].tokens)} tok)`).join('; ');
-      breakdown.textContent = t('cost.breakdownPrefix', {
-        details: modelDetails || t('cost.breakdownNone'),
-        note: ''
-      });
-    }
-
-    // 6. 兼容性辅助隐藏层同步
-    const refGrand = el('ref-cost-grand-val');
-    if (refGrand) refGrand.textContent = t('cost.refApprox', { val: Number(curRef.totalCostUSD || 0).toFixed(2) });
-  }
 
   const heatPop = el('heat-pop');
   const heatPopDate = el('heat-pop-date');
@@ -14921,6 +12988,7 @@
       closeColorPicker(true);
       toggle(false);
       hideContextTooltip();
+      hideTopbarActionTooltip(true);
       const om = el('overflow-menu');
       if (om) om.hidden = true;
       syncHostStackingElevation(false);
@@ -14959,6 +13027,7 @@
       }
       toggle(false);
       hideContextTooltip();
+      hideTopbarActionTooltip(true);
       const om = el('overflow-menu');
       if (om) om.hidden = true;
       syncHostStackingElevation(false);
@@ -15165,8 +13234,7 @@
     const hasExistingData = Number(ANTIGRAVITY_TOKEN_DATA.summary?.grandTotalTokens) > 0;
     const incomingKeys = Object.keys(payload.dailyMap || {});
     const incomingTotal = Number(payload.summary?.grandTotalTokens) || incomingKeys.reduce((acc, k) => acc + (Number(payload.dailyMap[k]?.total) || 0), 0);
-    const hasIncomingRefCost = Boolean(payload.referenceCost?.currentMonth?.totalCostUSD || payload.referenceCost?.all?.totalCostUSD);
-    const hasIncomingPayloadContent = incomingKeys.length > 0 || incomingTotal > 0 || hasIncomingRefCost;
+    const hasIncomingPayloadContent = incomingKeys.length > 0 || incomingTotal > 0;
     if (hasExistingData && !hasIncomingPayloadContent && !payload.isAccountSwitched && !payload.forceReset) {
       return false;
     }
@@ -15183,7 +13251,6 @@
       ANTIGRAVITY_TOKEN_DATA.dailyMap = normalized.dailyMap;
       ANTIGRAVITY_TOKEN_DATA.dailyMapBySource = normalized.dailyMapBySource;
       ANTIGRAVITY_TOKEN_DATA.summary = normalized.summary;
-      ANTIGRAVITY_TOKEN_DATA.referenceCost = normalized.referenceCost;
       ANTIGRAVITY_TOKEN_DATA.currentPeriod = normalized.currentPeriod;
       if (normalized.firstUseDate) ANTIGRAVITY_TOKEN_DATA.firstUseDate = normalized.firstUseDate;
       if (normalized.updatedAt) ANTIGRAVITY_TOKEN_DATA.updatedAt = normalized.updatedAt;
@@ -15206,30 +13273,28 @@
       if (payload.firstUseDate) ANTIGRAVITY_TOKEN_DATA.firstUseDate = payload.firstUseDate;
       if (payload.updatedAt) ANTIGRAVITY_TOKEN_DATA.updatedAt = payload.updatedAt;
       if (payload.currentPeriod) ANTIGRAVITY_TOKEN_DATA.currentPeriod = payload.currentPeriod;
-      if (payload.referenceCost) ANTIGRAVITY_TOKEN_DATA.referenceCost = payload.referenceCost;
 
       const keys = Object.keys(newMap).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k) && newMap[k]?.total > 0).sort();
       const monthPrefix = todayStr.slice(0, 7);
       const yearPrefix = todayStr.slice(0, 4);
-      let totalTokens = 0, todayTokens = 0, monthTokens = 0, yearTokens = 0, monthDays = 0;
+      let totalTokens = 0, todayTokens = 0, monthTokens = 0, yearTokens = 0;
       let totalInput = 0, totalOutput = 0, totalCache = 0;
       let curMonthInput = 0, curMonthOutput = 0, curMonthCache = 0;
       for (const k of keys) {
         const r = newMap[k];
-        const t = Number(r.total) || 0;
-        totalTokens += t;
+        const tok = Number(r.total) || 0;
+        totalTokens += tok;
         totalInput += Number(r.input) || 0;
         totalOutput += Number(r.output) || 0;
         totalCache += Number(r.cache) || 0;
-        if (k === todayStr) todayTokens += t;
+        if (k === todayStr) todayTokens += tok;
         if (k.startsWith(monthPrefix)) {
-          monthTokens += t;
+          monthTokens += tok;
           curMonthInput += Number(r.input) || 0;
           curMonthOutput += Number(r.output) || 0;
           curMonthCache += Number(r.cache) || 0;
-          monthDays += 1;
         }
-        if (k.startsWith(yearPrefix)) yearTokens += t;
+        if (k.startsWith(yearPrefix)) yearTokens += tok;
       }
       const rawSum = payload.summary || {};
       ANTIGRAVITY_TOKEN_DATA.summary = {
@@ -15250,49 +13315,10 @@
       };
     }
 
-    if (payload.planStatus || payload.customPlanSettings) {
-      let mergedPlan = payload.planStatus || ANTIGRAVITY_TOKEN_DATA.planStatus || {};
-      try {
-        const email = mergedPlan.email || 'default';
-        let customObj = lastSavedCustomPlan || payload.customPlanSettings || null;
-        if (!customObj && typeof window !== 'undefined' && window.__AGContextMeterSettings?.customPlan) {
-          customObj = window.__AGContextMeterSettings.customPlan;
-        }
-        if (!customObj) {
-          const savedCustomRaw = localStorage?.getItem('ag_custom_plan_' + email.toLowerCase()) || localStorage?.getItem('ag_custom_plan_default');
-          if (savedCustomRaw) customObj = JSON.parse(savedCustomRaw);
-        }
-        if (customObj && typeof customObj === 'object') {
-          lastSavedCustomPlan = { ...customObj };
-          try {
-            const jsonStr = JSON.stringify(customObj);
-            if (email && email !== 'default') localStorage?.setItem('ag_custom_plan_' + email.toLowerCase(), jsonStr);
-            localStorage?.setItem('ag_custom_plan_default', jsonStr);
-          } catch {}
-          if (core && core.resolveEffectivePlanStatus) {
-            mergedPlan = core.resolveEffectivePlanStatus(payload.rawPlanStatus || payload.planStatus, customObj, { currentEmail: email });
-          }
-        }
-      } catch {}
-      ANTIGRAVITY_TOKEN_DATA.planStatus = mergedPlan;
-      ANTIGRAVITY_TOKEN_DATA.rawPlanStatus = payload.rawPlanStatus || payload.planStatus || mergedPlan;
-      renderPlanDetail(mergedPlan);
-    }
-
-    if (payload.costEstimate) {
-      ANTIGRAVITY_TOKEN_DATA.costEstimate = payload.costEstimate;
-    }
-    if (payload.costEstimateCurrentMonth) {
-      ANTIGRAVITY_TOKEN_DATA.costEstimateCurrentMonth = payload.costEstimateCurrentMonth;
-    }
-    if (payload.costEstimateBySource) {
-      ANTIGRAVITY_TOKEN_DATA.costEstimateBySource = payload.costEstimateBySource;
-    } else if (payload.costEstimate) {
-      ANTIGRAVITY_TOKEN_DATA.costEstimateBySource = {
-        all: payload.costEstimate,
-        desktop: payload.costEstimate,
-        cli: { pricedCostUSD: 0, pricedRequestsCount: 0, unpricedRequestsCount: 0, coveragePercent: null, byModel: {} }
-      };
+    if (payload.planStatus) {
+      ANTIGRAVITY_TOKEN_DATA.planStatus = payload.planStatus;
+      ANTIGRAVITY_TOKEN_DATA.rawPlanStatus = payload.rawPlanStatus || payload.planStatus;
+      renderPlanDetail(payload.planStatus);
     }
 
     // 重新汇总卡片统计与顶栏
@@ -15336,47 +13362,6 @@
     if (tMonthSub) tMonthSub.textContent = t('tokens.card.monthSub', { val: fmtCardM(avgMonth) });
     if (tYearVal) tYearVal.textContent = fmtCardM(yearTokens);
     if (tYearSub) tYearSub.textContent = t('tokens.card.yearSub', { n: totalDays });
-
-    // 聚合全周期各区间预估费用
-    const allDateKeys = Object.keys(ANTIGRAVITY_TOKEN_DATA.dailyMap || {});
-    const nowYmd = todayStr;
-    const thisMonthPrefix = nowYmd.slice(0, 7);
-    const thisYearPrefix = nowYmd.slice(0, 4);
-
-    const todayCostInfo = getDailyModelCost(ANTIGRAVITY_TOKEN_DATA.dailyMap[nowYmd], nowYmd, activeCostModel, { mode: activeCostMode });
-    const todayCostCny = convertToCNY(todayCostInfo.costUSD, 'USD');
-
-    const totalCostAgg = calculateIntervalCost(ANTIGRAVITY_TOKEN_DATA.dailyMap, allDateKeys, activeCostModel, { mode: activeCostMode, todayStr: nowYmd });
-    const totalCostCny = convertToCNY(totalCostAgg.totalCostUSD, 'USD');
-
-    const monthKeys = allDateKeys.filter(k => k.startsWith(thisMonthPrefix) && k <= nowYmd);
-    const monthCostAgg = calculateIntervalCost(ANTIGRAVITY_TOKEN_DATA.dailyMap, monthKeys, activeCostModel, { mode: activeCostMode, todayStr: nowYmd });
-    const monthCostCny = convertToCNY(monthCostAgg.totalCostUSD, 'USD');
-
-    const yearKeys = allDateKeys.filter(k => k.startsWith(thisYearPrefix) && k <= nowYmd);
-    const yearCostAgg = calculateIntervalCost(ANTIGRAVITY_TOKEN_DATA.dailyMap, yearKeys, activeCostModel, { mode: activeCostMode, todayStr: nowYmd });
-    const yearCostCny = convertToCNY(yearCostAgg.totalCostUSD, 'USD');
-
-    const tTotalCost = el('t-total-cost');
-    const tTodayCost = el('t-today-cost');
-    const tMonthCost = el('t-month-cost');
-    const tYearCost = el('t-year-cost');
-
-    if (tTotalCost) {
-      tTotalCost.textContent = `≈ $${totalCostAgg.totalCostUSD.toFixed(2)}${totalCostCny !== null ? ` (¥${totalCostCny.toFixed(2)})` : ''}${t('tokens.dailyAvg', { val: totalCostAgg.dailyAverageUSD.toFixed(2) })}`;
-    }
-    if (tTodayCost) {
-      tTodayCost.textContent = `≈ $${todayCostInfo.costUSD.toFixed(2)}${todayCostCny !== null ? ` (¥${todayCostCny.toFixed(2)})` : ''}`;
-    }
-    if (tMonthCost) {
-      tMonthCost.textContent = `≈ $${monthCostAgg.totalCostUSD.toFixed(2)}${monthCostCny !== null ? ` (¥${monthCostCny.toFixed(2)})` : ''}${t('tokens.dailyAvg', { val: monthCostAgg.dailyAverageUSD.toFixed(2) })}`;
-    }
-    if (tYearCost) {
-      tYearCost.textContent = `≈ $${yearCostAgg.totalCostUSD.toFixed(2)}${yearCostCny !== null ? ` (¥${yearCostCny.toFixed(2)})` : ''}${t('tokens.dailyAvg', { val: yearCostAgg.dailyAverageUSD.toFixed(2) })}`;
-    }
-
-    // 规范化已完整保留输入/缓存/输出分类，执行费用视图渲染
-    renderActiveCostEstimateView();
 
     computeTimelineWindow();
     renderActiveHeatView(true);
@@ -15475,6 +13460,7 @@
         renderHeaderModelDropdown();
         if (!ctxDraftDirty) loadDraftFromSelectedModel(true);
         else renderCompactSessionCard();
+        renderSessionQuickActions();
         const savedView = settingsRes.savedHeatView || settingsRes.uiPreferences?.savedHeatView;
         if (savedView && ['daily', 'weekly', 'monthly', 'yearly', 'cum'].includes(savedView)) {
           switchHeatView(savedView, false);
@@ -15492,35 +13478,11 @@
         } catch {}
       }
 
-      if (settingsRes?.ok && settingsRes.customPlan && typeof settingsRes.customPlan === 'object') {
-        lastSavedCustomPlan = { ...settingsRes.customPlan };
-        if (typeof window !== 'undefined') {
-          window.__AGContextMeterSettings = {
-            ok: true,
-            customPlan: { ...settingsRes.customPlan },
-            contextPreferences: { ...contextPreferencesMap }
-          };
-        }
-
-        const email = ANTIGRAVITY_TOKEN_DATA.planStatus?.email || settingsRes.customPlan?.account || currentEmail || 'default';
-        try {
-          const jsonStr = JSON.stringify(settingsRes.customPlan);
-          if (email && email !== 'default') localStorage?.setItem('ag_custom_plan_' + String(email).toLowerCase(), jsonStr);
-          localStorage?.setItem('ag_custom_plan_default', jsonStr);
-        } catch {}
-        applyCustomPlanObjectLocally(settingsRes.customPlan, email);
-      } else {
-        // 回退检查 localStorage
-        const email = ANTIGRAVITY_TOKEN_DATA.planStatus?.email || 'default';
-        const key = email && email !== 'default' ? 'ag_custom_plan_' + String(email).toLowerCase() : 'ag_custom_plan_default';
-        const savedRaw = localStorage?.getItem(key) || localStorage?.getItem('ag_custom_plan_default');
-        if (savedRaw) {
-          const parsed = JSON.parse(savedRaw);
-          if (parsed && typeof parsed === 'object') {
-            lastSavedCustomPlan = { ...parsed };
-            applyCustomPlanObjectLocally(parsed, parsed.account || email);
-          }
-        }
+      if (settingsRes?.ok && typeof window !== 'undefined') {
+        window.__AGContextMeterSettings = {
+          ok: true,
+          contextPreferences: { ...contextPreferencesMap }
+        };
       }
     } catch {}
   }
@@ -15638,10 +13600,7 @@
             ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
             : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
           heatPopDate.textContent = `${dateLabel}${item.isToday ? t('heat.today') : (item.key === win.firstStr ? t('heat.firstUse') : '')}`;
-          const costInfo = getDailyModelCost(item.rec, item.key, activeCostModel, { mode: activeCostMode });
-          const cny = convertToCNY(costInfo.costUSD, 'USD');
-          const costStr = costInfo.costUSD > 0 ? ` · ≈ $${costInfo.costUSD.toFixed(2)}${cny !== null ? ` (¥${cny.toFixed(2)})` : ''}` : '';
-          heatPopVal.textContent = item.tokens > 0 ? `${fmtYi(item.tokens)} Tokens${costStr}` : (item.isFuture ? t('heat.future') : '0 Tokens');
+          heatPopVal.textContent = item.tokens > 0 ? `${fmtYi(item.tokens)} Tokens` : (item.isFuture ? t('heat.future') : '0 Tokens');
           if (item.rec) {
             heatPopDet.innerHTML = `
               <div class="pop-det-col"><span class="pop-det-val">Prompt: ${fmtYi(item.rec.input)}</span><span class="pop-det-trans">${t('heat.prompt')}</span></div>
@@ -15721,15 +13680,12 @@
       const showPop = () => {
         const weekDates = [];
         for (let r = 0; r < 7; r++) weekDates.push(formatLocalYmd(addDays(w.sDate, r)));
-        const costAgg = calculateIntervalCost(ANTIGRAVITY_TOKEN_DATA.dailyMap, weekDates, activeCostModel, {
-          mode: activeCostMode,
+        const tokAgg = calculateIntervalTokens(ANTIGRAVITY_TOKEN_DATA.dailyMap, weekDates, {
           todayStr: formatLocalYmd(win.today)
         });
-        const cny = convertToCNY(costAgg.totalCostUSD, 'USD');
-        const costStr = costAgg.totalCostUSD > 0 ? ` · ≈ $${costAgg.totalCostUSD.toFixed(2)}${cny !== null ? ` (¥${cny.toFixed(2)})` : ''}` : '';
         heatPopDate.textContent = `${w.sDate.getFullYear()}.${w.sDate.getMonth() + 1}.${w.sDate.getDate()} - ${w.eDate.getMonth() + 1}.${w.eDate.getDate()}`;
-        heatPopVal.textContent = w.sum > 0 ? `${fmtYi(w.sum)} Tokens${costStr}` : '0 Tokens';
-        heatPopDet.innerHTML = `<span>${t('heat.weeklyTotal', { avg: costAgg.dailyAverageUSD.toFixed(2) })}</span>`;
+        heatPopVal.textContent = w.sum > 0 ? `${fmtYi(w.sum)} Tokens` : '0 Tokens';
+        heatPopDet.innerHTML = `<span>${t('heat.weeklyTotal', { avg: fmtYi(tokAgg.dailyAverageTokens) })}</span>`;
         heatPopDet.style.display = 'block';
         const r = col.getBoundingClientRect();
         heatPop.style.left = `${r.left + r.width / 2}px`;
@@ -15834,18 +13790,15 @@
       for (const k of Object.keys(map)) {
         if (k <= pt.key) cumDates.push(k);
       }
-      const costAgg = calculateIntervalCost(map, cumDates, activeCostModel, {
-        mode: activeCostMode,
+      const tokAgg = calculateIntervalTokens(map, cumDates, {
         todayStr: formatLocalYmd(win.today)
       });
-      const cny = convertToCNY(costAgg.totalCostUSD, 'USD');
-      const costStr = costAgg.totalCostUSD > 0 ? ` · ≈ $${costAgg.totalCostUSD.toFixed(2)}${cny !== null ? ` (¥${cny.toFixed(2)})` : ''}` : '';
       const cumDateLabel = currentPanelLanguage === 'en'
         ? `${pt.date.getFullYear()}-${String(pt.date.getMonth() + 1).padStart(2, '0')}-${String(pt.date.getDate()).padStart(2, '0')}`
         : `${pt.date.getFullYear()}年${pt.date.getMonth() + 1}月${pt.date.getDate()}日`;
       heatPopDate.textContent = `${cumDateLabel}${t('heat.cumSuffix')}`;
-      heatPopVal.textContent = `${fmtYi(pt.val)} Tokens${costStr}`;
-      heatPopDet.innerHTML = `<span>${t('heat.cumTotal', { avg: costAgg.dailyAverageUSD.toFixed(2) })}</span>`;
+      heatPopVal.textContent = `${fmtYi(pt.val)} Tokens`;
+      heatPopDet.innerHTML = `<span>${t('heat.cumTotal', { avg: fmtYi(tokAgg.dailyAverageTokens) })}</span>`;
       heatPopDet.style.display = 'block';
       heatPop.style.left = `${e.clientX}px`;
       heatPop.style.top = `${r.top + (height - (pt.val / max) * (height - 12)) - 6}px`;
@@ -15860,45 +13813,17 @@
 
   function updateSummaryBar(viewType, dateKeys = []) {
     const sumTokensEl = el('h-sum-tokens');
-    const sumCostEl = el('h-sum-cost');
     const sumDailyAvgEl = el('h-sum-daily-avg');
     const sumActiveAvgEl = el('h-sum-active-avg');
-    const subRatioWrapEl = el('h-sum-sub-ratio-wrap');
-    const subRatioEl = el('h-sum-sub-ratio');
-    if (!sumTokensEl || !sumCostEl) return;
+    if (!sumTokensEl) return;
 
     const win = computeTimelineWindow();
     const todayStr = formatLocalYmd(win.today);
-    const costAgg = calculateIntervalCost(ANTIGRAVITY_TOKEN_DATA.dailyMap, dateKeys, activeCostModel, {
-      mode: activeCostMode,
-      todayStr
-    });
+    const tokAgg = calculateIntervalTokens(ANTIGRAVITY_TOKEN_DATA.dailyMap, dateKeys, { todayStr });
 
-    const cny = convertToCNY(costAgg.totalCostUSD, 'USD');
-    sumTokensEl.textContent = `${fmtYi(costAgg.totalTokens)} Tokens`;
-    sumCostEl.textContent = `≈ $${costAgg.totalCostUSD.toFixed(2)}${cny !== null ? ` (¥${cny.toFixed(2)})` : ''}`;
-    sumDailyAvgEl.textContent = `$${costAgg.dailyAverageUSD.toFixed(2)}`;
-    sumActiveAvgEl.textContent = t('heat.activeDays', { avg: costAgg.activeDailyAverageUSD.toFixed(2), days: costAgg.activeDays });
-
-    if ((viewType === 'monthly' || viewType === 'yearly') && subRatioWrapEl && subRatioEl) {
-      const plan = resolveEffectivePlanStatus(ANTIGRAVITY_TOKEN_DATA.planStatus, ANTIGRAVITY_TOKEN_DATA.customPlanSettings);
-      const paidVal = plan.actualPricePaid ?? plan.pricePaid ?? plan.officialPriceMonthly ?? null;
-      const isZeroCost = plan.isZeroExtraCost || paidVal === 0;
-      if (!isZeroCost && paidVal > 0 && costAgg.totalCostUSD > 0) {
-        const subMonthlyUSD = plan.currency === 'USD' ? paidVal : (plan.actualPricePaidCNY ? plan.actualPricePaidCNY / 6.72 : paidVal);
-        if (subMonthlyUSD > 0) {
-          const ratio = (costAgg.totalCostUSD / (viewType === 'yearly' ? subMonthlyUSD * 12 : subMonthlyUSD)).toFixed(1);
-          subRatioEl.textContent = t('heat.roi', { ratio });
-          subRatioWrapEl.style.display = 'inline-flex';
-        } else {
-          subRatioWrapEl.style.display = 'none';
-        }
-      } else {
-        subRatioWrapEl.style.display = 'none';
-      }
-    } else if (subRatioWrapEl) {
-      subRatioWrapEl.style.display = 'none';
-    }
+    sumTokensEl.textContent = `${fmtYi(tokAgg.totalTokens)} Tokens`;
+    if (sumDailyAvgEl) sumDailyAvgEl.textContent = `${fmtYi(tokAgg.dailyAverageTokens)} Tokens`;
+    if (sumActiveAvgEl) sumActiveAvgEl.textContent = t('heat.activeDays', { avg: fmtYi(tokAgg.activeDailyAverageTokens), days: tokAgg.activeDays });
   }
 
   function renderHeatmapMonthly() {
@@ -15973,14 +13898,11 @@
       }
 
       const showPop = () => {
-        const costInfo = getDailyModelCost(rec, k, activeCostModel, { mode: activeCostMode });
-        const cny = convertToCNY(costInfo.costUSD, 'USD');
-        const costStr = costInfo.costUSD > 0 ? ` · ≈ $${costInfo.costUSD.toFixed(2)}${cny !== null ? ` (¥${cny.toFixed(2)})` : ''}` : '';
         const mDateLabel = currentPanelLanguage === 'en'
           ? `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
           : `${targetYear}年${targetMonth + 1}月${day}日`;
         heatPopDate.textContent = `${mDateLabel}${isToday ? t('heat.today') : ''}`;
-        heatPopVal.textContent = tokens > 0 ? `${fmtYi(tokens)} Tokens${costStr}` : (isFuture ? t('heat.future') : '0 Tokens');
+        heatPopVal.textContent = tokens > 0 ? `${fmtYi(tokens)} Tokens` : (isFuture ? t('heat.future') : '0 Tokens');
         if (rec) {
           heatPopDet.innerHTML = `
             <div class="pop-det-col"><span class="pop-det-val">Prompt: ${fmtYi(rec.input)}</span><span class="pop-det-trans">${t('heat.prompt')}</span></div>
@@ -16149,16 +14071,13 @@
       g.appendChild(text);
 
       const showPop = () => {
-        const costAgg = calculateIntervalCost(ANTIGRAVITY_TOKEN_DATA.dailyMap, item.dates, activeCostModel, {
-          mode: activeCostMode,
+        const tokAgg = calculateIntervalTokens(ANTIGRAVITY_TOKEN_DATA.dailyMap, item.dates, {
           todayStr: formatLocalYmd(win.today)
         });
-        const cny = convertToCNY(costAgg.totalCostUSD, 'USD');
-        const costStr = costAgg.totalCostUSD > 0 ? ` · ≈ $${costAgg.totalCostUSD.toFixed(2)}${cny !== null ? ` (¥${cny.toFixed(2)})` : ''}` : '';
         const yearMonthLabel = currentPanelLanguage === 'en' ? `${item.monthName} ${targetYear}` : `${targetYear}年${item.monthName}`;
         heatPopDate.textContent = `${yearMonthLabel}${item.isCurrent ? t('heatmap.pop.inProgress') : (item.monthIndex === peakMonthIndex ? t('heatmap.pop.peak') : '')}`;
-        heatPopVal.textContent = item.tokens > 0 ? `${fmtYi(item.tokens)} Tokens${costStr}` : (item.isFuture ? t('heatmap.pop.future') : '0 Tokens');
-        heatPopDet.innerHTML = `<span>${t('heatmap.pop.monthlyDet', { avg: costAgg.dailyAverageUSD.toFixed(2), days: costAgg.activeDays })}</span>`;
+        heatPopVal.textContent = item.tokens > 0 ? `${fmtYi(item.tokens)} Tokens` : (item.isFuture ? t('heatmap.pop.future') : '0 Tokens');
+        heatPopDet.innerHTML = `<span>${t('heatmap.pop.monthlyDet', { avg: fmtYi(tokAgg.dailyAverageTokens), days: tokAgg.activeDays })}</span>`;
         heatPopDet.style.display = 'block';
 
         const r = g.getBoundingClientRect ? g.getBoundingClientRect() : { left: cx, top: cy, width: radius * 2 };
@@ -16479,6 +14398,323 @@
     }
   }
 
+  let isQuickCompactBusy = false;
+  let isQuickRaiseBusy = false;
+  let quickFeedbackTimer = null;
+
+  function showKeyQuickFeedback(ok, msg) {
+    const fb = el('key-quick-feedback');
+    if (!fb) return;
+    if (quickFeedbackTimer) {
+      clearTimeout(quickFeedbackTimer);
+      quickFeedbackTimer = null;
+    }
+    if (!msg) {
+      fb.textContent = '';
+      fb.hidden = true;
+      fb.className = 'key-quick-feedback';
+      return;
+    }
+    fb.textContent = msg;
+    fb.className = `key-quick-feedback ${ok ? 'is-success' : 'is-error'}`;
+    fb.hidden = false;
+    if (ok) {
+      quickFeedbackTimer = setTimeout(() => {
+        if (fb) fb.hidden = true;
+        quickFeedbackTimer = null;
+      }, 5000);
+    }
+  }
+
+  function resolveSessionRaiseAction() {
+    const scopeMode = getContextScopeMode();
+    const products = getKnownModelProducts();
+    const prod = (activeSessionProductKey && products.find(p => p.productKey === activeSessionProductKey))
+      || getSelectedProductObj()
+      || null;
+    const capSummary = prod ? getProductCapabilitySummary(prod) : null;
+    const pState = prod ? resolveProductPreferenceState(prod) : null;
+    const activePref = scopeMode === 'unified'
+      ? getContextUnifiedPreference()
+      : (pState?.pref || null);
+    const backendUnlocked = Boolean(
+      currentUnlockStatus &&
+      currentUnlockStatus.status !== 'not_patched' &&
+      currentUnlockStatus.status !== 'unsupported'
+    );
+
+    if (activePref?.mode === 'dynamic' && backendUnlocked) {
+      return { canRaise: false, reason: 'already_dynamic', targetTokens: null, targetLabel: null, prod };
+    }
+
+    const obsBudget = Number(state.latest?.budget || 0);
+    let effectiveTokens = 256000;
+    if (activePref?.mode === 'fixed' && Number(activePref.limitTokens) > 0) {
+      effectiveTokens = Number(activePref.limitTokens);
+    } else if (obsBudget > 0) {
+      effectiveTokens = obsBudget;
+    }
+
+    const rawWin = Number(capSummary?.rawWindowMax || capSummary?.maxTokens || 0);
+    const theoMax = Number(capSummary?.modelTheoreticalMaxTokens || 0);
+
+    if (effectiveTokens >= 1000000) {
+      return { canRaise: false, reason: 'already_1m', targetTokens: null, targetLabel: null, prod };
+    }
+    if (theoMax > 0 && theoMax <= 1000000 && effectiveTokens >= theoMax) {
+      return { canRaise: false, reason: 'at_model_max', targetTokens: null, targetLabel: null, prod };
+    }
+    if (rawWin > 0 && rawWin < 300000 && effectiveTokens >= rawWin) {
+      return { canRaise: false, reason: 'at_raw_window', targetTokens: null, targetLabel: null, prod };
+    }
+
+    if (effectiveTokens < 512000 && (!rawWin || rawWin >= 512000)) {
+      const capped = (scopeMode === 'per_model' && theoMax > 0 && theoMax < 512000) ? theoMax : 512000;
+      if (capped <= effectiveTokens) {
+        return { canRaise: false, reason: 'at_model_max', targetTokens: null, targetLabel: null, prod };
+      }
+      const targetLabel = capped === 512000 ? '512K' : formatKShort(capped);
+      return { canRaise: true, reason: 'step_512k', targetTokens: capped, targetLabel, prod };
+    }
+
+    const maxTarget = (scopeMode === 'per_model' && theoMax > 0 && theoMax < 1000000) ? theoMax : 1000000;
+    if (maxTarget <= effectiveTokens) {
+      return { canRaise: false, reason: 'at_model_max', targetTokens: null, targetLabel: null, prod };
+    }
+    const targetLabel = maxTarget >= 950000 ? '1M' : formatKShort(maxTarget);
+    return { canRaise: true, reason: 'step_1m', targetTokens: maxTarget, targetLabel, prod };
+  }
+
+  function renderSessionQuickActions() {
+    const btnCompact = el('btn-session-compact');
+    const btnRaise = el('btn-session-raise-limit');
+    const btnTopCompact = el('btn-topbar-compact');
+    const btnTopRaise = el('btn-topbar-raise-limit');
+    const prevTopCompactHidden = btnTopCompact ? btnTopCompact.hidden : true;
+    const prevTopRaiseHidden = btnTopRaise ? btnTopRaise.hidden : true;
+    const hasSession = Boolean(state.route);
+
+    if (btnCompact) {
+      btnCompact.disabled = !hasSession || isQuickCompactBusy;
+      btnCompact.textContent = isQuickCompactBusy ? t('session.quick.compactBusy') : t('session.quick.compact');
+    }
+    if (btnTopCompact) {
+      btnTopCompact.hidden = !hasSession;
+      btnTopCompact.disabled = !hasSession || isQuickCompactBusy;
+      btnTopCompact.setAttribute('aria-label', isQuickCompactBusy ? t('session.quick.compactBusy') : t('topbar.quick.compactTitle'));
+    }
+
+    const act = hasSession ? resolveSessionRaiseAction() : { canRaise: false };
+    if (!hasSession || !act.canRaise) {
+      if (btnRaise) btnRaise.hidden = true;
+      if (btnTopRaise) btnTopRaise.hidden = true;
+    } else {
+      if (btnRaise) {
+        btnRaise.hidden = false;
+        btnRaise.disabled = isQuickRaiseBusy;
+        btnRaise.textContent = t('session.quick.raiseTarget', { target: act.targetLabel });
+      }
+      if (btnTopRaise) {
+        btnTopRaise.hidden = false;
+        btnTopRaise.disabled = isQuickRaiseBusy;
+        btnTopRaise.setAttribute('aria-label', t('topbar.quick.raiseTitle', { target: act.targetLabel }));
+      }
+    }
+
+    if (activeTopbarTipKind && !isTopbarTipFeedback) {
+      if ((activeTopbarTipKind === 'raise' && btnTopRaise?.hidden) || (activeTopbarTipKind === 'compact' && btnTopCompact?.hidden)) {
+        hideTopbarActionTooltip(true);
+      } else {
+        syncTopbarActionTooltipContent(activeTopbarTipKind);
+        positionTopbarActionTooltip(activeTopbarTipKind === 'raise' ? btnTopRaise : btnTopCompact);
+      }
+    }
+
+    if (prevTopCompactHidden !== (btnTopCompact ? btnTopCompact.hidden : true) || prevTopRaiseHidden !== (btnTopRaise ? btnTopRaise.hidden : true)) {
+      scheduleLayoutSync();
+    }
+  }
+
+  async function triggerSessionCompact(source = 'panel') {
+    const cascadeId = state.route;
+    const csrf = typeof window !== 'undefined' ? window.__APP_CONFIG__?.csrfToken : null;
+    if (!cascadeId || !csrf) {
+      const noSessMsg = t('session.quick.compactNoSession');
+      showKeyQuickFeedback(false, noSessMsg);
+      if (source === 'topbar') showTopbarTransientFeedback(false, noSessMsg, el('btn-topbar-compact'));
+      return { ok: false, error: noSessMsg };
+    }
+    if (isQuickCompactBusy) return { ok: false, busy: true };
+    isQuickCompactBusy = true;
+    renderSessionQuickActions();
+    try {
+      let compactInfo = { name: 'compact' };
+      try {
+        const cmdRes = await fetch('/exa.language_server_pb.LanguageServerService/GetSlashCommands', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Connect-Protocol-Version': '1',
+            'x-codeium-csrf-token': csrf
+          },
+          body: JSON.stringify({ cascadeId })
+        });
+        if (cmdRes.ok) {
+          const cmdData = await cmdRes.json().catch(() => null);
+          const list = cmdData?.commands || cmdData?.slashCommands || [];
+          const found = Array.isArray(list)
+            ? list.find(c => c?.name === 'compact' || c?.info?.name === 'compact')
+            : null;
+          if (found) {
+            compactInfo = found.info || found;
+          }
+        }
+      } catch {}
+
+      const cachedCtx = lastCascadeConfigByConv.get(cascadeId) || {};
+      const sendBody = {
+        cascadeId,
+        items: [{ item: { slashCommand: { info: compactInfo } } }],
+        ...cachedCtx
+      };
+      const sendRes = await fetch('/exa.language_server_pb.LanguageServerService/SendUserCascadeMessage', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Connect-Protocol-Version': '1',
+          'x-codeium-csrf-token': csrf
+        },
+        body: JSON.stringify(sendBody)
+      });
+      if (!sendRes.ok) {
+        const errTxt = await sendRes.text().catch(() => '');
+        throw new Error(errTxt || `HTTP ${sendRes.status}`);
+      }
+      const doneMsg = t('session.quick.compactDone');
+      showKeyQuickFeedback(true, doneMsg);
+      if (source === 'topbar') showTopbarTransientFeedback(true, doneMsg, el('btn-topbar-compact'));
+      void requestPoll(state.generation, cascadeId);
+      void scan(state.generation, cascadeId, true);
+      return { ok: true };
+    } catch (err) {
+      const msg = t('session.quick.compactFail', { err: translateBackendText(err?.message) || err?.message || t('msg.unknownErr') });
+      showKeyQuickFeedback(false, msg);
+      if (source === 'topbar') showTopbarTransientFeedback(false, msg, el('btn-topbar-compact'));
+      return { ok: false, error: msg };
+    } finally {
+      isQuickCompactBusy = false;
+      renderSessionQuickActions();
+    }
+  }
+
+  async function triggerSessionRaiseLimit(source = 'panel') {
+    if (isQuickRaiseBusy) return { ok: false, busy: true };
+    const act = resolveSessionRaiseAction();
+    if (!act.canRaise || !act.targetTokens) {
+      renderSessionQuickActions();
+      return { ok: false, reason: act.reason || 'cannot_raise' };
+    }
+    isQuickRaiseBusy = true;
+    renderSessionQuickActions();
+    try {
+      const scopeMode = getContextScopeMode();
+      if (scopeMode === 'unified') {
+        const nextPref = {
+          modelId: 'unified',
+          mode: 'fixed',
+          limitTokens: act.targetTokens,
+          updatedAt: new Date().toISOString()
+        };
+        const res = await saveSettingsPayloadBridge({
+          contextUnifiedPreference: nextPref,
+          contextScopeMode: 'unified'
+        });
+        if (!res || !res.ok) {
+          throw new Error(translateBackendText(res?.error) || t('msg.saveFail'));
+        }
+        contextUnifiedPreference = nextPref;
+      } else {
+        const prod = act.prod || getSelectedProductObj();
+        if (!prod) {
+          throw new Error(t('msg.noModelsDetected'));
+        }
+        const legacyKeys = resolveProductPreferenceState(prod).legacyKeys;
+        const res = await saveSettingsPayloadBridge({
+          contextPreference: {
+            scope: 'product',
+            productKey: prod.productKey,
+            modelId: prod.productKey,
+            label: prod.productLabel,
+            mode: 'fixed',
+            limitTokens: act.targetTokens,
+            clearLegacyKeys: legacyKeys
+          }
+        });
+        if (!res || !res.ok) {
+          throw new Error(translateBackendText(res?.error) || t('msg.saveFail'));
+        }
+        if (res.contextPreferences && typeof res.contextPreferences === 'object') {
+          contextPreferencesMap = { ...res.contextPreferences };
+        } else {
+          for (const lk of legacyKeys) delete contextPreferencesMap[lk];
+          contextPreferencesMap[prod.productKey] = {
+            scope: 'product',
+            productKey: prod.productKey,
+            modelId: prod.productKey,
+            label: prod.productLabel,
+            mode: 'fixed',
+            limitTokens: act.targetTokens,
+            updatedAt: new Date().toISOString()
+          };
+        }
+      }
+      syncContextPreferencesCache(contextPreferencesMap);
+      if (!ctxDraftDirty) loadDraftFromSelectedModel(true);
+
+      let needsRestart = false;
+      if (!currentUnlockStatus || currentUnlockStatus.status === 'not_patched') {
+        const uRes = await invokeUnlockApi('apply', {
+          mode: 'dynamic',
+          limitTokens: null,
+          serviceLimit: state.latest?.serviceLimit || undefined
+        });
+        if (!uRes || !uRes.ok) {
+          throw new Error(buildFriendlyWriteError(uRes?.error));
+        }
+        needsRestart = Boolean(uRes.needsRestart);
+        if (needsRestart) needsRestartAfterApply = true;
+        await refreshUnlockStatus();
+      } else {
+        renderCompactSessionCard();
+        renderClientStatusBar();
+      }
+      renderHeaderModelDropdown();
+      renderModelSettingsTab();
+      const doneMsg = needsRestart
+        ? t('session.quick.raiseNeedRestart', { target: act.targetLabel })
+        : t('session.quick.raiseDone', { target: act.targetLabel });
+      showKeyQuickFeedback(true, doneMsg);
+      if (source === 'topbar') showTopbarTransientFeedback(true, doneMsg, el('btn-topbar-raise-limit'));
+      return { ok: true, targetLabel: act.targetLabel, needsRestart };
+    } catch (err) {
+      const errMsg = t('session.quick.raiseFail', { err: err?.message || t('msg.unknownErr') });
+      showKeyQuickFeedback(false, errMsg);
+      if (source === 'topbar') showTopbarTransientFeedback(false, errMsg, el('btn-topbar-raise-limit'));
+      return { ok: false, error: errMsg };
+    } finally {
+      isQuickRaiseBusy = false;
+      renderSessionQuickActions();
+    }
+  }
+
+  el('btn-session-compact')?.addEventListener('click', () => {
+    void triggerSessionCompact('panel');
+  });
+
+  el('btn-session-raise-limit')?.addEventListener('click', () => {
+    void triggerSessionRaiseLimit('panel');
+  });
+
   // 渲染上下文与全局状态（无论在主页 / 还是会话页 /c/<id>，始终保持插件栏挂载与可用）
   function render() {
     host.hidden = false;
@@ -16486,6 +14722,7 @@
     ensureHostDocked();
     if (!state.route) {
       hideContextTooltip();
+      hideTopbarActionTooltip(true);
       const barFill = el('bar-fill');
       if (barFill) barFill.style.width = '0%';
       const badgePctVal = el('badge-pct-val');
@@ -16494,9 +14731,9 @@
       setHoverExtra(t('badge.clickOpen'));
       syncSpeedBadgeText();
       el('badge-tokens').title = t('badge.tokensTitle');
+      renderSessionQuickActions();
       return;
     }
-    renderSessionCost();
 
     const d = state.latest, session = state.scan?.session;
     const disp = resolveDisplayStatus(d, session);
@@ -16667,6 +14904,8 @@
       }
     }
 
+    renderSessionQuickActions();
+
     if (el('speed-summary')) {
       const spBadge = el('speed-badge');
       const spVal = el('speed-val');
@@ -16763,7 +15002,6 @@
         }
       }
       state.sessionCalls = Array.from(state.sessionCallsMap.values());
-      state.sessionCostTotal = state.sessionCalls.reduce((sum, c) => sum + (c.isPriced ? (c.costUSD || 0) : 0), 0);
       if (parsedCalls.length) {
         if (!state.reportedFinalCallIds) state.reportedFinalCallIds = new Set();
         if (!state.reportedFinalCallOutputs) state.reportedFinalCallOutputs = new Map();
@@ -16915,13 +15153,14 @@
       if (state.reportedFinalCallIds) state.reportedFinalCallIds.clear();
       if (state.reportedFinalCallOutputs) state.reportedFinalCallOutputs.clear();
       Object.assign(state, {
-        route: id, count: 0, latest: null, sessionCalls: [], sessionCostTotal: 0,
+        route: id, count: 0, latest: null, sessionCalls: [],
         requestAt: 0, requestError: '', requestBusy: false, requestNext: 0,
         scanBusy: false, scanNext: 0, scanError: '', scan: null,
         reportedFinalCallIds: state.reportedFinalCallIds || new Set(),
         reportedFinalCallOutputs: state.reportedFinalCallOutputs || new Map()
       });
-      toggle(false); hideContextTooltip(); renderFiles(null); render();
+      showKeyQuickFeedback(true, '');
+      toggle(false); hideContextTooltip(); hideTopbarActionTooltip(true); renderFiles(null); render();
       void syncTokenHistoryFromHost(false);
     }
     if (id && !state.requestBusy && Date.now() >= state.requestNext) void requestPoll(state.generation, id);
@@ -16962,24 +15201,12 @@
     setTokenHistoryForTest: payload => applyTokenHistoryPayload(payload),
     getPlanDetailExpanded: () => planDetailExpanded,
     setPlanDetailExpanded,
-    switchTokenView,
     switchHeatView: view => switchHeatView(view),
     getActiveHeatView: () => activeHeatView,
     renderHeatmapMonthly: () => renderHeatmapMonthly(),
     renderHeatmapYearly: () => renderHeatmapYearly(),
     openGithubRepo: path => openGithubRepo(path),
     updateHeatTabThumb: () => updateHeatTabThumb(),
-    getPlanSettings: () => ({
-      country: ANTIGRAVITY_TOKEN_DATA.planStatus?.country || '未知',
-      subscriptionRegion: ANTIGRAVITY_TOKEN_DATA.planStatus?.subscriptionRegion || ANTIGRAVITY_TOKEN_DATA.planStatus?.region || '未知',
-      region: ANTIGRAVITY_TOKEN_DATA.planStatus?.region || '未知',
-      currency: ANTIGRAVITY_TOKEN_DATA.planStatus?.currency || 'USD',
-      currencySymbol: ANTIGRAVITY_TOKEN_DATA.planStatus?.currencySymbol || '$',
-      actualPricePaid: ANTIGRAVITY_TOKEN_DATA.planStatus?.actualPricePaid ?? null,
-      lastSaveResult
-    }),
-    setCountry: val => applyDirectCountrySelection(val),
-    setCurrency: val => applyDirectCurrencySelection(val),
     restoreSettingsFromHost,
     getTimelineWindow: () => {
       const w = computeTimelineWindow();
@@ -17048,6 +15275,11 @@
     },
     getKnownModelProductsForTest: () => getKnownModelProducts(),
     refreshUnlockStatusForTest: () => refreshUnlockStatus(),
+    refreshCliUnlockForTest: () => refreshCliUnlockDisplay(),
+    refreshModulesForTest: () => refreshModulesDisplay(),
+    getSessionRaiseActionForTest: () => resolveSessionRaiseAction(),
+    triggerSessionCompactForTest: (src) => triggerSessionCompact(src),
+    triggerSessionRaiseLimitForTest: (src) => triggerSessionRaiseLimit(src),
     refreshEnhanceStatusForTest: () => refreshEnhanceStatus(),
     getEnhanceStateForTest: () => ({
       currentBrandTitle,
@@ -17072,11 +15304,15 @@
     restoreSettingsForTest: () => restoreSettingsFromHost(),
     translateForTest: (key, vars) => t(key, vars),
     applyStaticTranslationsForTest: (rootNode) => applyStaticPanelTranslations(rootNode),
-    snapshot: () => ({ route: state.route, count: state.count, latest: state.latest, scan: state.scan, requestError: state.requestError, scanError: state.scanError, scanBusy: state.scanBusy, layoutMode: state.layoutMode, sessionCalls: state.sessionCalls, sessionCostTotal: state.sessionCostTotal }),
+    snapshot: () => ({ route: state.route, count: state.count, latest: state.latest, scan: state.scan, requestError: state.requestError, scanError: state.scanError, scanBusy: state.scanBusy, layoutMode: state.layoutMode, sessionCalls: state.sessionCalls }),
     dispose() {
       state.disposed = true;
       for (const controller of state.controllers) controller.abort();
       clearInterval(timer);
+      if (topbarTipFeedbackTimer) {
+        clearTimeout(topbarTipFeedbackTimer);
+        topbarTipFeedbackTimer = null;
+      }
       if (layoutRaf && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(layoutRaf);
       syncHostStackingElevation(false);
       try { uninstallRequestInterceptor(); } catch {}
@@ -17100,7 +15336,6 @@
   };
   syncPanelLanguageButtons(currentPanelLanguage);
   applyStaticPanelTranslations(shadow);
-  refreshRegionPresetSelectOptions();
   renderEnhanceSectionUI();
   void restoreSettingsFromHost();
   installRequestInterceptor();

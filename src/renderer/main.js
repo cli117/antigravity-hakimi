@@ -5,7 +5,6 @@
   const {
     summarize,
     parseGeneratorCall,
-    calculateRequestApiCost,
     normalizeModelId,
     resolveStableModelId,
     formatEffortLabel,
@@ -16,10 +15,7 @@
     computeMedian,
     summarizeSpeedByModel,
     getLvlForRange,
-    getDailyModelCost,
-    calculateIntervalCost,
-    convertToCNY,
-    resolveEffectivePlanStatus
+    calculateIntervalTokens
   } = (globalThis.__AGContextMeterCore || {});
   const host = document.createElement('div');
   host.id = 'ag-context-meter';
@@ -92,8 +88,6 @@
   let heatPageOffset = 0;
   let heatMonthOffset = 0;
   let heatYearOffset = 0;
-  let activeCostModel = 'gemini-3.8-flash';
-  let activeCostMode = 'ref';
 
   /* @INSERT_COLORS_MODULE */
   // =========================================================================
@@ -483,36 +477,6 @@
     return 400;
   }
 
-  function renderSessionCost() {
-    const roundCostBar = el('round-cost-bar');
-    const roundCostText = el('round-cost-text');
-    const sessionCostText = el('session-cost-text');
-    if (!roundCostText || !sessionCostText) return;
-    const activeCalls = state.sessionCalls || [];
-    const latestCall = activeCalls[activeCalls.length - 1];
-    const sessTotal = state.sessionCostTotal || 0;
-    if (latestCall && latestCall.isPriced) {
-      const roundCost = latestCall.costUSD || 0;
-      const roundCostStr = roundCost < 0.01 ? '<$0.01' : `≈$${roundCost.toFixed(4)}`;
-      const estLabel = latestCall.status === 'streaming' ? t('cost.streamingEst') : t('cost.returnedEst');
-      roundCostText.textContent = t('cost.latestTurn', { val: roundCostStr, label: estLabel });
-      roundCostText.title = t('cost.modelTip', {
-        model: latestCall.model,
-        input: fmt(latestCall.inputTokens),
-        cache: fmt(latestCall.cacheTokens),
-        output: fmt(latestCall.outputTokens),
-        cost: roundCost.toFixed(6)
-      });
-    } else if (latestCall) {
-      roundCostText.textContent = t('cost.unpriced');
-      roundCostText.title = latestCall.model ? t('cost.unpricedTip', { model: latestCall.model }) : t('cost.missingModel');
-    } else {
-      roundCostText.textContent = t('cost.latestDash');
-      roundCostText.title = '';
-    }
-    sessionCostText.textContent = sessTotal > 0 ? t('cost.sessionTotal', { val: sessTotal.toFixed(4) }) : t('session.sessionCost.dash');
-  }
-
   function applyLayoutMode(nextMode) {
     if (!nextMode) return;
     const prev = state.layoutMode;
@@ -526,16 +490,29 @@
       }
       syncSpeedBadgeText();
     }
-    renderSessionCost();
+  }
+
+  function getTopbarVisibleQuickWidth() {
+    if (!state.route) return 0;
+    let count = 0;
+    const btnCompact = el('btn-topbar-compact');
+    const btnRaise = el('btn-topbar-raise-limit');
+    if (btnCompact && !btnCompact.hidden) count++;
+    if (btnRaise && !btnRaise.hidden) count++;
+    return count * 28;
   }
 
   function updateResponsiveLayout() {
     if (state.disposed) return;
     syncWindowControlsOverlay();
     const avail = measureAvailableWidth();
-    const nextMode = computeNextLayoutMode(avail, state.layoutMode);
+    const nextMode = computeNextLayoutMode(avail - getTopbarVisibleQuickWidth(), state.layoutMode);
     applyLayoutMode(nextMode);
     if (state.tooltipOpen) positionContextTooltip();
+    if (el('topbar-action-tooltip')?.getAttribute('data-visible') === 'true') {
+      const anchor = activeTopbarTipKind === 'raise' ? el('btn-topbar-raise-limit') : el('btn-topbar-compact');
+      positionTopbarActionTooltip(anchor);
+    }
     if (isAnyPanelOpen() || !el('overflow-menu')?.hidden) positionFloatingPanels();
   }
 
@@ -590,6 +567,7 @@
   function showContextTooltip() {
     const tip = el('context-tooltip');
     if (!tip || !el('panel')?.hidden) return;
+    hideTopbarActionTooltip(true);
     state.tooltipOpen = true;
     tip.setAttribute('data-visible', 'true');
     positionContextTooltip();
@@ -600,6 +578,116 @@
     if (!tip) return;
     state.tooltipOpen = false;
     tip.setAttribute('data-visible', 'false');
+  }
+
+  let activeTopbarTipKind = null;
+  let isTopbarTipFeedback = false;
+  let topbarTipFeedbackTimer = null;
+
+  function positionTopbarActionTooltip(anchorEl) {
+    const tip = el('topbar-action-tooltip');
+    const target = (anchorEl && !anchorEl.hidden)
+      ? anchorEl
+      : (el('btn-topbar-compact') && !el('btn-topbar-compact').hidden ? el('btn-topbar-compact') : el('badge'));
+    if (!tip || !target || !target.getBoundingClientRect) return;
+    try {
+      const bRect = target.getBoundingClientRect();
+      if (bRect.width === 0 && bRect.height === 0) return;
+      const tRect = tip.getBoundingClientRect ? tip.getBoundingClientRect() : { width: 210, height: 52 };
+      const tipW = tRect.width || 210;
+      const tipH = tRect.height || 52;
+      const vw = (typeof window !== 'undefined' && window.innerWidth) || 1280;
+      const vh = (typeof window !== 'undefined' && window.innerHeight) || 800;
+      const gap = 7;
+
+      const spaceAbove = bRect.top;
+      const spaceBelow = vh - bRect.bottom;
+      let top;
+      if (spaceAbove >= tipH + gap + 6 || spaceAbove > spaceBelow) {
+        top = bRect.top - tipH - gap;
+        tip.setAttribute('data-placement', 'top');
+      } else {
+        top = bRect.bottom + gap;
+        tip.setAttribute('data-placement', 'bottom');
+      }
+      top = Math.max(6, Math.min(vh - tipH - 6, Math.round(top)));
+
+      let left = Math.round(bRect.left + bRect.width / 2 - tipW / 2);
+      left = Math.max(8, Math.min(vw - tipW - 8, left));
+
+      tip.style.top = `${top}px`;
+      tip.style.left = `${left}px`;
+    } catch {}
+  }
+
+  function syncTopbarActionTooltipContent(kind) {
+    const tip = el('topbar-action-tooltip');
+    const titleEl = el('topbar-tip-title');
+    const descEl = el('topbar-tip-desc');
+    if (!tip || !titleEl || !descEl) return;
+    tip.setAttribute('data-tone', 'default');
+    if (kind === 'compact') {
+      titleEl.textContent = isQuickCompactBusy ? t('session.quick.compactBusy') : t('topbar.quick.compactTitle');
+      descEl.textContent = isQuickCompactBusy ? t('topbar.quick.compactBusyDesc') : t('topbar.quick.compactDesc');
+      descEl.hidden = false;
+    } else if (kind === 'raise') {
+      const act = resolveSessionRaiseAction();
+      const targetLbl = act.targetLabel || '1M';
+      titleEl.textContent = isQuickRaiseBusy
+        ? t('topbar.quick.raiseBusyTitle', { target: targetLbl })
+        : t('topbar.quick.raiseTitle', { target: targetLbl });
+      descEl.textContent = t('topbar.quick.raiseDesc');
+      descEl.hidden = Boolean(isQuickRaiseBusy);
+    }
+  }
+
+  function showTopbarActionTooltip(kind, anchorEl) {
+    const tip = el('topbar-action-tooltip');
+    if (!tip) return;
+    hideContextTooltip();
+    if (topbarTipFeedbackTimer) {
+      clearTimeout(topbarTipFeedbackTimer);
+      topbarTipFeedbackTimer = null;
+    }
+    isTopbarTipFeedback = false;
+    activeTopbarTipKind = kind;
+    syncTopbarActionTooltipContent(kind);
+    tip.setAttribute('data-visible', 'true');
+    positionTopbarActionTooltip(anchorEl);
+  }
+
+  function showTopbarTransientFeedback(ok, msg, anchorEl) {
+    const tip = el('topbar-action-tooltip');
+    const titleEl = el('topbar-tip-title');
+    const descEl = el('topbar-tip-desc');
+    if (!tip || !titleEl || !descEl || !msg) return;
+    hideContextTooltip();
+    if (topbarTipFeedbackTimer) {
+      clearTimeout(topbarTipFeedbackTimer);
+      topbarTipFeedbackTimer = null;
+    }
+    isTopbarTipFeedback = true;
+    activeTopbarTipKind = null;
+    tip.setAttribute('data-tone', ok ? 'success' : 'error');
+    titleEl.textContent = msg;
+    descEl.textContent = '';
+    descEl.hidden = true;
+    tip.setAttribute('data-visible', 'true');
+    positionTopbarActionTooltip(anchorEl);
+    topbarTipFeedbackTimer = setTimeout(() => {
+      hideTopbarActionTooltip(true);
+    }, ok ? 2800 : 3800);
+  }
+
+  function hideTopbarActionTooltip(force = false) {
+    if (isTopbarTipFeedback && !force) return;
+    if (topbarTipFeedbackTimer) {
+      clearTimeout(topbarTipFeedbackTimer);
+      topbarTipFeedbackTimer = null;
+    }
+    isTopbarTipFeedback = false;
+    activeTopbarTipKind = null;
+    el('topbar-action-tooltip')?.setAttribute('data-visible', 'false');
   }
 
   let elevatedStackAncestor = null;
@@ -750,6 +838,7 @@
 
     if (target === 'tokens') {
       hideContextTooltip();
+      hideTopbarActionTooltip(true);
       closeColorPicker();
       pContext.hidden = true;
       pTokens.hidden = false;
@@ -762,6 +851,7 @@
       renderActiveHeatView(true);
     } else if (target === 'context') {
       hideContextTooltip();
+      hideTopbarActionTooltip(true);
       closeColorPicker();
       setPlanDetailExpanded(false, { skipReposition: true });
       pTokens.hidden = true;
@@ -779,6 +869,7 @@
       }
       if (isContextSettingsView) {
         void refreshModulesDisplay();
+        void refreshCliUnlockDisplay();
       }
     } else {
       setPlanDetailExpanded(false, { skipReposition: true });
@@ -817,6 +908,7 @@
     const willOpen = pOverflow.hidden;
     showPanel('none');
     hideContextTooltip();
+    hideTopbarActionTooltip(true);
     pOverflow.hidden = !willOpen;
     el('badge-overflow')?.setAttribute('aria-expanded', String(willOpen));
     syncHostStackingElevation(willOpen);
@@ -828,77 +920,6 @@
     openContextSettings?.({ openColors: true });
   });
   el('btn-panel-tokens-palette')?.addEventListener('click', () => toggleTokenColorsDrawer());
-
-  // =========================================================================
-  // 统一定制下拉组件控制器 (国家 / 订阅地区 / 币种 / 增强 Select)
-  // =========================================================================
-  const COUNTRY_OPTIONS = [
-    { value: '未知', label: '🌐 未设置 / 自动', labelTw: '🌐 未設定 / 自動', labelEn: '🌐 Auto / Unset', code: 'AUTO', aliases: ['自动', '未知', 'none', 'auto'] },
-    { value: '美国 (US)', label: '🇺🇸 美国 (US)', labelTw: '🇺🇸 美國 (US)', labelEn: '🇺🇸 United States (US)', code: 'US', aliases: ['美国', 'united states', 'usa'] },
-    { value: '日本 (JP)', label: '🇯🇵 日本 (JP)', labelTw: '🇯🇵 日本 (JP)', labelEn: '🇯🇵 Japan (JP)', code: 'JP', aliases: ['日本', 'japan'] },
-    { value: '韩国 (KR)', label: '🇰🇷 韩国 (KR)', labelTw: '🇰🇷 韓國 (KR)', labelEn: '🇰🇷 South Korea (KR)', code: 'KR', aliases: ['韩国', 'korea', 'south korea'] },
-    { value: '中国台湾 (TW)', label: '🇹🇼 中国台湾 (TW)', labelTw: '🇹🇼 中國台灣 (TW)', labelEn: '🇹🇼 Taiwan (TW)', code: 'TW', aliases: ['台湾', 'taiwan', 'tw'] },
-    { value: '中国香港 (HK)', label: '🇭🇰 中国香港 (HK)', labelTw: '🇭🇰 中國香港 (HK)', labelEn: '🇭🇰 Hong Kong (HK)', code: 'HK', aliases: ['香港', 'hong kong', 'hk'] },
-    { value: '澳大利亚 (AU)', label: '🇦🇺 澳大利亚 (AU)', labelTw: '🇦🇺 澳洲 (AU)', labelEn: '🇦🇺 Australia (AU)', code: 'AU', aliases: ['澳大利亚', '澳洲', 'australia', 'au'] },
-    { value: '新加坡 (SG)', label: '🇸🇬 新加坡 (SG)', labelTw: '🇸🇬 新加坡 (SG)', labelEn: '🇸🇬 Singapore (SG)', code: 'SG', aliases: ['新加坡', 'singapore', 'sg'] },
-    { value: '英国 (UK)', label: '🇬🇧 英国 (UK)', labelTw: '🇬🇧 英國 (UK)', labelEn: '🇬🇧 United Kingdom (UK)', code: 'UK', aliases: ['英国', 'united kingdom', 'uk', 'gb', 'britain'] },
-    { value: '德国 (DE)', label: '🇩🇪 德国 (DE)', labelTw: '🇩🇪 德國 (DE)', labelEn: '🇩🇪 Germany (DE)', code: 'DE', aliases: ['德国', 'germany', 'de'] },
-    { value: '加拿大 (CA)', label: '🇨🇦 加拿大 (CA)', labelTw: '🇨🇦 加拿大 (CA)', labelEn: '🇨🇦 Canada (CA)', code: 'CA', aliases: ['加拿大', 'canada', 'ca'] },
-    { value: '土耳其 (TR)', label: '🇹🇷 土耳其 (TR)', labelTw: '🇹🇷 土耳其 (TR)', labelEn: '🇹🇷 Turkey (TR)', code: 'TR', aliases: ['土耳其', 'turkey', 'tr'] },
-    { value: '尼日利亚 (NG)', label: '🇳🇬 尼日利亚 (NG)', labelTw: '🇳🇬 奈及利亞 (NG)', labelEn: '🇳🇬 Nigeria (NG)', code: 'NG', aliases: ['尼日利亚', 'nigeria', 'ng'] },
-    { value: '菲律宾 (PH)', label: '🇵🇭 菲律宾 (PH)', labelTw: '🇵🇭 菲律賓 (PH)', labelEn: '🇵🇭 Philippines (PH)', code: 'PH', aliases: ['菲律宾', 'philippines', 'ph'] },
-    { value: '印度 (IN)', label: '🇮🇳 印度 (IN)', labelTw: '🇮🇳 印度 (IN)', labelEn: '🇮🇳 India (IN)', code: 'IN', aliases: ['印度', 'india', 'in'] },
-    { value: '马来西亚 (MY)', label: '🇲🇾 马来西亚 (MY)', labelTw: '🇲🇾 馬來西亞 (MY)', labelEn: '🇲🇾 Malaysia (MY)', code: 'MY', aliases: ['马来西亚', 'malaysia', 'my'] },
-    { value: '巴西 (BR)', label: '🇧🇷 巴西 (BR)', labelTw: '🇧🇷 巴西 (BR)', labelEn: '🇧🇷 Brazil (BR)', code: 'BR', aliases: ['巴西', 'brazil', 'br'] },
-    { value: '中国大陆 (CN)', label: '🇨🇳 中国大陆 (CN)', labelTw: '🇨🇳 中國大陸 (CN)', labelEn: '🇨🇳 China Mainland (CN)', code: 'CN', aliases: ['中国大陆', '中国', 'china', 'cn'] }
-  ];
-
-  const CURRENCY_OPTIONS = [
-    { value: 'USD', code: 'USD', symbol: '$', name: '美元', nameEn: 'US Dollar', label: 'USD ($ 美元)', labelTw: 'USD ($ 美元)', labelEn: 'USD ($ US Dollar)', aliases: ['美元', 'usd', '$', 'dollar'] },
-    { value: 'KRW', code: 'KRW', symbol: '₩', name: '韩元', nameEn: 'Korean Won', label: 'KRW (₩ 韩元)', labelTw: 'KRW (₩ 韓元)', labelEn: 'KRW (₩ Won)', aliases: ['韩元', 'krw', '₩', 'won'] },
-    { value: 'AUD', code: 'AUD', symbol: 'AU$', name: '澳元', nameEn: 'Australian Dollar', label: 'AUD (AU$ 澳元)', labelTw: 'AUD (AU$ 澳元)', labelEn: 'AUD (AU$ AUD)', aliases: ['澳元', '澳洲', 'aud', 'au$', 'australian'] },
-    { value: 'JPY', code: 'JPY', symbol: '¥', name: '日元', nameEn: 'Japanese Yen', label: 'JPY (¥ 日元)', labelTw: 'JPY (¥ 日圓)', labelEn: 'JPY (¥ Yen)', aliases: ['日元', '日本', 'jpy', '¥', 'yen'] },
-    { value: 'HKD', code: 'HKD', symbol: 'HK$', name: '港币', nameEn: 'Hong Kong Dollar', label: 'HKD (HK$ 港币)', labelTw: 'HKD (HK$ 港幣)', labelEn: 'HKD (HK$ HKD)', aliases: ['港币', '香港', 'hkd', 'hk$'] },
-    { value: 'TWD', code: 'TWD', symbol: 'NT$', name: '台币', nameEn: 'New Taiwan Dollar', label: 'TWD (NT$ 台币)', labelTw: 'TWD (NT$ 新台幣)', labelEn: 'TWD (NT$ TWD)', aliases: ['台币', '台湾', 'twd', 'ntd', 'nt$'] },
-    { value: 'TRY', code: 'TRY', symbol: '₺', name: '里拉', nameEn: 'Turkish Lira', label: 'TRY (₺ 里拉)', labelTw: 'TRY (₺ 里拉)', labelEn: 'TRY (₺ Lira)', aliases: ['里拉', '土耳其', 'try', '₺', 'lira'] },
-    { value: 'NGN', code: 'NGN', symbol: '₦', name: '奈拉', nameEn: 'Nigerian Naira', label: 'NGN (₦ 奈拉)', labelTw: 'NGN (₦ 奈拉)', labelEn: 'NGN (₦ Naira)', aliases: ['奈拉', '尼日利亚', 'ngn', '₦', 'naira'] },
-    { value: 'CNY', code: 'CNY', symbol: '¥', name: '人民币', nameEn: 'Chinese Yuan', label: 'CNY (¥ 人民币)', labelTw: 'CNY (¥ 人民幣)', labelEn: 'CNY (¥ CNY)', aliases: ['人民币', '中国', 'cny', 'rmb', '¥', 'yuan'] },
-    { value: 'EUR', code: 'EUR', symbol: '€', name: '欧元', nameEn: 'Euro', label: 'EUR (€ 欧元)', labelTw: 'EUR (€ 歐元)', labelEn: 'EUR (€ Euro)', aliases: ['欧元', '欧洲', 'eur', '€', 'euro'] },
-    { value: 'GBP', code: 'GBP', symbol: '£', name: '英镑', nameEn: 'British Pound', label: 'GBP (£ 英镑)', labelTw: 'GBP (£ 英鎊)', labelEn: 'GBP (£ Pound)', aliases: ['英镑', '英国', 'gbp', '£', 'pound'] },
-    { value: 'SGD', code: 'SGD', symbol: 'S$', name: '新元', nameEn: 'Singapore Dollar', label: 'SGD (S$ 新元)', labelTw: 'SGD (S$ 新幣)', labelEn: 'SGD (S$ SGD)', aliases: ['新元', '新加坡', 'sgd', 's$'] },
-    { value: 'CAD', code: 'CAD', symbol: 'CA$', name: '加元', nameEn: 'Canadian Dollar', label: 'CAD (CA$ 加元)', labelTw: 'CAD (CA$ 加幣)', labelEn: 'CAD (CA$ CAD)', aliases: ['加元', '加拿大', 'cad', 'ca$'] },
-    { value: 'PHP', code: 'PHP', symbol: '₱', name: '比索', nameEn: 'Philippine Peso', label: 'PHP (₱ 比索)', labelTw: 'PHP (₱ 披索)', labelEn: 'PHP (₱ Peso)', aliases: ['比索', '菲律宾', 'php', '₱', 'peso'] },
-    { value: 'INR', code: 'INR', symbol: '₹', name: '卢比', nameEn: 'Indian Rupee', label: 'INR (₹ 卢比)', labelTw: 'INR (₹ 盧比)', labelEn: 'INR (₹ Rupee)', aliases: ['卢比', '印度', 'inr', '₹', 'rupee'] },
-    { value: 'MYR', code: 'MYR', symbol: 'RM', name: '令吉', nameEn: 'Malaysian Ringgit', label: 'MYR (RM 令吉)', labelTw: 'MYR (RM 令吉)', labelEn: 'MYR (RM Ringgit)', aliases: ['令吉', '马来西亚', 'myr', 'rm', 'ringgit'] },
-    { value: 'BRL', code: 'BRL', symbol: 'R$', name: '雷亚尔', nameEn: 'Brazilian Real', label: 'BRL (R$ 雷亚尔)', labelTw: 'BRL (R$ 雷亞爾)', labelEn: 'BRL (R$ Real)', aliases: ['雷亚尔', '巴西', 'brl', 'r$', 'real'] }
-  ];
-
-  function refreshRegionPresetSelectOptions() {
-    const sel = el('select-custom-region-preset');
-    if (!sel || !sel.options) return;
-    const core = typeof __AGContextMeterCore !== 'undefined' ? __AGContextMeterCore : null;
-    const presets = core?.SUBSCRIPTION_REGIONS_PRESET || [];
-    for (let i = 0; i < sel.options.length; i++) {
-      const opt = sel.options[i];
-      if (!opt || opt.value === '' || opt.value === 'custom') continue;
-      const p = presets.find(item => item.id === opt.value);
-      if (!p) continue;
-      const dispName = getPanelLanguage() === 'en' ? (p.nameEn || p.id || p.name) : p.name;
-      if (p.currency === 'CNY') {
-        opt.textContent = t('plan.form.presetLineCny', { flag: p.flag || '🌏', name: dispName, price: p.monthlyPrice });
-      } else {
-        const cny = core?.convertToCNY ? core.convertToCNY(p.monthlyPrice, p.currency, p.name) : (p.monthlyPrice * p.rateToCNY);
-        opt.textContent = t('plan.form.presetLine', {
-          flag: p.flag || '🌏',
-          name: dispName,
-          id: p.id,
-          sym: p.symbol,
-          price: p.monthlyPrice,
-          cny: Number(cny).toFixed(1)
-        });
-      }
-    }
-  }
 
   function hasClass(node, cls) {
     if (!node) return false;
@@ -938,352 +959,26 @@
   let restoreRequestSeq = 0;
 
   /* @INSERT_DROPDOWN_MODULE */
-  function renderPlanSummaryPriceBadge(targetSymbol, targetNum, targetCycle, targetCnyText, options = {}) {
-    const priceValEl = el('plan-summary-price-val');
-    const priceCnyEl = el('plan-summary-price-cny');
-    const badgeEl = el('plan-summary-price-badge');
-    if (!priceValEl) return;
-
-    if (activeBadgeTimerId) {
-      clearTimeout(activeBadgeTimerId);
-      activeBadgeTimerId = null;
-    }
-    if (activeCnyTimerId) {
-      clearTimeout(activeCnyTimerId);
-      activeCnyTimerId = null;
-    }
-    if (activeBadgeRafId && typeof cancelAnimationFrame === 'function') {
-      cancelAnimationFrame(activeBadgeRafId);
-      activeBadgeRafId = null;
-    }
-
-    const formattedFinalNum = targetNum !== null && targetNum !== undefined
-      ? (Number(targetNum) % 1 === 0 ? String(Number(targetNum)) : Number(targetNum).toFixed(2))
-      : '';
-
-    // 轻量模拟环境安全兼容
-    if (typeof priceValEl.querySelector !== 'function') {
-      priceValEl.textContent = `${targetSymbol}${formattedFinalNum}${targetCycle}`;
-      if (priceCnyEl) priceCnyEl.textContent = targetCnyText;
-      lastBadgePriceState = {
-        symbol: targetSymbol,
-        num: targetNum !== null ? Number(targetNum) : 0,
-        cycle: targetCycle,
-        cnyText: targetCnyText
-      };
-      return;
-    }
-
-    const hasRaf = typeof requestAnimationFrame === 'function';
-    const forceDirect = options.forceDirect || !hasRaf || !lastBadgePriceState;
-
-    if (forceDirect) {
-      priceValEl.innerHTML = `<span class="badge-symbol-anim">${targetSymbol}</span><span class="badge-num-anim">${formattedFinalNum}</span><span class="badge-cycle-anim">${targetCycle}</span>`;
-      if (priceCnyEl) priceCnyEl.textContent = targetCnyText;
-      lastBadgePriceState = {
-        symbol: targetSymbol,
-        num: targetNum !== null ? Number(targetNum) : 0,
-        cycle: targetCycle,
-        cnyText: targetCnyText
-      };
-      return;
-    }
-
-    const startNum = (lastBadgePriceState && Number.isFinite(lastBadgePriceState.num))
-      ? lastBadgePriceState.num
-      : (Number(targetNum) || 0);
-    const endNum = targetNum !== null ? Number(targetNum) : 0;
-    const startSymbol = lastBadgePriceState?.symbol || targetSymbol;
-    const endSymbol = targetSymbol;
-
-    // 确保内部 DOM 结构完整
-    let symbolEl = priceValEl.querySelector?.('.badge-symbol-anim');
-    let numEl = priceValEl.querySelector?.('.badge-num-anim');
-    let cycleEl = priceValEl.querySelector?.('.badge-cycle-anim');
-
-    if (!symbolEl || !numEl || !cycleEl) {
-      priceValEl.innerHTML = `<span class="badge-symbol-anim">${startSymbol}</span><span class="badge-num-anim">${formattedFinalNum}</span><span class="badge-cycle-anim">${targetCycle}</span>`;
-      symbolEl = priceValEl.querySelector?.('.badge-symbol-anim');
-      numEl = priceValEl.querySelector?.('.badge-num-anim');
-      cycleEl = priceValEl.querySelector?.('.badge-cycle-anim');
-    }
-
-    if (cycleEl) cycleEl.textContent = targetCycle;
-
-    // 1. 货币符号消散再切换动画 (Symbol Dissolve & Crossfade)
-    if (startSymbol !== endSymbol && symbolEl && symbolEl.classList) {
-      symbolEl.classList.remove('is-entering');
-      symbolEl.classList.add('is-dissolving');
-
-      activeBadgeTimerId = setTimeout(() => {
-        symbolEl.textContent = endSymbol;
-        symbolEl.classList.remove('is-dissolving');
-        symbolEl.classList.add('is-entering');
-        try { void symbolEl.offsetWidth; } catch {}
-        setTimeout(() => {
-          symbolEl.classList?.remove?.('is-entering');
-        }, 180);
-        activeBadgeTimerId = null;
-      }, 160);
-    } else if (symbolEl) {
-      symbolEl.textContent = endSymbol;
-    }
-
-    // 2. CNY 折合平滑渐变
-    if (priceCnyEl && priceCnyEl.textContent !== targetCnyText) {
-      try {
-        priceCnyEl.style.transition = 'opacity 0.18s ease';
-        priceCnyEl.style.opacity = '0.2';
-        activeCnyTimerId = setTimeout(() => {
-          priceCnyEl.textContent = targetCnyText;
-          priceCnyEl.style.opacity = '0.85';
-          activeCnyTimerId = null;
-        }, 140);
-      } catch {
-        priceCnyEl.textContent = targetCnyText;
-      }
-    }
-
-    // 3. 数字滚动/递减递增动画 (Rolling Numeric Count Tween)
-    if (startNum !== endNum && numEl) {
-      if (badgeEl && badgeEl.classList) badgeEl.classList.add('is-animating');
-
-      const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-      const duration = 500;
-      const easeOut = t => 1 - Math.pow(1 - t, 4);
-
-      const step = now => {
-        const elapsed = Math.max(0, now - startTime);
-        const progress = Math.min(1, elapsed / duration);
-        const eased = easeOut(progress);
-        const currentVal = startNum + (endNum - startNum) * eased;
-
-        if (progress < 1) {
-          if (endNum % 1 !== 0) {
-            numEl.textContent = currentVal >= 100 ? String(Math.round(currentVal)) : currentVal.toFixed(2);
-          } else {
-            numEl.textContent = String(Math.round(currentVal));
-          }
-          activeBadgeRafId = requestAnimationFrame(step);
-        } else {
-          numEl.textContent = formattedFinalNum;
-          if (badgeEl && badgeEl.classList) badgeEl.classList.remove('is-animating');
-          activeBadgeRafId = null;
-        }
-      };
-
-      activeBadgeRafId = requestAnimationFrame(step);
-    } else if (numEl) {
-      numEl.textContent = formattedFinalNum;
-    }
-
-    lastBadgePriceState = {
-      symbol: targetSymbol,
-      num: endNum,
-      cycle: targetCycle,
-      cnyText: targetCnyText
-    };
-  }
-
   function renderPlanDetail(ps) {
     if (!ps) return;
     const sumTxt = el('plan-summary-text');
     if (sumTxt) {
       const modeTxt = ps.status === 'identified'
         ? t('plan.summary.identified')
-        : ps.hasCustomSettings
-          ? t('plan.summary.custom')
-          : t('plan.summary.unknown');
+        : t('plan.summary.unknown');
       sumTxt.textContent = `${ps.tierName || 'Pro'} · ${modeTxt} · ${t('plan.summary.justNow')}`;
     }
-    // 实时联动更新黄框位置的订阅费与汇率胶囊 (支持动效与符号消散)
-    const curSymbol = ps.currencySymbol || '$';
-    let targetSymbol = '$';
-    let targetNum = 19.99;
-    let targetCycle = t('plan.summary.perMonth');
-    let targetCny = '(≈ ¥134.3 CNY)';
-
-    if (ps.actualPricePaid === 0 || ps.isZeroExtraCost) {
-      targetSymbol = curSymbol;
-      targetNum = 0;
-      targetCycle = t('plan.summary.perMonth');
-      targetCny = t('plan.summary.freeWithPlan');
-    } else if (ps.actualPricePaid !== null && ps.actualPricePaid !== undefined) {
-      targetSymbol = curSymbol;
-      targetNum = Number(ps.actualPricePaid);
-      targetCycle = t('plan.summary.perMonth');
-      if (ps.currency === 'CNY') {
-        targetCny = '';
-      } else if (ps.cnyFormatted) {
-        const cnyClean = String(ps.cnyFormatted).replace(/^[折合約\s≈()（）]+/, '').replace(/[()（）]/g, '').trim();
-        const prefix = currentPanelLanguage === 'en' ? 'approx. ' : '≈ ';
-        targetCny = cnyClean ? `(${prefix}${cnyClean})` : '';
-      } else {
-        targetCny = '';
-      }
-    } else if (ps.officialPriceMonthly !== null && ps.officialPriceMonthly !== undefined) {
-      targetSymbol = '$';
-      targetNum = Number(ps.officialPriceMonthly);
-      targetCycle = t('plan.summary.perMonth');
-      targetCny = '(≈ ¥134.3 CNY)';
-    } else {
-      targetSymbol = '$';
-      targetNum = 19.99;
-      targetCycle = t('plan.summary.perMonth');
-      targetCny = '(≈ ¥134.3 CNY)';
-    }
-
-    renderPlanSummaryPriceBadge(targetSymbol, targetNum, targetCycle, targetCny);
 
     const detName = el('p-det-name');
     if (detName) detName.textContent = ps.tierName || 'Google AI Pro';
     const detAcc = el('p-det-account');
     if (detAcc) detAcc.textContent = ps.email || t('plan.account.unknown');
 
-    // 守卫：若当前不在 Token 统计视图或详情处于收起状态，严禁异步返回时撑开详情面板
+    // 守卫：若详情处于收起状态，严禁异步返回时撑开详情面板
     const cardEl = el('plan-detail-card');
-    if (cardEl && (activeTokenView !== 'tokens' || !planDetailExpanded)) {
+    if (cardEl && !planDetailExpanded) {
       cardEl.style.display = 'none';
       cardEl.classList?.remove?.('is-expanded');
-    }
-
-    const detCountry = el('p-det-country');
-    const tagCountry = el('p-det-country-tag');
-    const directCountrySel = el('direct-country-select');
-    const countryText = (ps.country && !String(ps.country).includes('未知')) ? String(ps.country).trim() : '未知';
-    if (detCountry) detCountry.textContent = countryText === '未知' ? t('plan.country.unknown') : countryText;
-    if (tagCountry) {
-      tagCountry.style.display = ps.countrySource === 'custom' ? 'inline-block' : 'none';
-      tagCountry.textContent = ps.countrySource === 'custom' ? t('plan.tag.custom') : '';
-    }
-
-    const detReg = el('p-det-region');
-    const tagReg = el('p-det-region-tag');
-    let regText = ps.subscriptionRegion || ps.region || '未知';
-    if (regText.includes('未在当前会话中获取') || regText.trim() === '未知') regText = '未知';
-    if (detReg) detReg.textContent = regText === '未知' ? t('plan.region.unknown') : regText;
-    if (tagReg) {
-      tagReg.style.display = ps.regionSource === 'custom' ? 'inline-block' : 'none';
-      tagReg.textContent = ps.regionSource === 'custom' ? t('plan.tag.custom') : '';
-    }
-
-    const detCur = el('p-det-currency');
-    const tagCur = el('p-det-currency-tag');
-    const directCurSel = el('direct-currency-select');
-    const curText = ps.currency || 'USD';
-    if (detCur) detCur.textContent = curText;
-    if (tagCur) {
-      tagCur.style.display = ps.currencySource === 'custom' ? 'inline-block' : 'none';
-      tagCur.textContent = ps.currencySource === 'custom' ? t('plan.tag.custom') : '';
-    }
-
-    // 使用纯同步回填守卫同步更新详情面板内的下拉控件值
-    runWithUiHydration(() => {
-      if (directCountrySel) {
-        if (countryText !== '未知' && directCountrySel.options) {
-          const exists = Array.from(directCountrySel.options).some(o => o.value === countryText);
-          if (!exists && typeof document.createElement === 'function') {
-            const opt = document.createElement('option');
-            opt.value = countryText;
-            opt.textContent = '🌐 ' + countryText;
-            directCountrySel.appendChild?.(opt);
-          }
-        }
-        directCountrySel.value = countryText;
-      }
-      if (directCurSel) {
-        directCurSel.value = curText === 'NTD' ? 'TWD' : curText;
-      }
-    });
-
-    // 刷新国家、订阅地区与币种直接选择器标签与选中高亮
-    if (typeof refreshDirectCountryDisplay === 'function') {
-      refreshDirectCountryDisplay(countryText);
-    }
-    if (typeof refreshDirectRegionDisplay === 'function') {
-      refreshDirectRegionDisplay(regText);
-    }
-    if (typeof refreshDirectCurrencyDisplay === 'function') {
-      refreshDirectCurrencyDisplay(curText);
-    }
-
-    const detAcq = el('p-det-acq');
-    const tagAcq = el('p-det-acq-tag');
-    if (detAcq) detAcq.textContent = localizeAcquisitionSource(ps.acquisitionSource || ps.acquisitionSourceName);
-    if (tagAcq) {
-      const isPromo = ps.acquisitionSource && ps.acquisitionSource !== 'normal_paid';
-      tagAcq.style.display = isPromo ? 'inline-block' : 'none';
-      tagAcq.textContent = isPromo ? t('plan.tag.promo') : '';
-    }
-
-    const detPrice = el('p-det-price');
-    const tagPrice = el('p-det-price-tag');
-    const isPresetMode = ps.priceMode === 'preset';
-    const btnModePreset = el('btn-mode-preset');
-    const btnModeCustom = el('btn-mode-custom');
-    if (btnModePreset) setPillActive(btnModePreset, isPresetMode);
-    if (btnModeCustom) setPillActive(btnModeCustom, !isPresetMode);
-
-    if (detPrice) {
-      const cycleText = localizeBillingCycleLabel(ps.billingCycle);
-      if (ps.actualPricePaid === 0 || ps.isZeroExtraCost) {
-        detPrice.textContent = `${curSymbol}0 · ${cycleText}`;
-      } else if (ps.actualPricePaid !== null && ps.actualPricePaid !== undefined) {
-        let cnyPart = '';
-        if (ps.currency !== 'CNY' && ps.cnyFormatted) {
-          const locCny = localizeCnyFormatted(ps.cnyFormatted);
-          cnyPart = locCny ? ` (${locCny})` : '';
-        }
-        const paidFormatted = Number(ps.actualPricePaid) % 1 === 0 ? Number(ps.actualPricePaid) : Number(ps.actualPricePaid).toFixed(2);
-        detPrice.textContent = `${curSymbol}${paidFormatted} · ${cycleText}${cnyPart}`;
-      } else if (ps.priceRangeNote && ps.priceRangeNote !== '未知') {
-        detPrice.textContent = ps.priceRangeNote.replace(/[（\(][^）\)]*[）\)]/g, '').trim();
-      } else if (ps.officialPriceMonthly !== null && ps.officialPriceMonthly !== undefined) {
-        detPrice.textContent = `${t('plan.tag.publicRef')} $${ps.officialPriceMonthly}${t('plan.summary.perMonth')}`;
-      } else {
-        detPrice.textContent = '—';
-      }
-    }
-    if (tagPrice) {
-      tagPrice.style.display = 'inline-block';
-      if (ps.actualPricePaid === 0 || ps.isZeroExtraCost) {
-        tagPrice.textContent = t('plan.tag.manualFree');
-      } else if (ps.priceMode === 'custom' || ps.priceSource === 'custom') {
-        tagPrice.textContent = t('plan.tag.userPaid');
-      } else if (ps.priceSource === 'preset_region' || isPresetMode) {
-        tagPrice.textContent = t('plan.tag.official');
-      } else {
-        tagPrice.textContent = t('plan.tag.publicRef');
-      }
-    }
-
-    const dtVal = el('p-dt-validity');
-    const ddVal = el('p-det-validity');
-    if (dtVal && ddVal) {
-      if (ps.validEndDate) {
-        dtVal.style.display = 'block';
-        ddVal.style.display = 'block';
-        ddVal.textContent = ps.isExpired
-          ? t('plan.validity.expired', { date: ps.validEndDate })
-          : t('plan.validity.active', { date: ps.validEndDate });
-        ddVal.style.color = ps.isExpired ? '#ef4444' : 'var(--ag-text-secondary)';
-      } else {
-        dtVal.style.display = 'none';
-        ddVal.style.display = 'none';
-      }
-    }
-
-    const dtNote = el('p-dt-note');
-    const ddNote = el('p-det-note');
-    if (dtNote && ddNote) {
-      if (ps.customNote) {
-        dtNote.style.display = 'block';
-        ddNote.style.display = 'block';
-        ddNote.textContent = String(ps.customNote);
-      } else {
-        dtNote.style.display = 'none';
-        ddNote.style.display = 'none';
-      }
     }
 
     const pPrompt = el('p-det-prompt-credits');
@@ -1299,9 +994,7 @@
     }
     const detTime = el('p-det-time');
     if (detTime) {
-      const timeStr = ps.updatedAt ? new Date(ps.updatedAt).toLocaleString() : '—';
-      const verifyStr = ps.pricingTableVerifiedDate ? ` · ${ps.pricingTableVerifiedDate}` : '';
-      detTime.textContent = `${timeStr}${verifyStr}`;
+      detTime.textContent = ps.updatedAt ? new Date(ps.updatedAt).toLocaleString() : '—';
     }
   }
 
@@ -1332,99 +1025,11 @@
       const srcMap = bySrc[src] || bySrc.all || ANTIGRAVITY_TOKEN_DATA.dailyMap;
       ANTIGRAVITY_TOKEN_DATA.dailyMap = srcMap;
       renderActiveHeatView(true);
-      renderActiveCostEstimateView();
     }
   }
   el('src-tab-all')?.addEventListener('click', () => switchTokenSource('all'));
   el('src-tab-desktop')?.addEventListener('click', () => switchTokenSource('desktop'));
   el('src-tab-cli')?.addEventListener('click', () => switchTokenSource('cli'));
-
-  // 视图切换（Token 统计 / API 等值估算）
-  let activeTokenView = 'tokens';
-
-  // 费用面板紧凑摘要与展开详情切换
-  let costDetailsExpanded = false;
-  function toggleCostDetails(expand) {
-    if (expand === undefined) costDetailsExpanded = !costDetailsExpanded;
-    else costDetailsExpanded = Boolean(expand);
-
-    const pane = el('cost-details-pane');
-    const btn = el('btn-cost-details-toggle');
-    const pTokens = el('panel-tokens');
-
-    if (pane) {
-      pane.style.display = costDetailsExpanded ? 'block' : 'none';
-      if (costDetailsExpanded) pane.style.animation = 'agFadeIn .2s cubic-bezier(0.16,1,0.3,1)';
-    }
-    if (btn) btn.textContent = costDetailsExpanded ? t('cost.btnCollapse') : t('cost.btnExpand');
-    if (pTokens) {
-      const isCompact = activeTokenView === 'cost' && !costDetailsExpanded;
-      pTokens.classList?.toggle?.('cost-compact-view', isCompact);
-      const curCls = pTokens.getAttribute?.('class') || '';
-      if (isCompact) {
-        if (!curCls.includes('cost-compact-view')) pTokens.setAttribute?.('class', (curCls + ' cost-compact-view').trim());
-      } else {
-        pTokens.setAttribute?.('class', curCls.replace(/\bcost-compact-view\b/g, '').trim());
-      }
-    }
-    positionFloatingPanels();
-  }
-  el('cost-details-pane');
-  el('cost-non-paid-badge');
-  el('cost-scope-desc');
-  el('tokens-main-view');
-  el('btn-cost-details-toggle')?.addEventListener('click', () => toggleCostDetails());
-  el('btn-cost-details-collapse')?.addEventListener('click', () => toggleCostDetails(false));
-  el('btn-cost-fill-sub')?.addEventListener('click', () => {
-    switchTokenView('tokens');
-    setPlanDetailExpanded(true);
-    togglePlanCustomForm(true);
-  });
-  toggleCostDetails(false);
-
-  function switchTokenView(v) {
-    activeTokenView = v;
-    // 离开 Token 统计视图时关闭订阅详情与表单
-    if (v !== 'tokens') {
-      setPlanDetailExpanded(false, { skipReposition: true });
-    } else {
-      setPlanDetailExpanded(false, { skipReposition: true });
-    }
-    setPillActive(el('tok-view-tokens'), v === 'tokens');
-    setPillActive(el('tok-view-cost'), v === 'cost');
-    const costCard = el('cost-estimate-card');
-    const tokensMain = el('tokens-main-view');
-    const statCards = el('token-stat-cards');
-    const planBar = el('plan-summary-bar');
-    const titleTokens = el('panel-tokens-title');
-    const pTokens = el('panel-tokens');
-
-    if (costCard) {
-      costCard.style.display = v === 'cost' ? 'block' : 'none';
-      if (v === 'cost') costCard.style.animation = 'agFadeIn .18s cubic-bezier(0.16,1,0.3,1)';
-    }
-    if (tokensMain) {
-      tokensMain.style.display = v === 'tokens' ? 'block' : 'none';
-      if (v === 'tokens') tokensMain.style.animation = 'agFadeIn .18s cubic-bezier(0.16,1,0.3,1)';
-    }
-    if (statCards) statCards.style.display = v === 'tokens' ? 'grid' : 'none';
-    if (planBar) planBar.style.display = v === 'tokens' ? 'flex' : 'none';
-    if (titleTokens) titleTokens.textContent = v === 'cost' ? t('tokens.titleCost') : t('tokens.title');
-
-    if (pTokens) {
-      const isCompact = v === 'cost' && !costDetailsExpanded;
-      pTokens.classList?.toggle?.('cost-compact-view', isCompact);
-      const curCls = pTokens.getAttribute?.('class') || '';
-      if (isCompact) {
-        if (!curCls.includes('cost-compact-view')) pTokens.setAttribute?.('class', (curCls + ' cost-compact-view').trim());
-      } else {
-        pTokens.setAttribute?.('class', curCls.replace(/\bcost-compact-view\b/g, '').trim());
-      }
-    }
-    positionFloatingPanels();
-  }
-  el('tok-view-tokens')?.addEventListener('click', () => switchTokenView('tokens'));
-  el('tok-view-cost')?.addEventListener('click', () => switchTokenView('cost'));
 
   el('badge').addEventListener('click', toggleContext);
   el('badge-speed')?.addEventListener('click', toggleContext);
@@ -1451,9 +1056,44 @@
     hideContextTooltip();
   });
 
+  // 顶部快捷操作（仅图标）：悬停/聚焦展示说明气泡，点击直接触发动作并反馈
+  el('btn-topbar-compact')?.addEventListener('mouseenter', () => {
+    if (!isAnyPanelOpen()) showTopbarActionTooltip('compact', el('btn-topbar-compact'));
+  });
+  el('btn-topbar-compact')?.addEventListener('mouseleave', () => {
+    hideTopbarActionTooltip(false);
+  });
+  el('btn-topbar-compact')?.addEventListener('focus', () => {
+    if (!isAnyPanelOpen()) showTopbarActionTooltip('compact', el('btn-topbar-compact'));
+  });
+  el('btn-topbar-compact')?.addEventListener('blur', () => {
+    hideTopbarActionTooltip(false);
+  });
+  el('btn-topbar-compact')?.addEventListener('click', () => {
+    void triggerSessionCompact('topbar');
+  });
+
+  el('btn-topbar-raise-limit')?.addEventListener('mouseenter', () => {
+    if (!isAnyPanelOpen()) showTopbarActionTooltip('raise', el('btn-topbar-raise-limit'));
+  });
+  el('btn-topbar-raise-limit')?.addEventListener('mouseleave', () => {
+    hideTopbarActionTooltip(false);
+  });
+  el('btn-topbar-raise-limit')?.addEventListener('focus', () => {
+    if (!isAnyPanelOpen()) showTopbarActionTooltip('raise', el('btn-topbar-raise-limit'));
+  });
+  el('btn-topbar-raise-limit')?.addEventListener('blur', () => {
+    hideTopbarActionTooltip(false);
+  });
+  el('btn-topbar-raise-limit')?.addEventListener('click', () => {
+    void triggerSessionRaiseLimit('topbar');
+  });
+
   el('theme-toggle')?.addEventListener('click', cycleTheme);
   el('theme-toggle-tokens')?.addEventListener('click', cycleTheme);
   el('badge').addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
+  el('btn-topbar-compact')?.addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
+  el('btn-topbar-raise-limit')?.addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
   el('badge-tokens').addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
   el('badge-speed')?.addEventListener('contextmenu', e => { e.preventDefault(); cycleTheme(); });
 
@@ -1886,6 +1526,39 @@
     }
   }
 
+  const lastCascadeConfigByConv = new Map();
+
+  function captureSendCascadeContext(rawInput) {
+    try {
+      if (!rawInput) return;
+      if (typeof Uint8Array !== 'undefined' && (rawInput instanceof Uint8Array || ArrayBuffer.isView?.(rawInput) || rawInput instanceof ArrayBuffer)) {
+        return;
+      }
+      let obj = null;
+      if (typeof rawInput === 'string') {
+        const trimmed = rawInput.trim();
+        if (!trimmed.startsWith('{')) return;
+        obj = JSON.parse(trimmed);
+      } else if (typeof rawInput === 'object') {
+        obj = rawInput;
+      }
+      if (!obj || typeof obj !== 'object') return;
+      const cid = obj.cascadeId || obj.cascade_id;
+      if (!cid || typeof cid !== 'string') return;
+      const cfg = obj.cascadeConfig || obj.cascade_config || null;
+      const meta = obj.metadata || null;
+      if (!cfg && !meta) return;
+      const snap = {};
+      if (cfg) snap.cascadeConfig = JSON.parse(JSON.stringify(cfg));
+      if (meta) snap.metadata = JSON.parse(JSON.stringify(meta));
+      if (lastCascadeConfigByConv.size >= 30 && !lastCascadeConfigByConv.has(cid)) {
+        const oldest = lastCascadeConfigByConv.keys().next().value;
+        if (oldest !== undefined) lastCascadeConfigByConv.delete(oldest);
+      }
+      lastCascadeConfigByConv.set(cid, snap);
+    } catch {}
+  }
+
   function installRequestInterceptor() {
     if (typeof window === 'undefined') return;
     if (window.__agRequestInterceptorInstalled) return;
@@ -1894,6 +1567,7 @@
     globalThis.__AG_METER_ON_SEND_MESSAGE__ = function(req, channel = 'client_object') {
       try {
         if (!req || typeof req !== 'object' || typeof budgetEngine.transformOutgoingSendRequest !== 'function') return null;
+        captureSendCascadeContext(req);
         const tx = budgetEngine.transformOutgoingSendRequest(req, buildInterceptorContext(channel, 'SendUserCascadeMessage'));
         if (!tx || !tx.handled) return null;
         const rec = recordBudgetTransformDispatch(tx);
@@ -1939,6 +1613,7 @@
               if (tx.modified && tx.output !== undefined) {
                 nextData = tx.output;
               }
+              captureSendCascadeContext(nextData);
               if (!isCoveredByRecentDecorator(tx)) {
                 rec = recordBudgetTransformDispatch(tx);
               }
@@ -1967,6 +1642,7 @@
             ? resource
             : (resource && resource.url ? resource.url : String(resource || ''));
           if (typeof budgetEngine.isTargetBudgetRpc === 'function' && budgetEngine.isTargetBudgetRpc(urlStr) && init?.body) {
+            captureSendCascadeContext(init.body);
             const headersObj = init?.headers;
             let contentType = '';
             if (headersObj) {
@@ -2035,6 +1711,7 @@
         try {
           const urlStr = this.__agRequestUrl || '';
           if (body && typeof budgetEngine.isTargetBudgetRpc === 'function' && budgetEngine.isTargetBudgetRpc(urlStr)) {
+            captureSendCascadeContext(body);
             const contentType = this.__agRequestHeaders?.['content-type'] || '';
             const tx = budgetEngine.transformOutgoingSendRequest(body, buildInterceptorContext('xhr', urlStr, contentType));
             if (tx && tx.handled) {
@@ -2632,6 +2309,7 @@
       renderSpeedComparisonTab();
     } else if (tabName === 'settings') {
       void refreshModulesDisplay();
+      void refreshCliUnlockDisplay();
       if (typeof refreshEnhanceStatus === 'function') void refreshEnhanceStatus();
     }
     positionFloatingPanels();
@@ -4473,6 +4151,7 @@
         if (unlockStatusDesc) unlockStatusDesc.textContent = t('status.client.unavailable');
         renderCompactSessionCard();
         renderClientStatusBar();
+        renderSessionQuickActions();
         if (!isContextSettingsView && activeContextTab === 'models') renderModelSettingsTab();
         return;
       }
@@ -4560,12 +4239,14 @@
         renderClientStatusBar();
         if (!isContextSettingsView && activeContextTab === 'models') renderModelSettingsTab();
       }
+      renderSessionQuickActions();
     } catch {
       if (thisSeq !== unlockReqSeq) return;
       unlockStatusFetchError = true;
       currentUnlockStatus = null;
       renderCompactSessionCard();
       renderClientStatusBar();
+      renderSessionQuickActions();
     }
   }
 
@@ -5268,37 +4949,23 @@
         const open = unlockDrawerBody.style.display === 'block';
         unlockDrawerArrow.textContent = open ? t('drawer.collapse') : t('drawer.expand');
       }
-      const btnCostDet = el('btn-cost-details-toggle');
-      const costDetBody = el('cost-details-pane');
-      if (btnCostDet && costDetBody) {
-        const open = costDetBody.style.display === 'block';
-        btnCostDet.textContent = open ? t('cost.btnCollapse') : t('cost.btnExpand');
-      }
       const btnPlanDet = el('btn-plan-detail-toggle');
       if (btnPlanDet) {
         btnPlanDet.textContent = planDetailExpanded ? t('plan.detail.toggleClose') : t('plan.detail.toggleOpen');
       }
     } catch {}
     try { if (typeof applyTheme === 'function') applyTheme(); } catch {}
+    try { renderVersionSyncBanner(); } catch {}
     try { render(); } catch {}
-    try { renderSessionCost(); } catch {}
     try { renderHeaderModelDropdown(); } catch {}
     try { renderModelSettingsTab(); } catch {}
     try { renderSpeedComparisonTab(); } catch {}
     try { if (currentUnlockStatus) { renderClientStatusBar(); renderCompactSessionCard(); } } catch {}
+    try { renderCliUnlockState(currentCliUnlockStatus); } catch {}
     try {
       if (typeof renderPlanDetail === 'function' && ANTIGRAVITY_TOKEN_DATA?.planStatus) {
         renderPlanDetail(ANTIGRAVITY_TOKEN_DATA.planStatus);
-      } else {
-        const pv = el('plan-summary-price-val');
-        if (pv && /^\$19\.99\/(月|mo)$/.test(String(pv.textContent || '').trim())) {
-          pv.textContent = `$19.99${t('plan.summary.perMonth')}`;
-        }
       }
-      if (typeof refreshRegionPresetSelectOptions === 'function') refreshRegionPresetSelectOptions();
-      if (typeof refreshDirectCountryDisplay === 'function') refreshDirectCountryDisplay();
-      if (typeof refreshDirectRegionDisplay === 'function') refreshDirectRegionDisplay();
-      if (typeof refreshDirectCurrencyDisplay === 'function') refreshDirectCurrencyDisplay();
     } catch {}
     try {
       if (typeof renderEnhanceSectionUI === 'function') renderEnhanceSectionUI();
@@ -5307,8 +4974,9 @@
       if (isChineseExpanded || isProxyExpanded || isContextSettingsView) {
         void refreshModulesDisplay();
       }
-      if (isContextSettingsView && typeof refreshEnhanceStatus === 'function') {
-        void refreshEnhanceStatus();
+      if (isContextSettingsView) {
+        void refreshCliUnlockDisplay();
+        if (typeof refreshEnhanceStatus === 'function') void refreshEnhanceStatus();
       }
     } catch {}
     try {
@@ -5942,6 +5610,24 @@
     void applyBrandTitleSetting(selectedBrandTitle || currentBrandTitle);
   });
 
+  let lastVersionSyncState = null;
+
+  function renderVersionSyncBanner(vs = lastVersionSyncState) {
+    const banner = el('version-sync-banner');
+    const textEl = el('version-sync-text');
+    if (!banner || !textEl) return;
+    if (vs && vs.outdated && vs.officialVersion && vs.hakimiVersion) {
+      textEl.textContent = t('versionSync.mismatch', {
+        officialVer: vs.officialVersion,
+        hakimiVer: vs.hakimiVersion
+      });
+      banner.hidden = false;
+    } else {
+      textEl.textContent = '';
+      banner.hidden = true;
+    }
+  }
+
   async function refreshModulesDisplay() {
     try {
       const res = await invokeModulesApi('status');
@@ -5956,6 +5642,8 @@
         }
         return;
       }
+      lastVersionSyncState = res.versionSync || null;
+      renderVersionSyncBanner(lastVersionSyncState);
       const cfg = res.data;
 
       currentChineseEnabled = Boolean(cfg.modules?.chinese?.enabled);
@@ -6089,10 +5777,142 @@
     void setClientLanguageTarget(!currentChineseEnabled);
   });
 
+  const cliUnlockBadge = el('cli-unlock-badge');
+  const cliUnlockMeta = el('cli-unlock-meta');
+  const btnCliUnlockApply = el('btn-cli-unlock-apply');
+  const btnCliUnlockRefresh = el('btn-cli-unlock-refresh');
+  const cliUnlockResultBox = el('cli-unlock-result');
+  const cliUnlockResultText = el('cli-unlock-result-text');
+
+  let currentCliUnlockStatus = null;
+  let isCliUnlockBusy = false;
+
+  async function invokeCliUnlockApi(action, opts = {}) {
+    if (action === 'status' && window.contextMeterAPI?.getCliUnlockStatus) {
+      return await window.contextMeterAPI.getCliUnlockStatus(opts);
+    }
+    if (action === 'apply' && window.contextMeterAPI?.applyCliUnlock) {
+      return await window.contextMeterAPI.applyCliUnlock(opts);
+    }
+    return { ok: false, error: t('models.err.noApplyBridge'), unavailable: true };
+  }
+
+  function renderCliUnlockState(res = currentCliUnlockStatus) {
+    if (!cliUnlockBadge || !cliUnlockMeta) return;
+    if (!res || !res.ok || !res.data) {
+      cliUnlockBadge.textContent = t('status.badge.unavailable');
+      cliUnlockBadge.className = 'key-pill pill-muted';
+      cliUnlockMeta.textContent = res?.error ? translateBackendText(res.error) : '—';
+      if (btnCliUnlockApply) btnCliUnlockApply.disabled = true;
+      return;
+    }
+
+    const d = res.data;
+    const hooks = [d.offersContextWindow, d.autoCompactEnv, d.regionUnlock].filter(
+      h => h && h.status && h.status !== 'missing'
+    );
+    const patchedCount = hooks.filter(h => h.status === 'patched').length;
+    const totalCount = hooks.length;
+
+    if (d.status === 'patched') {
+      cliUnlockBadge.textContent = t('settings.cliUnlock.patched', { ok: patchedCount, total: totalCount || 1 });
+      cliUnlockBadge.className = 'key-pill pill-ok';
+    } else if (d.status === 'partial') {
+      cliUnlockBadge.textContent = t('settings.cliUnlock.partial');
+      cliUnlockBadge.className = 'key-pill pill-warn';
+    } else if (d.status === 'not_found') {
+      cliUnlockBadge.textContent = t('settings.cliUnlock.notFound');
+      cliUnlockBadge.className = 'key-pill pill-muted';
+    } else if (d.status === 'unsupported') {
+      cliUnlockBadge.textContent = t('settings.cliUnlock.unsupported');
+      cliUnlockBadge.className = 'key-pill pill-danger';
+    } else {
+      cliUnlockBadge.textContent = t('settings.cliUnlock.unpatched');
+      cliUnlockBadge.className = 'key-pill pill-muted';
+    }
+
+    const metaParts = [];
+    if (d.realPath || d.binaryPath) {
+      metaParts.push(t('settings.cliUnlock.metaPath', { path: d.realPath || d.binaryPath }));
+    } else if (d.message) {
+      metaParts.push(translateBackendText(d.message));
+    }
+    if (Array.isArray(d.brokenSymlinks) && d.brokenSymlinks.length > 0) {
+      metaParts.push(t('settings.cliUnlock.brokenLinks', {
+        paths: d.brokenSymlinks.map(s => s.path).join(', ')
+      }));
+    }
+    if (d.configStatus?.configContextWindow) {
+      metaParts.push(`config: ${d.configStatus.configContextWindow}`);
+    }
+    cliUnlockMeta.textContent = metaParts.join(' · ') || '—';
+
+    if (btnCliUnlockApply) {
+      const blocked = d.status === 'not_found' || d.status === 'unsupported' || d.status === 'partial';
+      btnCliUnlockApply.disabled = isCliUnlockBusy || blocked;
+      btnCliUnlockApply.textContent = isCliUnlockBusy ? t('settings.cliUnlock.busy') : t('settings.cliUnlock.applyBtn');
+    }
+  }
+
+  async function refreshCliUnlockDisplay(opts = {}) {
+    try {
+      const res = await invokeCliUnlockApi('status', opts);
+      currentCliUnlockStatus = res;
+      renderCliUnlockState(res);
+      return res;
+    } catch (err) {
+      const fallback = { ok: false, error: err?.message || t('msg.unknownErr') };
+      currentCliUnlockStatus = fallback;
+      renderCliUnlockState(fallback);
+      return fallback;
+    }
+  }
+
+  btnCliUnlockRefresh?.addEventListener('click', () => {
+    void refreshCliUnlockDisplay();
+  });
+
+  btnCliUnlockApply?.addEventListener('click', async () => {
+    if (isCliUnlockBusy) return;
+    isCliUnlockBusy = true;
+    renderCliUnlockState(currentCliUnlockStatus);
+    if (cliUnlockResultBox) cliUnlockResultBox.style.display = 'none';
+    try {
+      const res = await invokeCliUnlockApi('apply', { mode: 'dynamic' });
+      if (!res || !res.ok) {
+        if (cliUnlockResultBox && cliUnlockResultText) {
+          cliUnlockResultBox.className = 'unlock-result-box result-error';
+          cliUnlockResultBox.style.display = 'block';
+          cliUnlockResultText.textContent = buildFriendlyWriteError(res?.error);
+        }
+      } else {
+        if (cliUnlockResultBox && cliUnlockResultText) {
+          cliUnlockResultBox.className = 'unlock-result-box result-success';
+          cliUnlockResultBox.style.display = 'block';
+          const syncN = Array.isArray(res.syncedConfigs) ? res.syncedConfigs.length : 0;
+          cliUnlockResultText.textContent = syncN > 0
+            ? `${res.message || ''} (${t('settings.cliUnlock.metaCfg', { n: syncN })})`
+            : (res.message || t('msg.applied'));
+        }
+      }
+      await refreshCliUnlockDisplay();
+    } catch (err) {
+      if (cliUnlockResultBox && cliUnlockResultText) {
+        cliUnlockResultBox.className = 'unlock-result-box result-error';
+        cliUnlockResultBox.style.display = 'block';
+        cliUnlockResultText.textContent = buildFriendlyWriteError(err?.message);
+      }
+    } finally {
+      isCliUnlockBusy = false;
+      renderCliUnlockState(currentCliUnlockStatus);
+    }
+  });
+
   // 静默初始化检测一次解锁状态与各模块状态
   setTimeout(() => {
     void refreshUnlockStatus();
     void refreshModulesDisplay();
+    void refreshCliUnlockDisplay();
   }, 500);
   setTimeout(() => {
     if (currentChineseEnabled) {
@@ -6161,315 +5981,6 @@
   el('heat-legend-scale')?.addEventListener('click', () => toggleTokenColorsDrawer(true));
 
   // 热力图视图切换（每天 / 每周 / 累计总量）
-
-  // 费用估算范围（默认本期：自然月）与估值模式（默认参考模型折算，首屏展示真实用量价值）
-  let activeCostScope = 'period'; // 'period' | 'all'
-  let costModelMode = 'ref'; // 'ref' | 'hybrid' | 'identified'
-  let activeRefMode = 'all'; // 兼容旧接口 'all' | 'hybrid'
-
-  function switchCostScope(scope) {
-    activeCostScope = scope;
-    setPillActive(el('cost-btn-scope-period'), scope === 'period');
-    setPillActive(el('cost-btn-scope-all'), scope === 'all');
-    renderActiveCostEstimateView();
-  }
-  el('cost-btn-scope-period')?.addEventListener('click', () => switchCostScope('period'));
-  el('cost-btn-scope-all')?.addEventListener('click', () => switchCostScope('all'));
-
-  function switchCostModelMode(mode) {
-    costModelMode = mode;
-    setPillActive(el('cost-btn-mode-ref'), mode === 'ref');
-    setPillActive(el('cost-btn-mode-hybrid'), mode === 'hybrid');
-    setPillActive(el('cost-btn-mode-identified'), mode === 'identified');
-    renderActiveCostEstimateView();
-  }
-  el('cost-btn-mode-ref')?.addEventListener('click', () => switchCostModelMode('ref'));
-  el('cost-btn-mode-hybrid')?.addEventListener('click', () => switchCostModelMode('hybrid'));
-  el('cost-btn-mode-identified')?.addEventListener('click', () => switchCostModelMode('identified'));
-
-  function toggleRefCostDrawer(forceOpen) {
-    const body = el('ref-cost-drawer-body');
-    const btn = el('btn-toggle-ref-cost-drawer');
-    if (!body) return;
-    const curHidden = body.style.display === 'none' || !body.style.display;
-    const next = typeof forceOpen === 'boolean' ? forceOpen : curHidden;
-    body.style.display = next ? 'block' : 'none';
-    if (btn) btn.textContent = next ? t('cost.btnCollapse') : t('cost.btnExpand');
-  }
-  el('btn-toggle-ref-cost-drawer')?.addEventListener('click', () => toggleRefCostDrawer());
-
-  function switchRefMode(mode) {
-    activeRefMode = mode;
-    costModelMode = mode === 'hybrid' ? 'hybrid' : 'ref';
-    setPillActive(el('btn-ref-mode-all'), mode === 'all');
-    setPillActive(el('btn-ref-mode-hybrid'), mode === 'hybrid');
-    renderActiveCostEstimateView();
-  }
-  el('btn-ref-mode-all')?.addEventListener('click', () => switchRefMode('all'));
-  el('btn-ref-mode-hybrid')?.addEventListener('click', () => switchRefMode('hybrid'));
-
-  function renderActiveCostEstimateView() {
-    const isPeriod = activeCostScope === 'period';
-    const titleEl = el('cost-card-title');
-    const periodTag = el('cost-period-tag');
-    const grandVal = el('cost-grand-val');
-    const grandSub = el('cost-grand-sub');
-    const covPill = el('cost-coverage-pill');
-    const subSpendVal = el('cost-sub-spend-val');
-    const subSpendLbl = el('cost-sub-spend-lbl');
-    const subNote = el('cost-sub-compare-note');
-    const usageSummary = el('cost-usage-summary');
-    const diffSummary = el('cost-diff-summary');
-    const breakdown = el('cost-breakdown-info');
-
-    // 分类卡片 DOM
-    const inVal = el('ref-cost-input-val');
-    const inTok = el('ref-cost-input-tok');
-    const caVal = el('ref-cost-cache-val');
-    const caTok = el('ref-cost-cache-tok');
-    const outVal = el('ref-cost-output-val');
-    const outTok = el('ref-cost-output-tok');
-
-    if (titleEl) titleEl.textContent = isPeriod ? t('cost.title') : t('cost.titleAll');
-    if (periodTag) {
-      const pKey = ANTIGRAVITY_TOKEN_DATA.currentPeriod?.label || t('cost.periodTag');
-      periodTag.textContent = isPeriod ? pKey : t('cost.allHistory');
-    }
-
-    // 1. 提取当前范围真实用量与折算数据
-    const curIn = isPeriod
-      ? Number(ANTIGRAVITY_TOKEN_DATA.summary?.currentMonthInput || 0)
-      : Number(ANTIGRAVITY_TOKEN_DATA.summary?.totalInputTokens || 0);
-    const curCa = isPeriod
-      ? Number(ANTIGRAVITY_TOKEN_DATA.summary?.currentMonthCache || 0)
-      : Number(ANTIGRAVITY_TOKEN_DATA.summary?.totalCacheTokens || 0);
-    const curOut = isPeriod
-      ? Number(ANTIGRAVITY_TOKEN_DATA.summary?.currentMonthOutput || 0)
-      : Number(ANTIGRAVITY_TOKEN_DATA.summary?.totalOutputTokens || 0);
-    const curTotal = isPeriod
-      ? Number(ANTIGRAVITY_TOKEN_DATA.summary?.monthTokens || (curIn + curCa + curOut))
-      : Number(ANTIGRAVITY_TOKEN_DATA.summary?.grandTotalTokens || (curIn + curCa + curOut));
-
-    const refAll = ANTIGRAVITY_TOKEN_DATA.referenceCost?.all || {};
-    const refMonth = ANTIGRAVITY_TOKEN_DATA.referenceCost?.currentMonth || {};
-    const refHybridAll = ANTIGRAVITY_TOKEN_DATA.referenceCost?.hybrid || {};
-    const refHybridMonth = ANTIGRAVITY_TOKEN_DATA.referenceCost?.currentMonthHybrid || refHybridAll;
-
-    const curRef = isPeriod ? refMonth : refAll;
-    const curHybrid = isPeriod ? refHybridMonth : refHybridAll;
-
-    const ceSourceMap = ANTIGRAVITY_TOKEN_DATA.costEstimateBySource || {};
-    const ceAll = ceSourceMap[activeTokenSource] || ceSourceMap.all || ANTIGRAVITY_TOKEN_DATA.costEstimate || {};
-    const cePeriod = ANTIGRAVITY_TOKEN_DATA.costEstimateCurrentMonth || ceAll;
-    const curIdentified = isPeriod ? cePeriod : ceAll;
-
-    let apiCost = 0;
-    let pillText = t('cost.covFull');
-    let pillClass = 'key-pill pill-good';
-
-    // 2. 估值模式计算
-    let effectiveRef = curRef;
-    if ((effectiveRef.totalCostUSD === undefined || effectiveRef.totalCostUSD === null) && curTotal > 0) {
-      const core = typeof __AGContextMeterCore !== 'undefined' ? __AGContextMeterCore : null;
-      if (core && core.calculateReferenceModelCost) {
-        effectiveRef = core.calculateReferenceModelCost({
-          inputTokens: curIn,
-          outputTokens: curOut,
-          cacheTokens: curCa,
-          totalTokens: curTotal
-        }, 'gemini-3.8-flash', { pricingDate: '2026-11-09', mode: 'all' });
-      }
-    }
-
-    const rateIn = Number(effectiveRef.matchedTier?.inputPerMillion ?? 0.75);
-    const rateCa = Number(effectiveRef.matchedTier?.cacheReadPerMillion ?? 0.075);
-    const rateOut = Number(effectiveRef.matchedTier?.outputPerMillion ?? 3.75);
-
-    // 更新小摘要来源与时间描述行及非实付常驻标识
-    const scopeDescEl = el('cost-scope-desc');
-    if (scopeDescEl) {
-      const srcName = activeTokenSource === 'desktop' ? t('tokens.srcDesktopLabel') : activeTokenSource === 'cli' ? 'CLI' : t('tokens.srcAllLabel');
-      const pLabel = isPeriod ? (ANTIGRAVITY_TOKEN_DATA.currentPeriod?.label || t('cost.periodTag')) : t('cost.allHistory');
-      scopeDescEl.textContent = `${srcName} · ${pLabel}`;
-    }
-    const nonPaidBadge = el('cost-non-paid-badge');
-    if (nonPaidBadge) nonPaidBadge.textContent = t('cost.nonPaidBadge');
-
-    if (costModelMode === 'ref') {
-      apiCost = Number(effectiveRef.totalCostUSD || 0);
-      if (grandVal) {
-        if (apiCost > 0) {
-          grandVal.textContent = t('cost.approx', { val: apiCost.toFixed(2) });
-          grandVal.title = `$${apiCost.toFixed(4)}`;
-        } else if (curTotal > 0 && curIn === 0 && curCa === 0 && curOut === 0) {
-          grandVal.textContent = t('cost.notReady');
-          grandVal.title = t('cost.notReady');
-        } else {
-          grandVal.textContent = '$0.00';
-          grandVal.title = t('cost.noRecords');
-        }
-      }
-      if (grandSub) {
-        grandSub.textContent = t('cost.refSub', {
-          model: effectiveRef.modelDisplayName || 'Gemini 3.8 Flash',
-          in: rateIn.toFixed(2),
-          ca: rateCa.toFixed(3),
-          out: rateOut.toFixed(2)
-        });
-      }
-      pillText = t('cost.modeRef');
-      pillClass = 'key-pill pill-muted';
-
-      if (inVal) inVal.textContent = `$${Number(effectiveRef.inputCostUSD || (curIn * rateIn / 1e6)).toFixed(2)}`;
-      if (inTok) inTok.textContent = `${fmtYi(curIn)} tok`;
-      if (caVal) caVal.textContent = `$${Number(effectiveRef.cacheCostUSD || (curCa * rateCa / 1e6)).toFixed(2)}`;
-      if (caTok) caTok.textContent = t('cost.tokCacheDiscount', { tok: fmtYi(curCa) });
-      if (outVal) outVal.textContent = `$${Number(effectiveRef.outputCostUSD || (curOut * rateOut / 1e6)).toFixed(2)}`;
-      if (outTok) outTok.textContent = `${fmtYi(curOut)} tok`;
-    } else if (costModelMode === 'hybrid') {
-      const h = curHybrid.hybrid || {};
-      apiCost = Number(h.combinedTotalUSD || effectiveRef.totalCostUSD || 0);
-      if (grandVal) {
-        grandVal.textContent = t('cost.approx', { val: apiCost.toFixed(2) });
-        grandVal.title = t('cost.hybridSub', { known: h.knownCostUSD || 0, res: h.unpricedResidualCostUSD || 0 });
-      }
-      if (grandSub) {
-        grandSub.textContent = t('cost.hybridSub', {
-          known: Number(h.knownCostUSD || 0).toFixed(2),
-          res: Number(h.unpricedResidualCostUSD || 0).toFixed(2)
-        });
-      }
-      pillText = t('cost.hybridBadge');
-      pillClass = 'key-pill pill-muted';
-
-      const rb = h.residualTokensBreakdown || {};
-      if (inVal) inVal.textContent = `$${Number(rb.inputCostUSD || (Number(rb.input || 0) * rateIn / 1e6)).toFixed(2)}`;
-      if (inTok) inTok.textContent = t('cost.tokResidual', { tok: fmtYi(rb.input || 0) });
-      if (caVal) caVal.textContent = `$${Number(rb.cacheCostUSD || (Number(rb.cache || 0) * rateCa / 1e6)).toFixed(2)}`;
-      if (caTok) caTok.textContent = t('cost.tokResidual', { tok: fmtYi(rb.cache || 0) });
-      if (outVal) outVal.textContent = `$${Number(rb.outputCostUSD || (Number(rb.output || 0) * rateOut / 1e6)).toFixed(2)}`;
-      if (outTok) outTok.textContent = t('cost.tokResidual', { tok: fmtYi(rb.output || 0) });
-    } else {
-      // 仅已识别真实模型
-      const pricedCount = Number(curIdentified.pricedRequestsCount || 0);
-      const unpricedCount = Number(curIdentified.unpricedRequestsCount || 0);
-      const totalCount = pricedCount + unpricedCount;
-      apiCost = Number(curIdentified.pricedCostUSD || 0);
-
-      if (grandVal) {
-        if (totalCount === 0) {
-          grandVal.textContent = t('cost.noRecords');
-        } else if (pricedCount === 0) {
-          grandVal.textContent = t('cost.unpriced');
-          grandVal.title = t('cost.identSubNone');
-        } else if (apiCost < 0.01 && apiCost > 0) {
-          grandVal.textContent = '<$0.01';
-          grandVal.title = `$${apiCost.toFixed(6)}`;
-        } else {
-          grandVal.textContent = `$${apiCost.toFixed(2)}`;
-          grandVal.title = `$${apiCost.toFixed(4)}`;
-        }
-      }
-      if (grandSub) {
-        grandSub.textContent = pricedCount > 0
-          ? t('cost.identSub', { n: pricedCount })
-          : t('cost.identSubNone');
-      }
-      if (pricedCount === 0) {
-        pillText = t('cost.covPct', { pct: 0 });
-        pillClass = 'key-pill pill-warn';
-      } else {
-        const pct = curIdentified.coveragePercent != null ? curIdentified.coveragePercent : 0;
-        pillText = t('cost.covPct', { pct });
-        pillClass = `key-pill ${pct >= 100 ? 'pill-good' : 'pill-warn'}`;
-      }
-
-      if (inVal) inVal.textContent = `$${((curIdentified.byCategory?.inputTokens || 0) * rateIn / 1e6).toFixed(2)}`;
-      if (inTok) inTok.textContent = `${fmtYi(curIdentified.byCategory?.inputTokens || 0)} tok`;
-      if (caVal) caVal.textContent = `$${((curIdentified.byCategory?.cacheTokens || 0) * rateCa / 1e6).toFixed(2)}`;
-      if (caTok) caTok.textContent = `${fmtYi(curIdentified.byCategory?.cacheTokens || 0)} tok`;
-      if (outVal) outVal.textContent = `$${((curIdentified.byCategory?.outputTokens || 0) * rateOut / 1e6).toFixed(2)}`;
-      if (outTok) outTok.textContent = `${fmtYi(curIdentified.byCategory?.outputTokens || 0)} tok`;
-    }
-
-    if (covPill) {
-      covPill.textContent = pillText;
-      covPill.className = pillClass;
-      covPill.setAttribute?.('class', pillClass);
-    }
-
-    // 3. 用户实际支出渲染（首屏并列右栏）
-    const ps = ANTIGRAVITY_TOKEN_DATA.planStatus || {};
-    const curSymbol = ps.currencySymbol || '$';
-    if (subSpendLbl) subSpendLbl.textContent = t('cost.subSpendLabel');
-
-    const extraNoCompare = isPeriod ? '' : t('cost.allNoCompare');
-    if (subSpendVal && subNote) {
-      if (ps.actualPricePaid === 0 || ps.isZeroExtraCost) {
-        subSpendVal.textContent = `${curSymbol}0`;
-        subNote.textContent = t('cost.freeActive', { src: ps.acquisitionSourceName || t('cost.freePromo'), extra: extraNoCompare });
-      } else if (ps.actualPricePaid !== null && ps.actualPricePaid !== undefined) {
-        subSpendVal.textContent = `${curSymbol}${Number(ps.actualPricePaid).toFixed(2)}`;
-        const expTag = ps.isExpired ? t('cost.expiredTag') : '';
-        subNote.textContent = `${ps.acquisitionSourceName || t('cost.subSpend')} · ${t('cost.paidLabel')} (${ps.billingCycle || t('plan.summary.perMonth')})${expTag}${extraNoCompare}`;
-      } else if (ps.officialPriceMonthly !== null && ps.officialPriceMonthly !== undefined) {
-        subSpendVal.textContent = t('cost.paidUnknown');
-        subNote.textContent = `${t('cost.publicRefMonthly', { p: ps.officialPriceMonthly })}${extraNoCompare}`;
-      } else {
-        subSpendVal.textContent = t('cost.unknown');
-        subNote.textContent = t('cost.noPlanData');
-      }
-    }
-
-    const subLine = el('cost-sub-line');
-    if (subLine) {
-      if (ps.actualPricePaid === 0 || ps.isZeroExtraCost) {
-        subLine.textContent = t('cost.subLineFree', { sym: curSymbol, src: ps.acquisitionSourceName || t('plan.tag.promo') });
-      } else if (ps.actualPricePaid !== null && ps.actualPricePaid !== undefined) {
-        const cnyPart = (ps.currency !== 'CNY' && ps.cnyFormatted) ? ` (${ps.cnyFormatted})` : '';
-        subLine.textContent = t('cost.subLinePaid', {
-          sym: curSymbol,
-          val: Number(ps.actualPricePaid).toFixed(2),
-          cny: cnyPart,
-          cycle: ps.billingCycle || t('plan.summary.perMonth'),
-          exp: ps.isExpired ? ' · ⚠️' : ''
-        });
-      } else {
-        subLine.textContent = t('cost.subUnknown');
-      }
-    }
-
-    // 4. 用量与参考差额指标条（注明累计处理 Token，含缓存读取）
-    if (usageSummary) {
-      usageSummary.textContent = t('cost.usageSummary', { total: fmtYi(curTotal), cache: fmtYi(curCa) });
-    }
-    if (diffSummary) {
-      if (!isPeriod) {
-        diffSummary.textContent = t('cost.diffAll');
-      } else if (ps.actualPricePaid === 0 || ps.isZeroExtraCost) {
-        diffSummary.textContent = t('cost.diffFree', { val: apiCost.toFixed(2) });
-      } else if (ps.actualPricePaid !== null && ps.currency === 'USD') {
-        const diff = apiCost - Number(ps.actualPricePaid);
-        diffSummary.textContent = t('cost.diffPaid', { sign: diff >= 0 ? '+' : '', val: diff.toFixed(2) });
-      } else {
-        diffSummary.textContent = t('cost.diffUnknown');
-      }
-    }
-
-    // 5. 详细未计价原因说明
-    if (breakdown) {
-      const modelKeys = Object.keys(curIdentified.byModel || {});
-      const modelDetails = modelKeys.map(k => `${k}: $${curIdentified.byModel[k].costUSD} (${fmt(curIdentified.byModel[k].tokens)} tok)`).join('; ');
-      breakdown.textContent = t('cost.breakdownPrefix', {
-        details: modelDetails || t('cost.breakdownNone'),
-        note: ''
-      });
-    }
-
-    // 6. 兼容性辅助隐藏层同步
-    const refGrand = el('ref-cost-grand-val');
-    if (refGrand) refGrand.textContent = t('cost.refApprox', { val: Number(curRef.totalCostUSD || 0).toFixed(2) });
-  }
 
   const heatPop = el('heat-pop');
   const heatPopDate = el('heat-pop-date');
@@ -6603,6 +6114,7 @@
       closeColorPicker(true);
       toggle(false);
       hideContextTooltip();
+      hideTopbarActionTooltip(true);
       const om = el('overflow-menu');
       if (om) om.hidden = true;
       syncHostStackingElevation(false);
@@ -6641,6 +6153,7 @@
       }
       toggle(false);
       hideContextTooltip();
+      hideTopbarActionTooltip(true);
       const om = el('overflow-menu');
       if (om) om.hidden = true;
       syncHostStackingElevation(false);
@@ -6847,8 +6360,7 @@
     const hasExistingData = Number(ANTIGRAVITY_TOKEN_DATA.summary?.grandTotalTokens) > 0;
     const incomingKeys = Object.keys(payload.dailyMap || {});
     const incomingTotal = Number(payload.summary?.grandTotalTokens) || incomingKeys.reduce((acc, k) => acc + (Number(payload.dailyMap[k]?.total) || 0), 0);
-    const hasIncomingRefCost = Boolean(payload.referenceCost?.currentMonth?.totalCostUSD || payload.referenceCost?.all?.totalCostUSD);
-    const hasIncomingPayloadContent = incomingKeys.length > 0 || incomingTotal > 0 || hasIncomingRefCost;
+    const hasIncomingPayloadContent = incomingKeys.length > 0 || incomingTotal > 0;
     if (hasExistingData && !hasIncomingPayloadContent && !payload.isAccountSwitched && !payload.forceReset) {
       return false;
     }
@@ -6865,7 +6377,6 @@
       ANTIGRAVITY_TOKEN_DATA.dailyMap = normalized.dailyMap;
       ANTIGRAVITY_TOKEN_DATA.dailyMapBySource = normalized.dailyMapBySource;
       ANTIGRAVITY_TOKEN_DATA.summary = normalized.summary;
-      ANTIGRAVITY_TOKEN_DATA.referenceCost = normalized.referenceCost;
       ANTIGRAVITY_TOKEN_DATA.currentPeriod = normalized.currentPeriod;
       if (normalized.firstUseDate) ANTIGRAVITY_TOKEN_DATA.firstUseDate = normalized.firstUseDate;
       if (normalized.updatedAt) ANTIGRAVITY_TOKEN_DATA.updatedAt = normalized.updatedAt;
@@ -6888,30 +6399,28 @@
       if (payload.firstUseDate) ANTIGRAVITY_TOKEN_DATA.firstUseDate = payload.firstUseDate;
       if (payload.updatedAt) ANTIGRAVITY_TOKEN_DATA.updatedAt = payload.updatedAt;
       if (payload.currentPeriod) ANTIGRAVITY_TOKEN_DATA.currentPeriod = payload.currentPeriod;
-      if (payload.referenceCost) ANTIGRAVITY_TOKEN_DATA.referenceCost = payload.referenceCost;
 
       const keys = Object.keys(newMap).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k) && newMap[k]?.total > 0).sort();
       const monthPrefix = todayStr.slice(0, 7);
       const yearPrefix = todayStr.slice(0, 4);
-      let totalTokens = 0, todayTokens = 0, monthTokens = 0, yearTokens = 0, monthDays = 0;
+      let totalTokens = 0, todayTokens = 0, monthTokens = 0, yearTokens = 0;
       let totalInput = 0, totalOutput = 0, totalCache = 0;
       let curMonthInput = 0, curMonthOutput = 0, curMonthCache = 0;
       for (const k of keys) {
         const r = newMap[k];
-        const t = Number(r.total) || 0;
-        totalTokens += t;
+        const tok = Number(r.total) || 0;
+        totalTokens += tok;
         totalInput += Number(r.input) || 0;
         totalOutput += Number(r.output) || 0;
         totalCache += Number(r.cache) || 0;
-        if (k === todayStr) todayTokens += t;
+        if (k === todayStr) todayTokens += tok;
         if (k.startsWith(monthPrefix)) {
-          monthTokens += t;
+          monthTokens += tok;
           curMonthInput += Number(r.input) || 0;
           curMonthOutput += Number(r.output) || 0;
           curMonthCache += Number(r.cache) || 0;
-          monthDays += 1;
         }
-        if (k.startsWith(yearPrefix)) yearTokens += t;
+        if (k.startsWith(yearPrefix)) yearTokens += tok;
       }
       const rawSum = payload.summary || {};
       ANTIGRAVITY_TOKEN_DATA.summary = {
@@ -6932,49 +6441,10 @@
       };
     }
 
-    if (payload.planStatus || payload.customPlanSettings) {
-      let mergedPlan = payload.planStatus || ANTIGRAVITY_TOKEN_DATA.planStatus || {};
-      try {
-        const email = mergedPlan.email || 'default';
-        let customObj = lastSavedCustomPlan || payload.customPlanSettings || null;
-        if (!customObj && typeof window !== 'undefined' && window.__AGContextMeterSettings?.customPlan) {
-          customObj = window.__AGContextMeterSettings.customPlan;
-        }
-        if (!customObj) {
-          const savedCustomRaw = localStorage?.getItem('ag_custom_plan_' + email.toLowerCase()) || localStorage?.getItem('ag_custom_plan_default');
-          if (savedCustomRaw) customObj = JSON.parse(savedCustomRaw);
-        }
-        if (customObj && typeof customObj === 'object') {
-          lastSavedCustomPlan = { ...customObj };
-          try {
-            const jsonStr = JSON.stringify(customObj);
-            if (email && email !== 'default') localStorage?.setItem('ag_custom_plan_' + email.toLowerCase(), jsonStr);
-            localStorage?.setItem('ag_custom_plan_default', jsonStr);
-          } catch {}
-          if (core && core.resolveEffectivePlanStatus) {
-            mergedPlan = core.resolveEffectivePlanStatus(payload.rawPlanStatus || payload.planStatus, customObj, { currentEmail: email });
-          }
-        }
-      } catch {}
-      ANTIGRAVITY_TOKEN_DATA.planStatus = mergedPlan;
-      ANTIGRAVITY_TOKEN_DATA.rawPlanStatus = payload.rawPlanStatus || payload.planStatus || mergedPlan;
-      renderPlanDetail(mergedPlan);
-    }
-
-    if (payload.costEstimate) {
-      ANTIGRAVITY_TOKEN_DATA.costEstimate = payload.costEstimate;
-    }
-    if (payload.costEstimateCurrentMonth) {
-      ANTIGRAVITY_TOKEN_DATA.costEstimateCurrentMonth = payload.costEstimateCurrentMonth;
-    }
-    if (payload.costEstimateBySource) {
-      ANTIGRAVITY_TOKEN_DATA.costEstimateBySource = payload.costEstimateBySource;
-    } else if (payload.costEstimate) {
-      ANTIGRAVITY_TOKEN_DATA.costEstimateBySource = {
-        all: payload.costEstimate,
-        desktop: payload.costEstimate,
-        cli: { pricedCostUSD: 0, pricedRequestsCount: 0, unpricedRequestsCount: 0, coveragePercent: null, byModel: {} }
-      };
+    if (payload.planStatus) {
+      ANTIGRAVITY_TOKEN_DATA.planStatus = payload.planStatus;
+      ANTIGRAVITY_TOKEN_DATA.rawPlanStatus = payload.rawPlanStatus || payload.planStatus;
+      renderPlanDetail(payload.planStatus);
     }
 
     // 重新汇总卡片统计与顶栏
@@ -7018,47 +6488,6 @@
     if (tMonthSub) tMonthSub.textContent = t('tokens.card.monthSub', { val: fmtCardM(avgMonth) });
     if (tYearVal) tYearVal.textContent = fmtCardM(yearTokens);
     if (tYearSub) tYearSub.textContent = t('tokens.card.yearSub', { n: totalDays });
-
-    // 聚合全周期各区间预估费用
-    const allDateKeys = Object.keys(ANTIGRAVITY_TOKEN_DATA.dailyMap || {});
-    const nowYmd = todayStr;
-    const thisMonthPrefix = nowYmd.slice(0, 7);
-    const thisYearPrefix = nowYmd.slice(0, 4);
-
-    const todayCostInfo = getDailyModelCost(ANTIGRAVITY_TOKEN_DATA.dailyMap[nowYmd], nowYmd, activeCostModel, { mode: activeCostMode });
-    const todayCostCny = convertToCNY(todayCostInfo.costUSD, 'USD');
-
-    const totalCostAgg = calculateIntervalCost(ANTIGRAVITY_TOKEN_DATA.dailyMap, allDateKeys, activeCostModel, { mode: activeCostMode, todayStr: nowYmd });
-    const totalCostCny = convertToCNY(totalCostAgg.totalCostUSD, 'USD');
-
-    const monthKeys = allDateKeys.filter(k => k.startsWith(thisMonthPrefix) && k <= nowYmd);
-    const monthCostAgg = calculateIntervalCost(ANTIGRAVITY_TOKEN_DATA.dailyMap, monthKeys, activeCostModel, { mode: activeCostMode, todayStr: nowYmd });
-    const monthCostCny = convertToCNY(monthCostAgg.totalCostUSD, 'USD');
-
-    const yearKeys = allDateKeys.filter(k => k.startsWith(thisYearPrefix) && k <= nowYmd);
-    const yearCostAgg = calculateIntervalCost(ANTIGRAVITY_TOKEN_DATA.dailyMap, yearKeys, activeCostModel, { mode: activeCostMode, todayStr: nowYmd });
-    const yearCostCny = convertToCNY(yearCostAgg.totalCostUSD, 'USD');
-
-    const tTotalCost = el('t-total-cost');
-    const tTodayCost = el('t-today-cost');
-    const tMonthCost = el('t-month-cost');
-    const tYearCost = el('t-year-cost');
-
-    if (tTotalCost) {
-      tTotalCost.textContent = `≈ $${totalCostAgg.totalCostUSD.toFixed(2)}${totalCostCny !== null ? ` (¥${totalCostCny.toFixed(2)})` : ''}${t('tokens.dailyAvg', { val: totalCostAgg.dailyAverageUSD.toFixed(2) })}`;
-    }
-    if (tTodayCost) {
-      tTodayCost.textContent = `≈ $${todayCostInfo.costUSD.toFixed(2)}${todayCostCny !== null ? ` (¥${todayCostCny.toFixed(2)})` : ''}`;
-    }
-    if (tMonthCost) {
-      tMonthCost.textContent = `≈ $${monthCostAgg.totalCostUSD.toFixed(2)}${monthCostCny !== null ? ` (¥${monthCostCny.toFixed(2)})` : ''}${t('tokens.dailyAvg', { val: monthCostAgg.dailyAverageUSD.toFixed(2) })}`;
-    }
-    if (tYearCost) {
-      tYearCost.textContent = `≈ $${yearCostAgg.totalCostUSD.toFixed(2)}${yearCostCny !== null ? ` (¥${yearCostCny.toFixed(2)})` : ''}${t('tokens.dailyAvg', { val: yearCostAgg.dailyAverageUSD.toFixed(2) })}`;
-    }
-
-    // 规范化已完整保留输入/缓存/输出分类，执行费用视图渲染
-    renderActiveCostEstimateView();
 
     computeTimelineWindow();
     renderActiveHeatView(true);
@@ -7157,6 +6586,7 @@
         renderHeaderModelDropdown();
         if (!ctxDraftDirty) loadDraftFromSelectedModel(true);
         else renderCompactSessionCard();
+        renderSessionQuickActions();
         const savedView = settingsRes.savedHeatView || settingsRes.uiPreferences?.savedHeatView;
         if (savedView && ['daily', 'weekly', 'monthly', 'yearly', 'cum'].includes(savedView)) {
           switchHeatView(savedView, false);
@@ -7174,35 +6604,11 @@
         } catch {}
       }
 
-      if (settingsRes?.ok && settingsRes.customPlan && typeof settingsRes.customPlan === 'object') {
-        lastSavedCustomPlan = { ...settingsRes.customPlan };
-        if (typeof window !== 'undefined') {
-          window.__AGContextMeterSettings = {
-            ok: true,
-            customPlan: { ...settingsRes.customPlan },
-            contextPreferences: { ...contextPreferencesMap }
-          };
-        }
-
-        const email = ANTIGRAVITY_TOKEN_DATA.planStatus?.email || settingsRes.customPlan?.account || currentEmail || 'default';
-        try {
-          const jsonStr = JSON.stringify(settingsRes.customPlan);
-          if (email && email !== 'default') localStorage?.setItem('ag_custom_plan_' + String(email).toLowerCase(), jsonStr);
-          localStorage?.setItem('ag_custom_plan_default', jsonStr);
-        } catch {}
-        applyCustomPlanObjectLocally(settingsRes.customPlan, email);
-      } else {
-        // 回退检查 localStorage
-        const email = ANTIGRAVITY_TOKEN_DATA.planStatus?.email || 'default';
-        const key = email && email !== 'default' ? 'ag_custom_plan_' + String(email).toLowerCase() : 'ag_custom_plan_default';
-        const savedRaw = localStorage?.getItem(key) || localStorage?.getItem('ag_custom_plan_default');
-        if (savedRaw) {
-          const parsed = JSON.parse(savedRaw);
-          if (parsed && typeof parsed === 'object') {
-            lastSavedCustomPlan = { ...parsed };
-            applyCustomPlanObjectLocally(parsed, parsed.account || email);
-          }
-        }
+      if (settingsRes?.ok && typeof window !== 'undefined') {
+        window.__AGContextMeterSettings = {
+          ok: true,
+          contextPreferences: { ...contextPreferencesMap }
+        };
       }
     } catch {}
   }
@@ -7388,6 +6794,323 @@
     }
   }
 
+  let isQuickCompactBusy = false;
+  let isQuickRaiseBusy = false;
+  let quickFeedbackTimer = null;
+
+  function showKeyQuickFeedback(ok, msg) {
+    const fb = el('key-quick-feedback');
+    if (!fb) return;
+    if (quickFeedbackTimer) {
+      clearTimeout(quickFeedbackTimer);
+      quickFeedbackTimer = null;
+    }
+    if (!msg) {
+      fb.textContent = '';
+      fb.hidden = true;
+      fb.className = 'key-quick-feedback';
+      return;
+    }
+    fb.textContent = msg;
+    fb.className = `key-quick-feedback ${ok ? 'is-success' : 'is-error'}`;
+    fb.hidden = false;
+    if (ok) {
+      quickFeedbackTimer = setTimeout(() => {
+        if (fb) fb.hidden = true;
+        quickFeedbackTimer = null;
+      }, 5000);
+    }
+  }
+
+  function resolveSessionRaiseAction() {
+    const scopeMode = getContextScopeMode();
+    const products = getKnownModelProducts();
+    const prod = (activeSessionProductKey && products.find(p => p.productKey === activeSessionProductKey))
+      || getSelectedProductObj()
+      || null;
+    const capSummary = prod ? getProductCapabilitySummary(prod) : null;
+    const pState = prod ? resolveProductPreferenceState(prod) : null;
+    const activePref = scopeMode === 'unified'
+      ? getContextUnifiedPreference()
+      : (pState?.pref || null);
+    const backendUnlocked = Boolean(
+      currentUnlockStatus &&
+      currentUnlockStatus.status !== 'not_patched' &&
+      currentUnlockStatus.status !== 'unsupported'
+    );
+
+    if (activePref?.mode === 'dynamic' && backendUnlocked) {
+      return { canRaise: false, reason: 'already_dynamic', targetTokens: null, targetLabel: null, prod };
+    }
+
+    const obsBudget = Number(state.latest?.budget || 0);
+    let effectiveTokens = 256000;
+    if (activePref?.mode === 'fixed' && Number(activePref.limitTokens) > 0) {
+      effectiveTokens = Number(activePref.limitTokens);
+    } else if (obsBudget > 0) {
+      effectiveTokens = obsBudget;
+    }
+
+    const rawWin = Number(capSummary?.rawWindowMax || capSummary?.maxTokens || 0);
+    const theoMax = Number(capSummary?.modelTheoreticalMaxTokens || 0);
+
+    if (effectiveTokens >= 1000000) {
+      return { canRaise: false, reason: 'already_1m', targetTokens: null, targetLabel: null, prod };
+    }
+    if (theoMax > 0 && theoMax <= 1000000 && effectiveTokens >= theoMax) {
+      return { canRaise: false, reason: 'at_model_max', targetTokens: null, targetLabel: null, prod };
+    }
+    if (rawWin > 0 && rawWin < 300000 && effectiveTokens >= rawWin) {
+      return { canRaise: false, reason: 'at_raw_window', targetTokens: null, targetLabel: null, prod };
+    }
+
+    if (effectiveTokens < 512000 && (!rawWin || rawWin >= 512000)) {
+      const capped = (scopeMode === 'per_model' && theoMax > 0 && theoMax < 512000) ? theoMax : 512000;
+      if (capped <= effectiveTokens) {
+        return { canRaise: false, reason: 'at_model_max', targetTokens: null, targetLabel: null, prod };
+      }
+      const targetLabel = capped === 512000 ? '512K' : formatKShort(capped);
+      return { canRaise: true, reason: 'step_512k', targetTokens: capped, targetLabel, prod };
+    }
+
+    const maxTarget = (scopeMode === 'per_model' && theoMax > 0 && theoMax < 1000000) ? theoMax : 1000000;
+    if (maxTarget <= effectiveTokens) {
+      return { canRaise: false, reason: 'at_model_max', targetTokens: null, targetLabel: null, prod };
+    }
+    const targetLabel = maxTarget >= 950000 ? '1M' : formatKShort(maxTarget);
+    return { canRaise: true, reason: 'step_1m', targetTokens: maxTarget, targetLabel, prod };
+  }
+
+  function renderSessionQuickActions() {
+    const btnCompact = el('btn-session-compact');
+    const btnRaise = el('btn-session-raise-limit');
+    const btnTopCompact = el('btn-topbar-compact');
+    const btnTopRaise = el('btn-topbar-raise-limit');
+    const prevTopCompactHidden = btnTopCompact ? btnTopCompact.hidden : true;
+    const prevTopRaiseHidden = btnTopRaise ? btnTopRaise.hidden : true;
+    const hasSession = Boolean(state.route);
+
+    if (btnCompact) {
+      btnCompact.disabled = !hasSession || isQuickCompactBusy;
+      btnCompact.textContent = isQuickCompactBusy ? t('session.quick.compactBusy') : t('session.quick.compact');
+    }
+    if (btnTopCompact) {
+      btnTopCompact.hidden = !hasSession;
+      btnTopCompact.disabled = !hasSession || isQuickCompactBusy;
+      btnTopCompact.setAttribute('aria-label', isQuickCompactBusy ? t('session.quick.compactBusy') : t('topbar.quick.compactTitle'));
+    }
+
+    const act = hasSession ? resolveSessionRaiseAction() : { canRaise: false };
+    if (!hasSession || !act.canRaise) {
+      if (btnRaise) btnRaise.hidden = true;
+      if (btnTopRaise) btnTopRaise.hidden = true;
+    } else {
+      if (btnRaise) {
+        btnRaise.hidden = false;
+        btnRaise.disabled = isQuickRaiseBusy;
+        btnRaise.textContent = t('session.quick.raiseTarget', { target: act.targetLabel });
+      }
+      if (btnTopRaise) {
+        btnTopRaise.hidden = false;
+        btnTopRaise.disabled = isQuickRaiseBusy;
+        btnTopRaise.setAttribute('aria-label', t('topbar.quick.raiseTitle', { target: act.targetLabel }));
+      }
+    }
+
+    if (activeTopbarTipKind && !isTopbarTipFeedback) {
+      if ((activeTopbarTipKind === 'raise' && btnTopRaise?.hidden) || (activeTopbarTipKind === 'compact' && btnTopCompact?.hidden)) {
+        hideTopbarActionTooltip(true);
+      } else {
+        syncTopbarActionTooltipContent(activeTopbarTipKind);
+        positionTopbarActionTooltip(activeTopbarTipKind === 'raise' ? btnTopRaise : btnTopCompact);
+      }
+    }
+
+    if (prevTopCompactHidden !== (btnTopCompact ? btnTopCompact.hidden : true) || prevTopRaiseHidden !== (btnTopRaise ? btnTopRaise.hidden : true)) {
+      scheduleLayoutSync();
+    }
+  }
+
+  async function triggerSessionCompact(source = 'panel') {
+    const cascadeId = state.route;
+    const csrf = typeof window !== 'undefined' ? window.__APP_CONFIG__?.csrfToken : null;
+    if (!cascadeId || !csrf) {
+      const noSessMsg = t('session.quick.compactNoSession');
+      showKeyQuickFeedback(false, noSessMsg);
+      if (source === 'topbar') showTopbarTransientFeedback(false, noSessMsg, el('btn-topbar-compact'));
+      return { ok: false, error: noSessMsg };
+    }
+    if (isQuickCompactBusy) return { ok: false, busy: true };
+    isQuickCompactBusy = true;
+    renderSessionQuickActions();
+    try {
+      let compactInfo = { name: 'compact' };
+      try {
+        const cmdRes = await fetch('/exa.language_server_pb.LanguageServerService/GetSlashCommands', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Connect-Protocol-Version': '1',
+            'x-codeium-csrf-token': csrf
+          },
+          body: JSON.stringify({ cascadeId })
+        });
+        if (cmdRes.ok) {
+          const cmdData = await cmdRes.json().catch(() => null);
+          const list = cmdData?.commands || cmdData?.slashCommands || [];
+          const found = Array.isArray(list)
+            ? list.find(c => c?.name === 'compact' || c?.info?.name === 'compact')
+            : null;
+          if (found) {
+            compactInfo = found.info || found;
+          }
+        }
+      } catch {}
+
+      const cachedCtx = lastCascadeConfigByConv.get(cascadeId) || {};
+      const sendBody = {
+        cascadeId,
+        items: [{ item: { slashCommand: { info: compactInfo } } }],
+        ...cachedCtx
+      };
+      const sendRes = await fetch('/exa.language_server_pb.LanguageServerService/SendUserCascadeMessage', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Connect-Protocol-Version': '1',
+          'x-codeium-csrf-token': csrf
+        },
+        body: JSON.stringify(sendBody)
+      });
+      if (!sendRes.ok) {
+        const errTxt = await sendRes.text().catch(() => '');
+        throw new Error(errTxt || `HTTP ${sendRes.status}`);
+      }
+      const doneMsg = t('session.quick.compactDone');
+      showKeyQuickFeedback(true, doneMsg);
+      if (source === 'topbar') showTopbarTransientFeedback(true, doneMsg, el('btn-topbar-compact'));
+      void requestPoll(state.generation, cascadeId);
+      void scan(state.generation, cascadeId, true);
+      return { ok: true };
+    } catch (err) {
+      const msg = t('session.quick.compactFail', { err: translateBackendText(err?.message) || err?.message || t('msg.unknownErr') });
+      showKeyQuickFeedback(false, msg);
+      if (source === 'topbar') showTopbarTransientFeedback(false, msg, el('btn-topbar-compact'));
+      return { ok: false, error: msg };
+    } finally {
+      isQuickCompactBusy = false;
+      renderSessionQuickActions();
+    }
+  }
+
+  async function triggerSessionRaiseLimit(source = 'panel') {
+    if (isQuickRaiseBusy) return { ok: false, busy: true };
+    const act = resolveSessionRaiseAction();
+    if (!act.canRaise || !act.targetTokens) {
+      renderSessionQuickActions();
+      return { ok: false, reason: act.reason || 'cannot_raise' };
+    }
+    isQuickRaiseBusy = true;
+    renderSessionQuickActions();
+    try {
+      const scopeMode = getContextScopeMode();
+      if (scopeMode === 'unified') {
+        const nextPref = {
+          modelId: 'unified',
+          mode: 'fixed',
+          limitTokens: act.targetTokens,
+          updatedAt: new Date().toISOString()
+        };
+        const res = await saveSettingsPayloadBridge({
+          contextUnifiedPreference: nextPref,
+          contextScopeMode: 'unified'
+        });
+        if (!res || !res.ok) {
+          throw new Error(translateBackendText(res?.error) || t('msg.saveFail'));
+        }
+        contextUnifiedPreference = nextPref;
+      } else {
+        const prod = act.prod || getSelectedProductObj();
+        if (!prod) {
+          throw new Error(t('msg.noModelsDetected'));
+        }
+        const legacyKeys = resolveProductPreferenceState(prod).legacyKeys;
+        const res = await saveSettingsPayloadBridge({
+          contextPreference: {
+            scope: 'product',
+            productKey: prod.productKey,
+            modelId: prod.productKey,
+            label: prod.productLabel,
+            mode: 'fixed',
+            limitTokens: act.targetTokens,
+            clearLegacyKeys: legacyKeys
+          }
+        });
+        if (!res || !res.ok) {
+          throw new Error(translateBackendText(res?.error) || t('msg.saveFail'));
+        }
+        if (res.contextPreferences && typeof res.contextPreferences === 'object') {
+          contextPreferencesMap = { ...res.contextPreferences };
+        } else {
+          for (const lk of legacyKeys) delete contextPreferencesMap[lk];
+          contextPreferencesMap[prod.productKey] = {
+            scope: 'product',
+            productKey: prod.productKey,
+            modelId: prod.productKey,
+            label: prod.productLabel,
+            mode: 'fixed',
+            limitTokens: act.targetTokens,
+            updatedAt: new Date().toISOString()
+          };
+        }
+      }
+      syncContextPreferencesCache(contextPreferencesMap);
+      if (!ctxDraftDirty) loadDraftFromSelectedModel(true);
+
+      let needsRestart = false;
+      if (!currentUnlockStatus || currentUnlockStatus.status === 'not_patched') {
+        const uRes = await invokeUnlockApi('apply', {
+          mode: 'dynamic',
+          limitTokens: null,
+          serviceLimit: state.latest?.serviceLimit || undefined
+        });
+        if (!uRes || !uRes.ok) {
+          throw new Error(buildFriendlyWriteError(uRes?.error));
+        }
+        needsRestart = Boolean(uRes.needsRestart);
+        if (needsRestart) needsRestartAfterApply = true;
+        await refreshUnlockStatus();
+      } else {
+        renderCompactSessionCard();
+        renderClientStatusBar();
+      }
+      renderHeaderModelDropdown();
+      renderModelSettingsTab();
+      const doneMsg = needsRestart
+        ? t('session.quick.raiseNeedRestart', { target: act.targetLabel })
+        : t('session.quick.raiseDone', { target: act.targetLabel });
+      showKeyQuickFeedback(true, doneMsg);
+      if (source === 'topbar') showTopbarTransientFeedback(true, doneMsg, el('btn-topbar-raise-limit'));
+      return { ok: true, targetLabel: act.targetLabel, needsRestart };
+    } catch (err) {
+      const errMsg = t('session.quick.raiseFail', { err: err?.message || t('msg.unknownErr') });
+      showKeyQuickFeedback(false, errMsg);
+      if (source === 'topbar') showTopbarTransientFeedback(false, errMsg, el('btn-topbar-raise-limit'));
+      return { ok: false, error: errMsg };
+    } finally {
+      isQuickRaiseBusy = false;
+      renderSessionQuickActions();
+    }
+  }
+
+  el('btn-session-compact')?.addEventListener('click', () => {
+    void triggerSessionCompact('panel');
+  });
+
+  el('btn-session-raise-limit')?.addEventListener('click', () => {
+    void triggerSessionRaiseLimit('panel');
+  });
+
   // 渲染上下文与全局状态（无论在主页 / 还是会话页 /c/<id>，始终保持插件栏挂载与可用）
   function render() {
     host.hidden = false;
@@ -7395,6 +7118,7 @@
     ensureHostDocked();
     if (!state.route) {
       hideContextTooltip();
+      hideTopbarActionTooltip(true);
       const barFill = el('bar-fill');
       if (barFill) barFill.style.width = '0%';
       const badgePctVal = el('badge-pct-val');
@@ -7403,9 +7127,9 @@
       setHoverExtra(t('badge.clickOpen'));
       syncSpeedBadgeText();
       el('badge-tokens').title = t('badge.tokensTitle');
+      renderSessionQuickActions();
       return;
     }
-    renderSessionCost();
 
     const d = state.latest, session = state.scan?.session;
     const disp = resolveDisplayStatus(d, session);
@@ -7576,6 +7300,8 @@
       }
     }
 
+    renderSessionQuickActions();
+
     if (el('speed-summary')) {
       const spBadge = el('speed-badge');
       const spVal = el('speed-val');
@@ -7672,7 +7398,6 @@
         }
       }
       state.sessionCalls = Array.from(state.sessionCallsMap.values());
-      state.sessionCostTotal = state.sessionCalls.reduce((sum, c) => sum + (c.isPriced ? (c.costUSD || 0) : 0), 0);
       if (parsedCalls.length) {
         if (!state.reportedFinalCallIds) state.reportedFinalCallIds = new Set();
         if (!state.reportedFinalCallOutputs) state.reportedFinalCallOutputs = new Map();
@@ -7824,13 +7549,14 @@
       if (state.reportedFinalCallIds) state.reportedFinalCallIds.clear();
       if (state.reportedFinalCallOutputs) state.reportedFinalCallOutputs.clear();
       Object.assign(state, {
-        route: id, count: 0, latest: null, sessionCalls: [], sessionCostTotal: 0,
+        route: id, count: 0, latest: null, sessionCalls: [],
         requestAt: 0, requestError: '', requestBusy: false, requestNext: 0,
         scanBusy: false, scanNext: 0, scanError: '', scan: null,
         reportedFinalCallIds: state.reportedFinalCallIds || new Set(),
         reportedFinalCallOutputs: state.reportedFinalCallOutputs || new Map()
       });
-      toggle(false); hideContextTooltip(); renderFiles(null); render();
+      showKeyQuickFeedback(true, '');
+      toggle(false); hideContextTooltip(); hideTopbarActionTooltip(true); renderFiles(null); render();
       void syncTokenHistoryFromHost(false);
     }
     if (id && !state.requestBusy && Date.now() >= state.requestNext) void requestPoll(state.generation, id);
@@ -7871,24 +7597,12 @@
     setTokenHistoryForTest: payload => applyTokenHistoryPayload(payload),
     getPlanDetailExpanded: () => planDetailExpanded,
     setPlanDetailExpanded,
-    switchTokenView,
     switchHeatView: view => switchHeatView(view),
     getActiveHeatView: () => activeHeatView,
     renderHeatmapMonthly: () => renderHeatmapMonthly(),
     renderHeatmapYearly: () => renderHeatmapYearly(),
     openGithubRepo: path => openGithubRepo(path),
     updateHeatTabThumb: () => updateHeatTabThumb(),
-    getPlanSettings: () => ({
-      country: ANTIGRAVITY_TOKEN_DATA.planStatus?.country || '未知',
-      subscriptionRegion: ANTIGRAVITY_TOKEN_DATA.planStatus?.subscriptionRegion || ANTIGRAVITY_TOKEN_DATA.planStatus?.region || '未知',
-      region: ANTIGRAVITY_TOKEN_DATA.planStatus?.region || '未知',
-      currency: ANTIGRAVITY_TOKEN_DATA.planStatus?.currency || 'USD',
-      currencySymbol: ANTIGRAVITY_TOKEN_DATA.planStatus?.currencySymbol || '$',
-      actualPricePaid: ANTIGRAVITY_TOKEN_DATA.planStatus?.actualPricePaid ?? null,
-      lastSaveResult
-    }),
-    setCountry: val => applyDirectCountrySelection(val),
-    setCurrency: val => applyDirectCurrencySelection(val),
     restoreSettingsFromHost,
     getTimelineWindow: () => {
       const w = computeTimelineWindow();
@@ -7957,6 +7671,11 @@
     },
     getKnownModelProductsForTest: () => getKnownModelProducts(),
     refreshUnlockStatusForTest: () => refreshUnlockStatus(),
+    refreshCliUnlockForTest: () => refreshCliUnlockDisplay(),
+    refreshModulesForTest: () => refreshModulesDisplay(),
+    getSessionRaiseActionForTest: () => resolveSessionRaiseAction(),
+    triggerSessionCompactForTest: (src) => triggerSessionCompact(src),
+    triggerSessionRaiseLimitForTest: (src) => triggerSessionRaiseLimit(src),
     refreshEnhanceStatusForTest: () => refreshEnhanceStatus(),
     getEnhanceStateForTest: () => ({
       currentBrandTitle,
@@ -7981,11 +7700,15 @@
     restoreSettingsForTest: () => restoreSettingsFromHost(),
     translateForTest: (key, vars) => t(key, vars),
     applyStaticTranslationsForTest: (rootNode) => applyStaticPanelTranslations(rootNode),
-    snapshot: () => ({ route: state.route, count: state.count, latest: state.latest, scan: state.scan, requestError: state.requestError, scanError: state.scanError, scanBusy: state.scanBusy, layoutMode: state.layoutMode, sessionCalls: state.sessionCalls, sessionCostTotal: state.sessionCostTotal }),
+    snapshot: () => ({ route: state.route, count: state.count, latest: state.latest, scan: state.scan, requestError: state.requestError, scanError: state.scanError, scanBusy: state.scanBusy, layoutMode: state.layoutMode, sessionCalls: state.sessionCalls }),
     dispose() {
       state.disposed = true;
       for (const controller of state.controllers) controller.abort();
       clearInterval(timer);
+      if (topbarTipFeedbackTimer) {
+        clearTimeout(topbarTipFeedbackTimer);
+        topbarTipFeedbackTimer = null;
+      }
       if (layoutRaf && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(layoutRaf);
       syncHostStackingElevation(false);
       try { uninstallRequestInterceptor(); } catch {}
@@ -8009,7 +7732,6 @@
   };
   syncPanelLanguageButtons(currentPanelLanguage);
   applyStaticPanelTranslations(shadow);
-  refreshRegionPresetSelectOptions();
   renderEnhanceSectionUI();
   void restoreSettingsFromHost();
   installRequestInterceptor();
