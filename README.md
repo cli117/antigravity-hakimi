@@ -11,7 +11,7 @@
    - **不可回滚保证**：脚本先应用地区解锁再由引擎生成备份，且 UI 内“恢复官方设置”仅原位还原上下文与中文标题字节，**绝不会回滚地区解锁**。
 2. **上下文窗口解锁（256K → 动态透传 / 固定上限）**
    - 原生支持 `default` (256K)、`fixed` (`16384 ~ 2097152`) 与 `dynamic`（默认启用，跟随模型原生上限透传），通过 ARM64 Gate 3A (`CLAMP_256K_ARM64` / `DEF_ORIG_ARM64`) 与 Gate 3B (`applyFeatureProviderCheckpointOverrideConfig`) 双重修补生效。
-   - 配合渲染层 Hook，在发送 `SendUserCascadeMessage` 请求时按当前配置动态覆写 `checkpointConfig.maxTokenLimit`。
+   - 配合渲染层 Hook，在发送 `SendUserCascadeMessage` 请求时按当前配置动态覆写 `checkpointConfig.maxTokenLimit`；设置面板提供 `256K`（反重力默认）、`512K`（进阶预设）、`1M`（`1,000,000` 满血窗口 · 自动预留输出）、`按模型最大可用` 与 `动态跟随` 预设，并支持 Apple Silicon (`arm64`) 在 UI 内直接保存并应用。
    - 另附独立 CLI 补丁脚本 [`unlock/agy-cli/agy-patch.py`](unlock/agy-cli/agy-patch.py) 用于离线/CLI 二进制上下文解锁。
 3. **实时上下文监控、速率监测与错误诊断**
    - 内置右上角悬浮胶囊（Context Meter）：实时展示当前上下文 Token 占用进度、输入/输出速率（tok/s）、附件扫描预算估计（[`attachment_scan.py`](payload/dist/attachment_scan.py)），以及 8 类失败原因自动分类诊断。
@@ -26,7 +26,7 @@
      - `hidden`：隐藏文字但保留菜单入口
      - `english`：**`Antigravity`**
 7. **自定义应用图标（可选 `--icon`）**
-   - 支持传入本地图片（`PNG` / `JPG` / `WebP` / `HEIC` / `ICNS` 等）作为 `哈基米.app` 的应用图标；不传时默认沿用官方图标。
+   - 支持传入本地图片（`PNG` / `JPG` / `WebP` / `HEIC` / `ICNS` 等）作为 `哈基米.app` 的应用图标；覆盖构建时不传 `--icon` 会自动保留旧副本已有的自定义图标，也可传入 `--default-icon` 恢复官方默认图标。
    - 对非透明背景照片会自动居中裁剪为 1:1 并施加 macOS 圆角矩形留白遮罩（带透明圆角/边缘的图标则原样保留，也可配合 `--raw-icon` 禁用遮罩），同时更新 **`Contents/Resources/icon.icns`**（访达 / 启动台 / Spotlight）与 **`app.asar/icon.png`**（运行态 Dock 图标）。
 
 ---
@@ -47,8 +47,8 @@
 ### 1. 构建并安装 `/Applications/哈基米.app`
 
 ```bash
-# 使用默认官方图标构建（--force 允许覆盖旧的 /Applications/哈基米.app 副本）
-bash ./build-hakimi.sh --force
+# 构建或覆盖 /Applications/哈基米.app（若旧副本已有自定义图标会自动保留；正在运行时可加 --restart 自动重启）
+bash ./build-hakimi.sh --force --restart
 
 # 可选：指定一张本地图片作为 哈基米.app 的图标（支持 PNG/JPG/WebP/HEIC/ICNS）
 bash ./build-hakimi.sh --force --icon ~/Pictures/hakimi.jpg
@@ -80,8 +80,10 @@ bash ./set-hakimi-icon.sh --restore --restart
   --stage-only                    仅在 /tmp 临时目录构建并签名，不写入 /Applications，也不改用户配置目录
   --from <path>                   指定只读源 Antigravity.app (默认优先 /Applications/Antigravity.app.orig，其次 /Applications/Antigravity.app)
   --app <path>                    指定输出 .app 路径 (默认: /Applications/哈基米.app；严禁指向官方应用)
-  -i, --icon <path>               可选：指定本地图片作为应用图标 (同步更新访达 .icns 与 Dock 图标；不传则用默认图标)
+  -i, --icon <path>               可选：指定本地图片作为应用图标 (不传时若旧副本已有自定义图标会自动保留)
   --raw-icon                      可选：配合 --icon 使用，不自动添加 macOS 圆角矩形留白遮罩
+  --default-icon                  可选：覆盖旧副本时强制恢复为默认官方图标
+  -r, --restart                   若目标应用当前正在运行，构建完成后自动优雅退出旧进程并重启新版
   --context-mode <mode>           上下文窗口模式: default | fixed | dynamic (默认: dynamic)
   --context-limit <tokens>        当 --context-mode fixed 时指定固定 token 上限 (16384 ~ 2097152)
   --chinese-title <on|off>        启用/关闭会话与章节自动中文标题补丁 (默认: on)

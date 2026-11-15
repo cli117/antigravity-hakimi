@@ -1877,17 +1877,17 @@
               <span class="ctx-preset-title" data-i18n="models.preset.default">恢复客户端默认</span>
               <span class="ctx-preset-sub" data-i18n="models.preset.defaultSub">清除请求覆盖，由当前底座策略决定</span>
             </button>
-            <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="128000">
-              <span class="ctx-preset-title">128,000</span>
-              <span class="ctx-preset-sub" data-i18n="models.preset.p128Sub">插件预设 · 128,000 tokens</span>
-            </button>
             <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="256000">
               <span class="ctx-preset-title">256,000</span>
-              <span class="ctx-preset-sub" data-i18n="models.preset.p256Sub">插件预设 · 256,000 tokens</span>
+              <span class="ctx-preset-sub" data-i18n="models.preset.p256Sub">反重力默认 · 256,000 tokens</span>
             </button>
             <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="512000">
               <span class="ctx-preset-title">512,000</span>
-              <span class="ctx-preset-sub" data-i18n="models.preset.p512Sub">插件预设 · 512,000 tokens</span>
+              <span class="ctx-preset-sub" data-i18n="models.preset.p512Sub">进阶预设 · 512,000 tokens</span>
+            </button>
+            <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="1000000">
+              <span class="ctx-preset-title">1,000,000</span>
+              <span class="ctx-preset-sub" data-i18n="models.preset.p1mSub">1M 满血窗口 · 自动预留输出</span>
             </button>
             <button type="button" class="ctx-preset-btn" data-ctx-mode="model_max" data-ctx-limit="">
               <span class="ctx-preset-title" data-i18n="models.preset.modelMax">按模型最大可用</span>
@@ -3124,9 +3124,9 @@
     'models.preset.aria': { 'zh-CN': '上下文长度预设', 'zh-TW': '上下文長度預設', en: 'Context length presets' },
     'models.preset.default': { 'zh-CN': '恢复客户端默认', 'zh-TW': '恢復用戶端預設', en: 'Restore Client Default' },
     'models.preset.defaultSub': { 'zh-CN': '清除请求覆盖，由当前底座策略决定', 'zh-TW': '清除請求覆寫，由目前底座策略決定', en: 'Clear request override; follow active host policy' },
-    'models.preset.p128Sub': { 'zh-CN': '插件预设 · 128,000 tokens', 'zh-TW': '外掛預設 · 128,000 tokens', en: 'Plugin preset · 128,000 tokens' },
-    'models.preset.p256Sub': { 'zh-CN': '插件预设 · 256,000 tokens', 'zh-TW': '外掛預設 · 256,000 tokens', en: 'Plugin preset · 256,000 tokens' },
-    'models.preset.p512Sub': { 'zh-CN': '插件预设 · 512,000 tokens', 'zh-TW': '外掛預設 · 512,000 tokens', en: 'Plugin preset · 512,000 tokens' },
+    'models.preset.p256Sub': { 'zh-CN': '反重力默认 · 256,000 tokens', 'zh-TW': '反重力預設 · 256,000 tokens', en: 'Antigravity default · 256,000 tokens' },
+    'models.preset.p512Sub': { 'zh-CN': '进阶预设 · 512,000 tokens', 'zh-TW': '進階預設 · 512,000 tokens', en: 'Extended preset · 512,000 tokens' },
+    'models.preset.p1mSub': { 'zh-CN': '1M 满血窗口 · 自动预留输出', 'zh-TW': '1M 滿血視窗 · 自動預留輸出', en: '1M full window · auto output reserve' },
     'models.preset.modelMax': { 'zh-CN': '按模型最大可用', 'zh-TW': '依模型最大可用', en: 'Max Usable for Model' },
     'models.preset.modelMaxSub': { 'zh-CN': '总窗口 - 最大输出（需元数据）', 'zh-TW': '總視窗 - 最大輸出（需中繼資料）', en: 'Context window - max output (needs metadata)' },
     'models.preset.dynamic': { 'zh-CN': '动态跟随', 'zh-TW': '動態跟隨', en: 'Dynamic Follow' },
@@ -10017,7 +10017,7 @@
     if (typeof groupModelProduct === 'function') return groupModelProduct(input || {});
     const rawId = String(input?.modelId || input?.label || 'unknown').trim();
     const low = rawId.toLowerCase();
-    const vendor = low.includes('claude') ? 'Anthropic' : (low.includes('gpt') || low.includes('o1') || low.includes('o3')) ? 'OpenAI' : (low.includes('gemini') ? 'Google' : '其他');
+    const vendor = low.includes('claude') ? 'Anthropic' : (low.includes('gpt') || low.includes('o1') || low.includes('o3')) ? 'OpenAI' : ((low.includes('gemini') || low.includes('hydrogen') || low.includes('argon') || low.includes('carbon')) ? 'Google' : '其他');
     return { productKey: low, productLabel: input?.label || rawId, vendor, effort: input?.effort || null };
   }
 
@@ -10497,7 +10497,10 @@
       const warnings = [];
       for (const w of ev.warnings) {
         if (w.code === 'exceeds_model_limit') {
-          if (w.adoptableTokens != null) {
+          if (capSummary?.maxTokens && w.limitTokens <= capSummary.maxTokens) {
+            const adoptTxt = fmt(w.adoptableTokens ?? w.maxAllowed);
+            warnings.push(`当前模型总窗口为 ${fmt(capSummary.maxTokens)} tokens，扣除最大输出预留后实际最高输入上限为 ${fmt(w.maxAllowed)} tokens；保存 ${fmt(w.limitTokens)} 后将自动按 ${adoptTxt} tokens 满血采用。`);
+          } else if (w.adoptableTokens != null) {
             warnings.push(`超出当前模型理论输入上限 ${fmt(w.maxAllowed)} tokens（依据元数据：总窗口 - 最大输出）；若仍保存 ${fmt(w.limitTokens)}，当前环境预计最高仅可采用 ${fmt(w.adoptableTokens)} tokens。`);
           } else {
             warnings.push(`超出当前模型理论输入上限 ${fmt(w.maxAllowed)} tokens（依据元数据：总窗口 - 最大输出）；当前客户端运行策略未确认，实际可采用上限未知。`);
@@ -10741,7 +10744,9 @@
     if (pref.mode === 'dynamic') return t('models.preset.dynamic');
     if (pref.mode === 'fixed' && pref.limitTokens) {
       const num = Number(pref.limitTokens);
+      if (num === 256000) return '256K';
       if (num === 512000) return '512K';
+      if (num === 1000000) return '1M';
       return t('models.card.savedCustom', { val: `${formatKShort(num)}（${fmt(num)}）` });
     }
     return t('status.savedDefault');
@@ -11473,7 +11478,13 @@
     if (targetMode === 'dynamic') {
       targetText = t('models.preset.dynamic') || '动态跟随';
     } else if (targetMode === 'fixed' && targetLimit) {
-      targetText = (targetLimit === 512000) ? '512K（512,000 tokens）' : `${formatKShort(targetLimit)}（${fmt(targetLimit)} tokens）`;
+      targetText = targetLimit === 1000000
+        ? '1M（1,000,000 tokens）'
+        : targetLimit === 512000
+          ? '512K（512,000 tokens）'
+          : targetLimit === 256000
+            ? '256K（256,000 tokens）'
+            : `${formatKShort(targetLimit)}（${fmt(targetLimit)} tokens）`;
     }
 
     const activeConvId = state.activeConversationId || state.conversationId || state.route || null;
@@ -12096,6 +12107,7 @@
     const capSummary = currentProd ? getProductCapabilitySummary(currentProd) : null;
     const knownEnvMax = (!isUnified && capSummary?.maxAdjustableTokens != null) ? capSummary.maxAdjustableTokens : null;
     const knownModelMax = (!isUnified && capSummary?.modelTheoreticalMaxTokens != null) ? capSummary.modelTheoreticalMaxTokens : null;
+    const rawWindowMax = (!isUnified && capSummary?.maxTokens != null) ? capSummary.maxTokens : knownModelMax;
     const rp = capSummary?.runtimePolicy || resolveRuntimeUnlockPolicyClient();
     const policyKnown = Boolean(rp?.policyKnown);
 
@@ -12131,9 +12143,9 @@
           disabled = true;
           disableReason = '当前客户端运行策略未知或待重启确认，暂无法确定当前环境最大可用上限。';
         }
-      } else if (bMode === 'fixed' && bLim && knownModelMax != null && bLim > knownModelMax) {
+      } else if (bMode === 'fixed' && bLim && rawWindowMax != null && bLim > rawWindowMax) {
         disabled = true;
-        disableReason = `预设 ${fmt(bLim)} 超出当前模型理论输入上限 ${fmt(knownModelMax)}（总窗口 - 最大输出）。`;
+        disableReason = `预设 ${fmt(bLim)} 超出当前模型总上下文窗口 ${fmt(rawWindowMax)} tokens。`;
       }
 
       if ('disabled' in btn) btn.disabled = disabled;
@@ -12828,7 +12840,7 @@
 
       if (btnApplyUnlock) {
         const writableStatuses = new Set(['not_patched', 'patched_runtime_unconfirmed', 'patched_pending_restart', 'patched_loaded']);
-        if (writableStatuses.has(data.status) && (!data.arch || data.arch === 'x86-64')) {
+        if (writableStatuses.has(data.status) && (!data.arch || data.arch === 'arm64' || data.arch === 'x86-64')) {
           btnApplyUnlock.disabled = false;
           btnApplyUnlock.textContent = t('models.btn.saveApply');
         } else if (data.status === 'partial_match') {

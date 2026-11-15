@@ -147,7 +147,10 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 const appExec = fs.realpathSync(path.join(process.argv[1], "Contents", "MacOS", "Antigravity"));
 const appPrefix = fs.realpathSync(process.argv[1]) + "/";
-const out = execFileSync("ps", ["-ax", "-o", "pid=,command="], { encoding: "utf8" });
+const out = execFileSync("ps", ["-ax", "-o", "pid=,command="], {
+  encoding: "utf8",
+  env: { ...process.env, LANG: "en_US.UTF-8", LC_CTYPE: "UTF-8", LC_TIME: "C" },
+});
 const pids = [];
 for (const line of out.split(/\r?\n/)) {
   const m = line.match(/^\s*(\d+)\s+(.+)$/);

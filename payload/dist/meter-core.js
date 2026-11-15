@@ -13,6 +13,8 @@
   function getModelPoolKey(raw) {
     if (!raw) return 'unknown';
     const s = String(raw).toLowerCase();
+    if (s.includes('hydrogen') || s.includes('gemini-4-hydrogen')) return 'gemini-4-hydrogen';
+    if (s.includes('carbon') || s.includes('gemini-4-carbon')) return 'gemini-4-carbon';
     if (s.includes('argon') || s.includes('gemini-4-argon')) return 'gemini-4-argon';
     if (s.includes('flash') || s.includes('gemini-3.8-flash')) return 'gemini-3.8-flash';
     if (s.includes('opus') || s.includes('claude-opus')) return 'claude-opus-5-5';
@@ -62,6 +64,8 @@
 
     const qi = matched.quotaInfo || {};
     const poolNames = {
+      'gemini-4-hydrogen': 'Gemini 4 Hydrogen 配额池',
+      'gemini-4-carbon': 'Gemini 4 Carbon 配额池',
       'gemini-4-argon': 'Gemini 4 Argon 配额池（周限额）',
       'gemini-3.8-flash': 'Gemini 3.8 Flash 配额池',
       'claude-opus-5-5': 'Claude Opus 5.5 配额池',
@@ -662,6 +666,7 @@
       if (c.startsWith('product:anthropic:')) return 'Anthropic';
       if (c.startsWith('product:openai:')) return 'OpenAI';
       if (/^(?:models\/)?(?:gemini|google|gemma|imagen|veo)\b/.test(c)) return 'Google';
+      if (/\b(?:gemini-4-)?(?:hydrogen|argon|carbon)\b/.test(c)) return 'Google';
       if (/^(?:models\/)?(?:claude|anthropic)\b/.test(c)) return 'Anthropic';
       if (/^(?:models\/)?(?:gpt|openai|o1|o3|o4|chatgpt|codex)\b/.test(c)) return 'OpenAI';
     }

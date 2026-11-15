@@ -60,7 +60,7 @@ const DEFAULT_CHECKPOINT_TOKENS = 256000;
 const MIN_ENGINEERING_LIMIT = 16384;
 const MAX_ENGINEERING_LIMIT = 2097152;
 const MIN_OUTPUT_RESERVE_HINT = 40000;
-const KNOWN_LIMIT_PRESETS = [256000, 512000, 524288, 900000, 983040, 1000000];
+const KNOWN_LIMIT_PRESETS = [256000, 512000, 524288, 768000, 900000, 983040, 1000000, 1048576];
 
 const AUTHOR_INFO = {
   name: 'Linux.do @23375',
@@ -1083,6 +1083,10 @@ let cachedProcInfo = null;
 let cachedProcAt = 0;
 let inFlightProcQuery = null;
 
+function getMacPsEnv() {
+  return { ...process.env, LANG: 'en_US.UTF-8', LC_CTYPE: 'UTF-8', LC_TIME: 'C' };
+}
+
 function parseMacPsOutput(psOut, targetPath) {
   const resolvedTarget = targetPath ? path.resolve(targetPath) : null;
   let realTarget = resolvedTarget;
@@ -1142,7 +1146,7 @@ async function getRunningLanguageServerInfoAsync(targetPath, forceRefresh = fals
         execFile(
           'ps',
           ['-ax', '-o', 'pid=,lstart=,command='],
-          { encoding: 'utf8', timeout: 2500 },
+          { encoding: 'utf8', timeout: 2500, env: getMacPsEnv() },
           (err, out) => {
             if (err) reject(err);
             else resolve(out);
@@ -1196,6 +1200,7 @@ function getRunningLanguageServerInfo(targetPath, forceRefresh = false) {
     const stdout = execFileSync('ps', ['-ax', '-o', 'pid=,lstart=,command='], {
       encoding: 'utf8',
       timeout: 2000,
+      env: getMacPsEnv(),
     });
     const matches = parseMacPsOutput(stdout, targetPath);
     const res = {
@@ -2201,6 +2206,7 @@ module.exports = {
   readExternalContextConfig,
   analyzeBinary,
   analyzeBinaryAsync,
+  parseMacPsOutput,
   getRunningLanguageServerInfoAsync,
   cleanupOldReplacedFiles,
   synthesizeAnalysisStatus,

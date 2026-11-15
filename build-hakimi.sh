@@ -32,6 +32,8 @@ CLIENT_LANG=""
 BRAND=""
 ICON_PATH=""
 RAW_ICON=0
+FORCE_DEFAULT_ICON=0
+AUTO_RESTART=0
 
 usage() {
   cat <<'EOF'
@@ -42,8 +44,10 @@ usage() {
   --stage-only                    仅在临时目录生成打好补丁的 哈基米.app，不写入 /Applications 且不改用户配置目录
   --from <path>                   指定只读官方 Antigravity.app 源路径 (默认优先 /Applications/Antigravity.app.orig，其次 /Applications/Antigravity.app)
   --app <path>                    指定输出 .app 路径 (默认: /Applications/哈基米.app；严禁指向官方 Antigravity.app)
-  -i, --icon <path>               可选：指定本地图片 (PNG/JPG/WebP/HEIC/ICNS 等) 作为应用图标 (同步更新访达 .icns 与 Dock 图标；不传则用默认图标)
+  -i, --icon <path>               可选：指定本地图片 (PNG/JPG/WebP/HEIC/ICNS 等) 作为应用图标 (不传时若旧副本已有自定义图标会自动保留)
   --raw-icon                      可选：配合 --icon 使用，不自动添加 macOS 圆角矩形留白遮罩
+  --default-icon                  可选：覆盖旧副本时强制恢复为默认官方图标
+  -r, --restart                   若目标应用当前正在运行，构建完成后自动优雅退出旧进程并重启新版
   --context-mode <mode>           上下文窗口模式: default | fixed | dynamic (默认: dynamic)
   --context-limit <tokens>        当 --context-mode fixed 时指定固定 token 上限 (16384 ~ 2097152)
   --chinese-title <on|off>        是否启用会话/章节自动简体中文标题补丁 (默认: on)
@@ -113,6 +117,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --raw-icon)
       RAW_ICON=1
+      shift
+      ;;
+    --default-icon)
+      FORCE_DEFAULT_ICON=1
+      shift
+      ;;
+    -r|--restart)
+      AUTO_RESTART=1
       shift
       ;;
     -h|--help)
@@ -186,13 +198,60 @@ if [[ $STAGE_ONLY -eq 0 && ( -e "$APP" || -L "$APP" ) && $FORCE -eq 0 ]]; then
   exit 1
 fi
 
+if [[ -n "$ICON_PATH" && $FORCE_DEFAULT_ICON -eq 1 ]]; then
+  echo "--icon 与 --default-icon 不能同时指定" >&2
+  exit 2
+fi
+
 if [[ -n "$ICON_PATH" ]]; then
   [[ -f "$ICON_PATH" ]] || { echo "找不到指定的图标文件: $ICON_PATH" >&2; exit 1; }
   command -v sips >/dev/null 2>&1 || { echo "自定义图标需要 macOS sips 工具" >&2; exit 1; }
   command -v iconutil >/dev/null 2>&1 || { echo "自定义图标需要 macOS iconutil 工具" >&2; exit 1; }
 fi
 
-if [[ ! -f "$SCRIPT_DIR/payload/dist/meter-renderer.js" ]]; then
+find_running_target_pids() {
+  local target_app="$1"
+  [[ -f "$target_app/Contents/MacOS/Antigravity" ]] || return 0
+  node -e '
+  const fs = require("fs");
+  const path = require("path");
+  const { execFileSync } = require("child_process");
+  const appExec = fs.realpathSync(path.join(process.argv[1], "Contents", "MacOS", "Antigravity"));
+  const appPrefix = fs.realpathSync(process.argv[1]) + "/";
+  const out = execFileSync("ps", ["-ax", "-o", "pid=,command="], {
+    encoding: "utf8",
+    env: { ...process.env, LANG: "en_US.UTF-8", LC_CTYPE: "UTF-8", LC_TIME: "C" },
+  });
+  const pids = [];
+  for (const line of out.split(/\r?\n/)) {
+    const m = line.match(/^\s*(\d+)\s+(.+)$/);
+    if (!m) continue;
+    const cmd = m[2];
+    if (cmd === appExec || cmd.startsWith(appExec + " ") || cmd.startsWith(appPrefix)) {
+      pids.push(Number(m[1]));
+    }
+  }
+  process.stdout.write(pids.join(" "));
+  ' "$target_app"
+}
+
+WAS_RUNNING=0
+if [[ $STAGE_ONLY -eq 0 && -d "$APP" ]]; then
+  PRE_PIDS="$(find_running_target_pids "$APP")"
+  if [[ -n "$PRE_PIDS" ]]; then
+    WAS_RUNNING=1
+    if [[ $AUTO_RESTART -eq 0 ]]; then
+      echo "检测到 $APP 正在运行 (PID: $PRE_PIDS)；请先 Cmd+Q 完全退出后再覆盖构建，或追加 --restart 自动退出并重启。" >&2
+      exit 1
+    fi
+  fi
+fi
+
+if [[ ! -f "$SCRIPT_DIR/payload/dist/meter-renderer.js" ]] || \
+   [[ "$SCRIPT_DIR/src/renderer/main.js" -nt "$SCRIPT_DIR/payload/dist/meter-renderer.js" ]] || \
+   [[ "$SCRIPT_DIR/src/renderer/template.html" -nt "$SCRIPT_DIR/payload/dist/meter-renderer.js" ]] || \
+   [[ "$SCRIPT_DIR/src/renderer/i18n.js" -nt "$SCRIPT_DIR/payload/dist/meter-renderer.js" ]] || \
+   [[ "$SCRIPT_DIR/src/renderer/styles.css" -nt "$SCRIPT_DIR/payload/dist/meter-renderer.js" ]]; then
   echo "==> 编译 Context Meter 渲染层 (meter-renderer.js)"
   node "$SCRIPT_DIR/scripts/build-renderer.js"
 fi
@@ -416,6 +475,21 @@ if [[ -n "$ICON_PATH" ]]; then
   fi
   node "$SCRIPT_DIR/scripts/build-macos-icon.js" "${ICON_ARGS[@]}" >/dev/null
   PACK_ARGS+=(--icon-png "$WORK/custom-icon-512.png")
+elif [[ $STAGE_ONLY -eq 0 && $FORCE_DEFAULT_ICON -eq 0 && -f "$APP/Contents/Resources/icon.icns" && -f "$APP/Contents/Resources/app.asar" ]]; then
+  SRC_ICNS_HASH="$(shasum -a 256 "$SRC/Contents/Resources/icon.icns" | awk '{print $1}')"
+  CUR_ICNS_HASH="$(shasum -a 256 "$APP/Contents/Resources/icon.icns" | awk '{print $1}')"
+  if [[ "$SRC_ICNS_HASH" != "$CUR_ICNS_HASH" ]]; then
+    echo "==> [图标] 自动沿用当前 哈基米.app 的自定义图标 (如需恢复官方默认请传 --default-icon)"
+    cp "$APP/Contents/Resources/icon.icns" "$STAGE/Contents/Resources/icon.icns"
+    node -e '
+    const fs = require("fs");
+    const path = require("path");
+    const { builtinAsar } = require(path.join(process.argv[1], "payload", "dist", "asar-engine.js"));
+    const buf = builtinAsar.extractFile(path.join(process.argv[2], "Contents", "Resources", "app.asar"), "icon.png");
+    fs.writeFileSync(process.argv[3], buf);
+    ' "$SCRIPT_DIR" "$APP" "$WORK/carryover-icon-512.png"
+    PACK_ARGS+=(--icon-png "$WORK/carryover-icon-512.png")
+  fi
 fi
 if [[ $STAGE_ONLY -eq 1 ]]; then
   PACK_ARGS+=(--skip-config --state-dir "$WORK/state")
@@ -466,6 +540,27 @@ if [[ $STAGE_ONLY -eq 1 ]]; then
 fi
 
 if [[ -e "$APP" || -L "$APP" ]]; then
+  if [[ $AUTO_RESTART -eq 1 ]]; then
+    CUR_PIDS="$(find_running_target_pids "$APP")"
+    if [[ -n "$CUR_PIDS" ]]; then
+      WAS_RUNNING=1
+      echo "==> 正在退出运行中的 $APP ..."
+      for pid in $CUR_PIDS; do
+        kill -TERM "$pid" 2>/dev/null || true
+      done
+      for _ in $(seq 1 30); do
+        STILL_ALIVE=0
+        for pid in $CUR_PIDS; do
+          if kill -0 "$pid" 2>/dev/null; then
+            STILL_ALIVE=1
+            break
+          fi
+        done
+        [[ $STILL_ALIVE -eq 0 ]] && break
+        sleep 0.2
+      done
+    fi
+  fi
   # 二次守卫后移除旧的 哈基米.app 副本
   node -e '
   const path = require("path");
@@ -479,6 +574,15 @@ echo "==> 安装独立应用: $APP"
 mv "$STAGE" "$APP"
 xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
 touch "$APP" 2>/dev/null || true
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+if [[ -x "$LSREGISTER" ]]; then
+  "$LSREGISTER" -f "$APP" 2>/dev/null || true
+fi
+
+if [[ $AUTO_RESTART -eq 1 && $WAS_RUNNING -eq 1 ]]; then
+  echo "==> 重新打开 $APP"
+  open "$APP"
+fi
 
 echo "==> 构建完成！"
 echo "  独立应用: $APP"

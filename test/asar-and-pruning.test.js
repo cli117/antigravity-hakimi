@@ -13,6 +13,8 @@ const asarEngine = require(path.join(ROOT, 'payload', 'dist', 'asar-engine.js'))
 const { packHakimiAsar } = require(path.join(ROOT, 'scripts', 'pack-hakimi-asar.js'));
 const { buildMacosIcon } = require(path.join(ROOT, 'scripts', 'build-macos-icon.js'));
 const { replaceAsarIcon } = require(path.join(ROOT, 'scripts', 'replace-asar-icon.js'));
+const meterCore = require(path.join(ROOT, 'payload', 'dist', 'meter-core.js'));
+const contextUnlock = require(path.join(ROOT, 'payload', 'dist', 'meter-context-unlock.js'));
 
 const EXCLUDED_SYMBOLS = [
   'meter-proxy',
@@ -627,5 +629,75 @@ test('buildMacosIcon converts JPEG/PNG/ICNS and packHakimiAsar optionally swaps 
     );
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('context presets start at 256K up to 1M and arm64 clients enable Apply button', () => {
+  const tpl = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'template.html'), 'utf8');
+  assert.equal(tpl.includes('data-ctx-limit="128000"'), false, '128K preset should be removed');
+  for (const preset of ['256000', '512000', '1000000']) {
+    assert.ok(tpl.includes(`data-ctx-limit="${preset}"`), `Missing preset button for ${preset}`);
+  }
+
+  const mainJs = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'main.js'), 'utf8');
+  assert.ok(
+    mainJs.includes("data.arch === 'arm64'"),
+    'src/renderer/main.js must enable btnApplyUnlock on Apple Silicon (arm64)'
+  );
+  assert.ok(
+    mainJs.includes('rawWindowMax'),
+    'src/renderer/main.js must compare presets against rawWindowMax so 1M stays enabled on 1M models'
+  );
+});
+
+test('meter-core recognizes Gemini 4 Hydrogen, Argon, and Orchestrator (Carbon) under Google vendor', () => {
+  for (const label of [
+    'Gemini 4 Hydrogen (XHigh)',
+    'Gemini 4 Argon (High)',
+    'Orchestrator (Carbon)',
+  ]) {
+    const grouped = meterCore.groupModelProduct({ label });
+    assert.equal(grouped.vendor, 'Google', `Expected Google vendor for ${label}`);
+  }
+});
+
+test('meter-context-unlock ps lookup preserves UTF-8 non-ASCII bundle paths under stripped C locale', async () => {
+  const targetLs = '/Applications/哈基米.app/Contents/Resources/bin/language_server';
+  const syntheticPs = `41204 Sun Nov 15 14:00:32 2026     ${targetLs} --standalone\n`;
+  const parsed = contextUnlock.parseMacPsOutput(syntheticPs, targetLs);
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0].pid, 41204);
+
+  const prevLang = process.env.LANG;
+  const prevLcAll = process.env.LC_ALL;
+  const prevLcCtype = process.env.LC_CTYPE;
+  try {
+    delete process.env.LANG;
+    delete process.env.LC_ALL;
+    delete process.env.LC_CTYPE;
+
+    const proc = await contextUnlock.getRunningLanguageServerInfoAsync(targetLs, true);
+    assert.equal(proc.queryFailed, false);
+
+    // Independently check whether 哈基米.app language_server is running using explicit UTF-8 ps env
+    const livePs = execFileSync('ps', ['-ax', '-o', 'pid=,command='], {
+      encoding: 'utf8',
+      env: { ...process.env, LANG: 'en_US.UTF-8', LC_CTYPE: 'UTF-8' },
+    });
+    const actuallyRunning = livePs.split(/\r?\n/).some((l) => l.includes(targetLs));
+    if (actuallyRunning) {
+      assert.equal(
+        proc.isRunning,
+        true,
+        'Live 哈基米.app language_server must still be detected when parent env lacks UTF-8 LANG/LC_CTYPE'
+      );
+    }
+  } finally {
+    if (prevLang === undefined) delete process.env.LANG;
+    else process.env.LANG = prevLang;
+    if (prevLcAll === undefined) delete process.env.LC_ALL;
+    else process.env.LC_ALL = prevLcAll;
+    if (prevLcCtype === undefined) delete process.env.LC_CTYPE;
+    else process.env.LC_CTYPE = prevLcCtype;
   }
 });

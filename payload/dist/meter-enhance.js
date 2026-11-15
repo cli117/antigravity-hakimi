@@ -189,6 +189,7 @@ function findMatchingLanguageServerPids(targetPaths) {
     const out = execFileSync('ps', ['-ax', '-o', 'pid=,command='], {
       encoding: 'utf8',
       timeout: 2500,
+      env: { ...process.env, LANG: 'en_US.UTF-8', LC_CTYPE: 'UTF-8', LC_TIME: 'C' },
     });
     const hits = [];
     for (const line of String(out || '').split(/\r?\n/)) {
@@ -481,6 +482,8 @@ function applyEnhancePatch(payload = {}, options = {}) {
         unlockOpts = { mode: 'fixed', limitTokens: Number(payload.contextLimitTokens) || 512000 };
       } else if (modeStr === '900k') {
         unlockOpts = { mode: 'fixed', limitTokens: Number(payload.contextLimitTokens) || 900000 };
+      } else if (modeStr === '1m' || modeStr === '1000k') {
+        unlockOpts = { mode: 'fixed', limitTokens: Number(payload.contextLimitTokens) || 1000000 };
       } else if (modeStr === 'fixed' || modeStr === 'const' || modeStr === 'custom') {
         unlockOpts = { mode: 'fixed', limitTokens: payload.contextLimitTokens };
       } else {
