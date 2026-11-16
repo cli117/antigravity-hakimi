@@ -546,6 +546,15 @@ function applyAgyCliUnlock(options = {}) {
     };
   }
 
+  if (pre.regionUnlock && !pre.regionUnlock.ok) {
+    return {
+      ok: false,
+      code: pre.regionUnlock.code || 'REGION_ANALYSIS_FAILED',
+      error: pre.regionUnlock.error || pre.regionUnlock.reason || 'CLI 地区检查无法安全匹配',
+      analysis: pre,
+    };
+  }
+
   const buf = Buffer.from(fs.readFileSync(realTarget));
   const beforeSha = sha256Buffer(buf);
   let backupPath = null;
@@ -584,11 +593,17 @@ function applyAgyCliUnlock(options = {}) {
   }
 
   if (pre.regionUnlock && pre.regionUnlock.status === 'unpatched') {
-    const site = pre.regionUnlock.targetSite;
-    if (site && Number.isInteger(site.branchFileOff) && Number.isInteger(site.patchWord)) {
-      buf.writeUInt32LE(site.patchWord >>> 0, site.branchFileOff);
-      patchedHooks.push('ValidateAndOnboardAccount');
+    const { branchOffset, patchedWord, currentWord } = pre.regionUnlock;
+    if (!Number.isInteger(branchOffset) || branchOffset < 0 || branchOffset + 4 > buf.length ||
+        !Number.isInteger(patchedWord) || buf.readUInt32LE(branchOffset) !== currentWord) {
+      return { ok: false, code: 'REGION_SITE_CHANGED', error: 'CLI 地区分支与分析结果不一致，停止处理' };
     }
+    buf.writeUInt32LE(patchedWord >>> 0, branchOffset);
+    const verified = analyzeRegionUnlock(buf);
+    if (!verified.ok || verified.status !== 'patched' || verified.branchOffset !== branchOffset) {
+      return { ok: false, code: 'REGION_VERIFY_FAILED', error: 'CLI 地区补丁内存校验失败，停止处理' };
+    }
+    patchedHooks.push('ValidateAndOnboardAccount');
   }
 
   const afterSha = sha256Buffer(buf);
