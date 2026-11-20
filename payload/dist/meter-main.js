@@ -23,8 +23,14 @@ const {
   restoreContextUnlock
 } = require('./meter-collector');
 const { isValidExternalUrl } = require('./meter-core');
+const {
+  getRemoteBackendForSender,
+  getRemoteBackendForWindow,
+  getRemoteSession,
+  createRemoteSessionRequester,
+} = require('./meter-ssh');
 
-function getMeterSource() {
+function getMeterSource(options = {}) {
   try {
     const coreCode = fs.readFileSync(path.join(__dirname, 'meter-core.js'), 'utf8');
     const rendererCode = fs.readFileSync(path.join(__dirname, 'meter-renderer.js'), 'utf8');
@@ -42,6 +48,12 @@ function getMeterSource() {
         bootstrap += `window.__AGY_CHINESE_CONFIG__ = ${JSON.stringify(mCfg.modules.chinese)};\n`;
       }
     } catch {}
+    try {
+      const remoteMeta = options && options.remote
+        ? { kind: 'ssh', hostId: String(options.remote.hostId || ''), label: String(options.remote.label || '') }
+        : null;
+      bootstrap += `window.__AGContextMeterRemote = ${JSON.stringify(remoteMeta)};\n`;
+    } catch {}
     return `${bootstrap}${coreCode}\n${rendererCode}\ntrue;`;
   } catch (e) {
     return '';
@@ -55,7 +67,10 @@ function isLocalMainFrameSender(event) {
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
     if (url.hostname !== '127.0.0.1' && url.hostname !== 'localhost') return null;
     if (event.senderFrame && event.sender?.mainFrame && event.senderFrame !== event.sender.mainFrame) return null;
-    try { require('./local-api').setLastKnownOrigin(url.origin); } catch {}
+    const remote = getRemoteBackendForSender(event?.sender);
+    if (!remote) {
+      try { require('./local-api').setLastKnownOrigin(url.origin); } catch {}
+    }
     return url;
   } catch {
     return null;
@@ -252,7 +267,24 @@ function registerIpcOnce() {
   ipcMain.handle('context-meter:scan', async (event, id, force) => {
     const url = isLocalMainFrameSender(event);
     if (!url) throw new Error('仅允许本机主聊天窗口');
-    try { return { ok: true, data: await collect(url.origin, id, { force: force === true }) }; }
+    try {
+      const remote = getRemoteBackendForSender(event?.sender);
+      if (remote) {
+        const sessionInfo = getRemoteSession(remote.hostId);
+        const requester = createRemoteSessionRequester(event.sender, sessionInfo, url.origin);
+        return {
+          ok: true,
+          data: await collect(url.origin, id, {
+            force: force === true,
+            isRemote: true,
+            remoteHostId: remote.hostId,
+            remoteLabel: remote.label,
+            requestFn: requester.call,
+          }),
+        };
+      }
+      return { ok: true, data: await collect(url.origin, id, { force: force === true }) };
+    }
     catch (e) { return { ok: false, error: e.message }; }
   });
 
@@ -276,7 +308,28 @@ function registerIpcOnce() {
   ipcMain.handle('context-meter:token-history', async (event, force) => {
     const url = isLocalMainFrameSender(event);
     if (!url) throw new Error('仅允许本机主聊天窗口');
-    try { return { ok: true, data: await collectTokenHistoryAsync({ force: force === true }) }; }
+    try {
+      const remote = getRemoteBackendForSender(event?.sender);
+      if (remote) {
+        const sessionInfo = getRemoteSession(remote.hostId);
+        if (sessionInfo && sessionInfo.csrfToken) {
+          try {
+            const requester = createRemoteSessionRequester(event.sender, sessionInfo, url.origin);
+            return {
+              ok: true,
+              data: await collectTokenHistoryAsync({
+                force: force === true,
+                remoteUserStatusOptions: {
+                  remoteHostId: remote.hostId,
+                  requestFn: requester.call,
+                },
+              }),
+            };
+          } catch {}
+        }
+      }
+      return { ok: true, data: await collectTokenHistoryAsync({ force: force === true }) };
+    }
     catch (e) { return { ok: false, error: e.message }; }
   });
 
@@ -535,7 +588,10 @@ async function ensureMeterInjected(win, options = {}) {
       return false;
     }
 
-    try { require('./local-api').setLastKnownOrigin(new URL(url).origin); } catch {}
+    const remote = getRemoteBackendForWindow(win) || getRemoteBackendForSender(wc);
+    if (!remote) {
+      try { require('./local-api').setLastKnownOrigin(new URL(url).origin); } catch {}
+    }
     syncWindowOverlayHeight(win);
 
     if (!options.force) {
@@ -547,7 +603,7 @@ async function ensureMeterInjected(win, options = {}) {
       } catch {}
     }
 
-    const runtimeSource = getMeterSource();
+    const runtimeSource = getMeterSource({ remote });
     if (!runtimeSource) return false;
 
     await wc.executeJavaScript(runtimeSource);
@@ -759,6 +815,7 @@ function isHostRunInBackgroundEnabled() {
 function shouldInterceptWindowClose(win, options = {}) {
   try {
     if (isAppQuitting) return false;
+    if (getRemoteBackendForWindow(win)) return false;
 
     // 1. 尊重宿主后台常驻设置：若明确未开启或读取设置失败，不得拦截
     const isBgEnabled = typeof options.isBackgroundEnabled === 'function'

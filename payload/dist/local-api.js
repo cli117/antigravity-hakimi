@@ -149,8 +149,18 @@ function findOriginFromElectronWebContents() {
     const all = electron && electron.webContents && typeof electron.webContents.getAllWebContents === 'function'
       ? electron.webContents.getAllWebContents()
       : [];
+    let getRemoteBackend = null;
+    try {
+      const wb = require('./remote/windowBackends');
+      if (wb && typeof wb.remoteBackendOf === 'function') getRemoteBackend = wb.remoteBackendOf;
+    } catch {}
     for (const wc of all) {
       if (!wc || (typeof wc.isDestroyed === 'function' && wc.isDestroyed())) continue;
+      if (getRemoteBackend) {
+        try {
+          if (getRemoteBackend(wc)) continue;
+        } catch {}
+      }
       const rawUrl = typeof wc.getURL === 'function' ? wc.getURL() : '';
       const norm = normalizeOrigin(rawUrl);
       if (norm) return { origin: norm, page: { type: 'page', url: rawUrl } };

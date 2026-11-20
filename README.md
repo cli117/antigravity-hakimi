@@ -26,7 +26,10 @@
      - `translated`：**`反重力`**
      - `hidden`：隐藏文字但保留菜单入口
      - `english`：**`Antigravity`**
-6. **自定义应用图标（可选 `--icon`）与一键健康诊断（`npm run doctor`）**
+6. **Remote SSH 远端无缝适配（Linux `x86-64` & `arm64`）**
+   - 内置 [`meter-ssh.js`](payload/dist/meter-ssh.js)，在打包 `app.asar` 时注入 `dist/remote/bootstrapScript.js` 与 `dist/remote/remoteManager.js`：当用户通过 Remote SSH 连接任意 Linux 主机时，自动对远端 `~/.antigravity-hub-server/bin/<ver>-<arch>/language_server`（64 位 ELF `x86-64` / `arm64`，兼容 PIE `.rela.dyn`）执行**自适应账号地区解锁**与**上下文窗口 Gate 3A / Gate 3B 解锁**（自动同步本机当前上下文模式与上限），且能平滑接管并重启已运行的未修补官方远端服务（日志位于远端 `~/.antigravity-hub-server/data/hakimi-patch.log`，不污染 SSH 引导协议且异常自动 fail-open）。
+   - SSH 窗口内同样完整生效：桌面端汉化与四态品牌标题、顶部 Context Meter 监控条（复用窗口独立 Electron `session` 走反重力内置 SSH SOCKS5 通道直连远端语言服务，实时展示上下文占比、`tok/s`、缓存命中率、`/compact`、窗口快调、会话详情与额度池），并与本机窗口严格隔离。
+7. **自定义应用图标（可选 `--icon`）与一键健康诊断（`npm run doctor`）**
    - 支持传入本地图片（`PNG` / `JPG` / `WebP` / `HEIC` / `ICNS` 等）作为 `哈基米.app` 的应用图标；覆盖构建时不传 `--icon` 会自动保留旧副本已有的自定义图标，也可传入 `--default-icon` 恢复官方默认图标。
    - 对非透明背景照片会自动居中裁剪为 1:1 并施加 macOS 圆角矩形留白遮罩（带透明圆角/边缘的图标则原样保留，也可配合 `--raw-icon` 禁用遮罩），同时更新 **`Contents/Resources/icon.icns`**（访达 / 启动台 / Spotlight）与 **`app.asar/icon.png`**（运行态 Dock 图标）。
    - 提供只读健康诊断工具 `npm run doctor`（[`scripts/doctor.js`](scripts/doctor.js)），一键核查官方包纯净隔离、版本同步、`ElectronAsarIntegrity` 摘要、`codesign --verify --strict`、地区/上下文补丁状态、运行中进程及 `agy` CLI 状态。
@@ -126,8 +129,8 @@ npm run doctor
 - `scripts/build-macos-icon.js`：将本地图片转换为标准 macOS `.icns` 与 `512x512` Dock 图标 PNG（自适应圆角留白遮罩）
 - `scripts/replace-asar-icon.js`：仅替换已打包 `app.asar` 内根目录 `icon.png` 并保留全部钩子与元数据
 - `scripts/build-renderer.js`：将 `src/renderer/*` 编译为 `payload/dist/meter-renderer.js`
-- `scripts/pack-hakimi-asar.js`：解包官方只读 `app.asar`、清理并注入 4 处 `dist/utils.js` 钩子与 `dist/preload.js`、支持替换内置 `icon.png` 并计算头摘要 SHA-256
-- `payload/dist/`：主进程监听、自适应地区解锁、桌面/CLI 上下文解锁引擎、纯 Token 统计存储与汉化词库运行时
+- `scripts/pack-hakimi-asar.js`：解包官方只读 `app.asar`、清理并注入 4 处 `dist/utils.js` 钩子、`dist/preload.js` 与 Remote SSH 钩子（`dist/remote/bootstrapScript.js`、`dist/remote/remoteManager.js`）、支持替换内置 `icon.png` 并计算头摘要 SHA-256
+- `payload/dist/`：主进程监听、自适应地区解锁、桌面/CLI 上下文解锁引擎、Remote SSH 远端自适应 ELF64 解锁与会话通道（`meter-ssh.js`）、纯 Token 统计存储与汉化词库运行时
 - `src/renderer/`：Context Meter 悬浮胶囊、缓存命中率监控与低命中告警、快捷操作、速率/纯 Token 历史看板与设置弹窗源码
 - `unlock/agy-cli/agy-patch.py`：独立命令行二进制上下文窗口解锁工具（Python 版）
 - `test/`：自动化单元测试套件

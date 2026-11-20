@@ -9,6 +9,10 @@ const TAGS = {
   METER_UTILS_END: '// --- Antigravity Context Meter utils Injection End ---',
   METER_PRELOAD_START: '// --- Antigravity Context Meter preload Injection Start ---',
   METER_PRELOAD_END: '// --- Antigravity Context Meter preload Injection End ---',
+  SSH_BOOTSTRAP_START: '// --- Antigravity Hakimi SSH Bootstrap Injection Start ---',
+  SSH_BOOTSTRAP_END: '// --- Antigravity Hakimi SSH Bootstrap Injection End ---',
+  SSH_MANAGER_START: '// --- Antigravity Hakimi SSH Manager Injection Start ---',
+  SSH_MANAGER_END: '// --- Antigravity Hakimi SSH Manager Injection End ---',
 };
 
 function validateSyntax(code, filename = 'script.js') {
@@ -249,6 +253,60 @@ function verifyCleanStructure(cleanUtils) {
   return structuralOk && validateSyntax(cleanUtils, 'dist/utils.js');
 }
 
+function cleanSshBootstrapSource(source) {
+  if (!source || typeof source !== 'string') return source;
+  const blockRe = new RegExp(
+    `${TAGS.SSH_BOOTSTRAP_START}[\\s\\S]*?${TAGS.SSH_BOOTSTRAP_END}`,
+    'g'
+  );
+  return source.replace(blockRe, 'return header + SCRIPT_BODY;');
+}
+
+function injectSshBootstrapSource(source) {
+  const cleaned = cleanSshBootstrapSource(source);
+  const anchor = 'return header + SCRIPT_BODY;';
+  const parts = cleaned.split(anchor);
+  if (parts.length !== 2) {
+    throw new Error(`Expected unique anchor "${anchor}" in dist/remote/bootstrapScript.js (matches=${parts.length - 1})`);
+  }
+  const replacement = `${TAGS.SSH_BOOTSTRAP_START}\n    return require("../meter-ssh").decorateBootstrapScript(header + SCRIPT_BODY);\n    ${TAGS.SSH_BOOTSTRAP_END}`;
+  return parts[0] + replacement + parts[1];
+}
+
+function cleanRemoteManagerSource(source) {
+  if (!source || typeof source !== 'string') return source;
+  const blockRe = new RegExp(
+    `\\r?\\n?[ \\t]*${TAGS.SSH_MANAGER_START}[\\s\\S]*?${TAGS.SSH_MANAGER_END}`,
+    'g'
+  );
+  return source.replace(blockRe, '');
+}
+
+function injectRemoteManagerSource(source) {
+  let code = cleanRemoteManagerSource(source);
+  const onConnectedAnchor = '    onConnected(entry, sshSession) {';
+  const onConnParts = code.split(onConnectedAnchor);
+  if (onConnParts.length !== 2) {
+    throw new Error(`Expected unique anchor "${onConnectedAnchor}" in dist/remote/remoteManager.js (matches=${onConnParts.length - 1})`);
+  }
+  code =
+    onConnParts[0] +
+    `${onConnectedAnchor}\n        ${TAGS.SSH_MANAGER_START}\n        try { require("../meter-ssh").recordRemoteSession(entry, sshSession); } catch {}\n        ${TAGS.SSH_MANAGER_END}` +
+    onConnParts[1];
+
+  const disposeAnchor = '    disposeHost(entry) {';
+  const disposeParts = code.split(disposeAnchor);
+  if (disposeParts.length !== 2) {
+    throw new Error(`Expected unique anchor "${disposeAnchor}" in dist/remote/remoteManager.js (matches=${disposeParts.length - 1})`);
+  }
+  code =
+    disposeParts[0] +
+    `${disposeAnchor}\n        ${TAGS.SSH_MANAGER_START}\n        try { require("../meter-ssh").forgetRemoteSession(entry?.hostId); } catch {}\n        ${TAGS.SSH_MANAGER_END}` +
+    disposeParts[1];
+
+  return code;
+}
+
 module.exports = {
   TAGS,
   WINDOW_LOAD_ANCHOR_RE,
@@ -260,5 +318,9 @@ module.exports = {
   generateChinesePreloadCode,
   cleanUtilsSource,
   cleanPreloadSource,
+  cleanSshBootstrapSource,
+  injectSshBootstrapSource,
+  cleanRemoteManagerSource,
+  injectRemoteManagerSource,
   verifyCleanStructure,
 };

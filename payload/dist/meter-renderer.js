@@ -8776,6 +8776,25 @@
       };
     }
 
+    function observeHostCsrfFromHeaders(headersObj, reqUrl) {
+      try {
+        if (!headersObj) return;
+        let tok = '';
+        if (typeof headersObj.get === 'function') {
+          tok = headersObj.get('x-codeium-csrf-token') || headersObj.get('X-Codeium-Csrf-Token') || '';
+        } else if (typeof headersObj === 'object') {
+          tok = headersObj['x-codeium-csrf-token'] || headersObj['X-Codeium-Csrf-Token'] || '';
+        }
+        tok = String(tok || '').trim();
+        if (!tok) return;
+        if (reqUrl && typeof window !== 'undefined' && window.location?.origin) {
+          const parsed = new URL(reqUrl, window.location.origin);
+          if (parsed.origin !== window.location.origin) return;
+        }
+        if (typeof state === 'object' && state) state.observedCsrfToken = tok;
+      } catch {}
+    }
+
     // 2. window.fetch interceptor (仅处理 SendUserCascadeMessage；严禁猜测 StartCascade)
     const origFetch = window.fetch;
     if (typeof origFetch === 'function') {
@@ -8786,6 +8805,7 @@
           const urlStr = typeof resource === 'string'
             ? resource
             : (resource && resource.url ? resource.url : String(resource || ''));
+          observeHostCsrfFromHeaders(init?.headers || resource?.headers, urlStr);
           if (typeof budgetEngine.isTargetBudgetRpc === 'function' && budgetEngine.isTargetBudgetRpc(urlStr) && init?.body) {
             captureSendCascadeContext(init.body);
             const headersObj = init?.headers;
@@ -15080,6 +15100,11 @@
     try {
       const fromConfig = typeof window !== 'undefined' ? window.__APP_CONFIG__?.csrfToken : null;
       if (fromConfig && typeof fromConfig === 'string') return fromConfig;
+    } catch {}
+    try {
+      if (state && typeof state.observedCsrfToken === 'string' && state.observedCsrfToken) {
+        return state.observedCsrfToken;
+      }
     } catch {}
     try {
       if (typeof window !== 'undefined' && window.localStorage) {

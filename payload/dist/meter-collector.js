@@ -63,18 +63,18 @@ function extractWorkspacePathFromUri(uriStr) {
 /**
  * 从轨迹元数据解析工作区路径
  */
-function extractWorkspaceFromTrajectory(trajectory) {
+function extractWorkspaceFromTrajectory(trajectory, options = {}) {
   try {
     const meta = trajectory?.metadata || trajectory?.trajectoryMetadata || {};
     const wsList = Array.isArray(meta.workspaces) ? meta.workspaces : [];
     for (const ws of wsList) {
       const cand = extractWorkspacePathFromUri(ws?.workspaceFolderAbsoluteUri || ws?.gitRootAbsoluteUri);
-      if (cand && fs.existsSync(cand)) return cand;
+      if (cand && (options.isRemote === true || fs.existsSync(cand))) return cand;
     }
     const uriList = Array.isArray(meta.workspaceUris) ? meta.workspaceUris : [];
     for (const u of uriList) {
       const cand = extractWorkspacePathFromUri(u);
-      if (cand && fs.existsSync(cand)) return cand;
+      if (cand && (options.isRemote === true || fs.existsSync(cand))) return cand;
     }
   } catch {}
   return null;
@@ -412,7 +412,8 @@ function calcImageTokens(w, h) {
   return [tok, Math.max(tok, (w > 384 || h > 384) ? 1120 : 258)];
 }
 
-async function scanFiles(media) {
+async function scanFiles(media, options = {}) {
+  const isRemote = options && options.isRemote === true;
   const results = new Map(), work = [];
   for (const item of media) {
     try {
@@ -459,6 +460,14 @@ async function scanFiles(media) {
           continue;
         }
       }
+      if (isRemote) {
+        results.set(item.uri, {
+          ...empty(),
+          status: 'unknown',
+          unknownParts: ['SSH 远端文件暂不支持本机磁盘扫描']
+        });
+        continue;
+      }
       if (!item.uri || /^https?:/i.test(item.uri)) throw new Error('无可用本地附件，内容未知');
       const targetPath = item.uri.startsWith('file:') ? fileURLToPath(item.uri) : item.uri;
       if (!fs.existsSync(targetPath)) throw new Error('附件文件不存在或已移动');
@@ -481,20 +490,27 @@ async function scanFiles(media) {
 
 async function collect(origin, id, options = {}) {
   if (!/^https?:\/\/(?:127\.0\.0\.1|localhost):\d+$/.test(origin) || !/^[a-f\d-]{36}$/i.test(id)) throw new Error('无效本机会话');
-  const key = `${origin}/${id}`;
+  const isRemote = options.isRemote === true || Boolean(options.remoteHostId);
+  const remoteHostId = options.remoteHostId ? String(options.remoteHostId) : null;
+  const key = isRemote ? `ssh:${remoteHostId || 'remote'}:${origin}/${id}` : `${origin}/${id}`;
   const previous = conversations.get(key);
   if (previous?.pending) return previous.pending;
-  if (options.force) filesCache.clear();
+  if (options.force && !isRemote) filesCache.clear();
   if (!options.force && previous?.result && Date.now() - previous.at < 12000) return previous.result;
   const task = (async () => {
-    const { resolveCsrfToken } = require('./local-api');
-    const token = await resolveCsrfToken(origin);
-    const call = (method, body) => request(origin, method, body, token);
+    let call;
+    if (typeof options.requestFn === 'function') {
+      call = (method, body) => options.requestFn(method, body);
+    } else {
+      const { resolveCsrfToken } = require('./local-api');
+      const token = await resolveCsrfToken(origin);
+      call = (method, body) => request(origin, method, body, token);
+    }
     const full = await call('GetCascadeTrajectory', { cascadeId: id, trajectoryVerbosity: 3 });
     const trajectory = full.trajectory;
     if (!trajectory) throw new Error('未取得会话历史，无法完整统计');
-    const wsPath = extractWorkspaceFromTrajectory(trajectory);
-    if (wsPath) conversationWorkspaces.set(id.toLowerCase(), wsPath);
+    const wsPath = extractWorkspaceFromTrajectory(trajectory, { isRemote });
+    if (wsPath && !isRemote) conversationWorkspaces.set(id.toLowerCase(), wsPath);
     const steps = trajectory.steps || [];
     const expected = Number(full.numTotalSteps ?? steps.length);
     while (steps.length < expected) {
@@ -504,18 +520,26 @@ async function collect(origin, id, options = {}) {
     }
     const session = analyzeSteps(steps);
     const stepCapabilities = extractObservedModelInfoFromSteps(steps);
-    const attachments = await scanFiles(session.media);
+    const attachments = await scanFiles(session.media, { isRemote });
     const attachmentTotal = empty();
     for (const a of attachments) { const n = a.references || 1; add(attachmentTotal, Object.fromEntries(['chars', 'bytes', 'low', 'high'].map(k => [k, (a[k] || 0) * n]))); }
     const total = add({ ...session.total }, attachmentTotal);
     let latest = null;
     const count = Number(full.numTotalGeneratorMetadata ?? trajectory.generatorMetadata?.length ?? 0);
     const tail = await call('GetCascadeTrajectoryGeneratorMetadata', { cascadeId: id, generatorMetadataOffset: Math.max(0, count - 3), includeMessages: false });
-    let knownCascadeConfigs = Array.isArray(cachedHostUserStatus?.cascadeModelConfigs) ? cachedHostUserStatus.cascadeModelConfigs : [];
+    let activeHostStatus = isRemote
+      ? (remoteHostUserStatusCache.get(remoteHostId || origin)?.data || null)
+      : cachedHostUserStatus;
+    let knownCascadeConfigs = Array.isArray(activeHostStatus?.cascadeModelConfigs) ? activeHostStatus.cascadeModelConfigs : [];
     const hasAnyCap = knownCascadeConfigs.some(c => Number.isFinite(c?.maxTokens) && c.maxTokens > 0);
     if (!knownCascadeConfigs.length || !hasAnyCap) {
       try {
-        const freshStatus = await fetchUserStatusFromHost();
+        const freshStatus = await fetchUserStatusFromHost(
+          isRemote && typeof options.requestFn === 'function'
+            ? { requestFn: options.requestFn, remoteHostId: remoteHostId || origin, force: options.force === true }
+            : {}
+        );
+        if (freshStatus) activeHostStatus = freshStatus;
         if (Array.isArray(freshStatus?.cascadeModelConfigs) && freshStatus.cascadeModelConfigs.length) {
           knownCascadeConfigs = freshStatus.cascadeModelConfigs;
         }
@@ -523,7 +547,7 @@ async function collect(origin, id, options = {}) {
     }
     const mergedCascadeConfigs = mergeModelCapabilitiesIntoConfigs(
       knownCascadeConfigs,
-      cachedHostUserStatus?.availableModelDetails || null,
+      activeHostStatus?.availableModelDetails || null,
       stepCapabilities
     );
     let latestModel = null;
@@ -571,10 +595,36 @@ async function collect(origin, id, options = {}) {
     const unknownFiles = attachments.filter(a => a.status !== 'parsed').length;
     const compactCascadeConfigs = mergedCascadeConfigs.map(sanitizeCascadeModelConfig).filter(Boolean);
     const modelCapabilitiesById = {
-      ...(cachedHostUserStatus?.availableModelDetails || {}),
+      ...(activeHostStatus?.availableModelDetails || {}),
       ...stepCapabilities
     };
-    const result = { version: '0.8.3', conversation: id, workspacePath: wsPath || null, latest, latestCallId, generatorCount: count, cascadeModelConfigs: compactCascadeConfigs, modelCapabilitiesById, session: { ...session, media: undefined, attachmentTotal, total, attachments, unknownFiles, complete: unknownFiles === 0, scope: '全量可读取历史 + 上传附件 + 当前系统提示与工具定义；不将每轮重复输入累加；非服务端分词结果' }, scannedAt: Date.now(), errors: [] };
+    const result = {
+      version: '0.8.3',
+      conversation: id,
+      workspacePath: wsPath || null,
+      isRemote,
+      remoteHostId,
+      remoteLabel: options.remoteLabel || null,
+      latest,
+      latestCallId,
+      generatorCount: count,
+      cascadeModelConfigs: compactCascadeConfigs,
+      modelCapabilitiesById,
+      session: {
+        ...session,
+        media: undefined,
+        attachmentTotal,
+        total,
+        attachments,
+        unknownFiles,
+        complete: unknownFiles === 0,
+        scope: isRemote
+          ? 'SSH 远端全量可读取历史 + 内联媒体 + 当前系统提示与工具定义（远端磁盘附件不走本机扫描）'
+          : '全量可读取历史 + 上传附件 + 当前系统提示与工具定义；不将每轮重复输入累加；非服务端分词结果'
+      },
+      scannedAt: Date.now(),
+      errors: []
+    };
     conversations.set(key, { result, at: Date.now() });
     return result;
   })();
@@ -1378,6 +1428,7 @@ function savePluginSettings(payload = {}, options = {}) {
 
 let cachedHostUserStatus = null;
 let cachedHostUserStatusAt = 0;
+const remoteHostUserStatusCache = new Map();
 
 async function fetchUserStatusFromHost(options = {}) {
   if (options && options.userStatus !== undefined) {
@@ -1390,6 +1441,30 @@ async function fetchUserStatusFromHost(options = {}) {
       if (configs.length) parsed.cascadeModelConfigs = mergeModelCapabilitiesIntoConfigs(configs, availMap);
     }
     return parsed;
+  }
+  if (typeof options.requestFn === 'function') {
+    const cacheKey = String(options.remoteHostId || 'ssh');
+    const cached = remoteHostUserStatusCache.get(cacheKey);
+    if (!options.force && cached && Date.now() - cached.at < 60000) {
+      return cached.data;
+    }
+    try {
+      const [res, availRes] = await Promise.all([
+        options.requestFn('GetUserStatus', {}),
+        options.requestFn('GetAvailableModels', { forceRefresh: false }).catch(() => null)
+      ]);
+      const parsed = parseUserPlanStatus(res);
+      const configs = res?.userStatus?.cascadeModelConfigData?.clientModelConfigs || [];
+      const availMap = availRes ? parseAvailableModelsResponse(availRes) : {};
+      if (parsed) {
+        if (Object.keys(availMap).length) parsed.availableModelDetails = availMap;
+        if (configs.length) parsed.cascadeModelConfigs = mergeModelCapabilitiesIntoConfigs(configs, availMap);
+        remoteHostUserStatusCache.set(cacheKey, { data: parsed, at: Date.now() });
+      }
+      return parsed;
+    } catch {
+      return cached?.data || null;
+    }
   }
   if (!options.agDir && !options.force && cachedHostUserStatus && Date.now() - cachedHostUserStatusAt < 60000) {
     return cachedHostUserStatus;
@@ -1424,6 +1499,39 @@ const TRANSCRIPT_SKIP_DIRS = new Set(['steps', 'scratch', 'media', 'artifacts', 
 const transcriptFileCache = new Map();
 
 async function collectTokenHistoryAsync(options = {}) {
+  if (options && options.remoteUserStatusOptions && typeof options.remoteUserStatusOptions.requestFn === 'function') {
+    const { remoteUserStatusOptions, ...localOpts } = options;
+    const base = await collectTokenHistoryAsync(localOpts);
+    try {
+      const remoteLive = await fetchUserStatusFromHost({
+        ...remoteUserStatusOptions,
+        force: options.force === true
+      });
+      if (remoteLive) {
+        const home = process.env.USERPROFILE || os.homedir();
+        const agDir = options.agDir || process.env.AG_DIR || path.join(home, '.gemini', 'antigravity');
+        const customSettingsAll = loadCustomPlanSettings(agDir);
+        const currentAccountKey = remoteLive?.email || null;
+        const currentCustom = resolveAccountCustomPlan(customSettingsAll, currentAccountKey);
+        const effectivePlanStatus = resolveEffectivePlanStatus(remoteLive, currentCustom, {
+          cachedLivePlan: base?.rawPlanStatus || null,
+          currentEmail: currentAccountKey
+        });
+        const compactModelConfigs = Array.isArray(remoteLive?.cascadeModelConfigs)
+          ? remoteLive.cascadeModelConfigs.map(sanitizeCascadeModelConfig).filter(Boolean)
+          : (base.cascadeModelConfigs || []);
+        return {
+          ...base,
+          cascadeModelConfigs: compactModelConfigs,
+          modelCapabilitiesById: remoteLive?.availableModelDetails || base.modelCapabilitiesById || null,
+          planStatus: effectivePlanStatus,
+          rawPlanStatus: remoteLive,
+          customPlanSettings: currentCustom
+        };
+      }
+    } catch {}
+    return base;
+  }
   if (!options.force && !options.agDir && cachedTokenHistory && Date.now() - cachedTokenHistoryAt < 15000) {
     return cachedTokenHistory;
   }

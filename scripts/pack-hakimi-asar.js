@@ -23,6 +23,10 @@ const {
   generateChinesePreloadCode,
   cleanUtilsSource,
   cleanPreloadSource,
+  cleanSshBootstrapSource,
+  injectSshBootstrapSource,
+  cleanRemoteManagerSource,
+  injectRemoteManagerSource,
   verifyCleanStructure,
 } = require(path.join(PAYLOAD_DIST, 'modular-installer'));
 
@@ -48,6 +52,7 @@ const PAYLOAD_FILES = [
   'meter-main.js',
   'meter-region-unlock.js',
   'meter-renderer.js',
+  'meter-ssh.js',
   'meter-storage.js',
   'modular-installer.js',
   'modules-config.js',
@@ -91,7 +96,16 @@ function collectAsarEntries(node, prefix = '', dirs = new Set(), files = new Map
   return { dirs, files };
 }
 
-function verifyHeaderMetadataPreserved(srcAsar, destAsar, skipFiles = new Set(['dist/utils.js', 'dist/preload.js'])) {
+function verifyHeaderMetadataPreserved(
+  srcAsar,
+  destAsar,
+  skipFiles = new Set([
+    'dist/utils.js',
+    'dist/preload.js',
+    'dist/remote/bootstrapScript.js',
+    'dist/remote/remoteManager.js',
+  ])
+) {
   const srcParsed = readAsarHeader(srcAsar);
   const destParsed = readAsarHeader(destAsar);
 
@@ -264,6 +278,33 @@ function packHakimiAsar(rawOpts = {}) {
       throw new Error('Syntax validation failed for round-trip cleaned dist/preload.js');
     }
     fs.writeFileSync(preloadPath, preload, 'utf8');
+
+    // 2.5 Clean & inject Remote SSH hooks (dist/remote/bootstrapScript.js & dist/remote/remoteManager.js) when present
+    const sshBootstrapPath = path.join(workDir, 'dist', 'remote', 'bootstrapScript.js');
+    if (fs.existsSync(sshBootstrapPath)) {
+      const rawBootstrap = fs.readFileSync(sshBootstrapPath, 'utf8');
+      const injectedBootstrap = injectSshBootstrapSource(rawBootstrap);
+      if (!validateSyntax(injectedBootstrap, 'dist/remote/bootstrapScript.js')) {
+        throw new Error('Syntax validation failed for injected dist/remote/bootstrapScript.js');
+      }
+      if (!validateSyntax(cleanSshBootstrapSource(injectedBootstrap), 'dist/remote/bootstrapScript.js (cleaned)')) {
+        throw new Error('Syntax validation failed for round-trip cleaned dist/remote/bootstrapScript.js');
+      }
+      fs.writeFileSync(sshBootstrapPath, injectedBootstrap, 'utf8');
+    }
+
+    const remoteManagerPath = path.join(workDir, 'dist', 'remote', 'remoteManager.js');
+    if (fs.existsSync(remoteManagerPath)) {
+      const rawManager = fs.readFileSync(remoteManagerPath, 'utf8');
+      const injectedManager = injectRemoteManagerSource(rawManager);
+      if (!validateSyntax(injectedManager, 'dist/remote/remoteManager.js')) {
+        throw new Error('Syntax validation failed for injected dist/remote/remoteManager.js');
+      }
+      if (!validateSyntax(cleanRemoteManagerSource(injectedManager), 'dist/remote/remoteManager.js (cleaned)')) {
+        throw new Error('Syntax validation failed for round-trip cleaned dist/remote/remoteManager.js');
+      }
+      fs.writeFileSync(remoteManagerPath, injectedManager, 'utf8');
+    }
 
     // 3. Copy payload files into workDir/dist
     for (const rel of PAYLOAD_FILES) {

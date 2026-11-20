@@ -66,7 +66,7 @@ npm run unlock:cli
 - `set-hakimi-icon.sh`：针对已存在 `/Applications/哈基米.app` 原位替换 `Contents/Resources/icon.icns` 与 `app.asar/icon.png` 并刷新完整性与签名的轻量脚本。
 - `scripts/`：
   - `build-renderer.js`：将 `src/renderer/` 各源文件拼装编译为 `payload/dist/meter-renderer.js`。
-  - `pack-hakimi-asar.js` / `replace-asar-icon.js`：解包官方 `app.asar`、清理遗留注入、写入 4 处 `dist/utils.js` 钩子与 `dist/preload.js`、支持替换内置 `icon.png`，并输出 Header SHA-256。
+  - `pack-hakimi-asar.js` / `replace-asar-icon.js`：解包官方 `app.asar`、清理遗留注入、写入 4 处 `dist/utils.js` 钩子、`dist/preload.js` 及 Remote SSH 钩子（`dist/remote/bootstrapScript.js`、`dist/remote/remoteManager.js`）、支持替换内置 `icon.png`，并输出 Header SHA-256。
   - `build-macos-icon.js`：本地图片转换为 macOS `.icns` 与 `512x512` Dock PNG（默认按透明边缘自适应裁剪 + 圆角遮罩）。
   - `region-unlock.js` / `cli-unlock.js` / `doctor.js`：账号地区解锁 CLI、`agy` CLI 解锁 CLI、只读健康诊断工具。
 - `payload/dist/`：
@@ -76,12 +76,14 @@ npm run unlock:cli
   - `meter-context-unlock.js`：ARM64 Gate 3A（`CLAMP_256K_ARM64` / `DEF_ORIG_ARM64`）与 Gate 3B（`config.applyFeatureProviderCheckpointOverrideConfig`）双门上下文窗口补丁引擎，支持 `default` (256K) / `fixed` (`16384..2097152`) / `dynamic`；包含 `restoreUnlock()`。
   - `meter-enhance.js`：`language_server` 进程检测/重启与上下文窗口补丁委托封装（包含 `restoreAllEnhance()`；严禁包含任何提示词或标题改写逻辑）。
   - `meter-cli-unlock.js`（与 `unlock/agy-cli/agy-patch.py`）：`agy` CLI 机型白名单绕过与 `AGY_CLI_AUTO_COMPACT_OVERRIDE` 修复补丁及配置同步。
-  - `meter-main.js` / `local-api.js` / `meter-collector.js` / `meter-core.js` / `meter-storage.js` / `attachment_scan.py`：主进程 IPC、本地 API、对话轨迹采集、纯 Token 统计分析、历史存储与附件预算估算。
+  - `meter-ssh.js`：Remote SSH 远端 Linux ELF64（`x86-64` & `arm64`，含 PIE `.rela.dyn` `firstmoduledata` 解析）自适应地区解锁 + 上下文 Gate 3A/3B 补丁引擎、`bootstrapScript.js` POSIX `sh` 装饰器、远端会话内存注册表及 Electron `session.fetch` 代理通道。
+  - `meter-main.js` / `local-api.js` / `meter-collector.js` / `meter-core.js` / `meter-storage.js` / `attachment_scan.py`：主进程 IPC（区分本机与 SSH 窗口）、本地 API、对话轨迹采集、纯 Token 统计分析、历史存储与附件预算估算。
   - `i18n/i18n-runtime.js` & `i18n/zh-CN.json`：桌面端界面全量简体中文运行时与四态品牌标题控制（`hakimi` / `translated` / `hidden` / `english`）。
 - `src/renderer/`：Context Meter 悬浮胶囊、一级顶栏纯图标快捷操作 & `#topbar-window-popover`、会话详情、模型上下文设置、速率对比与纯 Token 热力图源码（`template.html`、`styles.css`、`i18n.js`、`colors.js`、`dropdown.js`、`heatmap.js`、`context-budget-engine.js`、`main.js`）。
 - `test/`：
   - `arm64-patches.test.js`：Mach-O / `.gopclntab` / ARM64 / `agy` CLI 二进制补丁与可逆性测试。
   - `asar-and-pruning.test.js`：语法校验、裁剪符号扫描、DOM 结构与顶栏不变量、ASAR 打包/图标替换、官方路径守卫、`doctor` 与重启退出屏障测试。
+  - `ssh-remote.test.js`：Linux ELF64（`x86-64` PIE & `arm64`）Node + Python3 双实现自适应补丁一致性、POSIX `sh -n` 校验、ASAR 往返注入与 SSH 远端采集器隔离测试。
 
 ---
 
@@ -99,3 +101,6 @@ npm run unlock:cli
    - 签名参数不可混用：`Contents/Resources/bin/language_server` 需加 `--options runtime --entitlements`；外层 `/Applications/哈基米.app` **绝对不能**加 `--options runtime`（否则 Library Validation 会拒绝加载 Google 签名的 `Electron Framework`）。
    - 修改 `Contents/MacOS/Antigravity` 或重签名前需先 `cp -p` + `mv -f` 刷新主可执行文件 inode，避免 Apple Silicon 内核 `cs_blob` 缓存旧签名引发 `SIGKILL`。
    - 自动重启已运行 `.app` 时必须使用 `stop_running_target_app`（主进程先行优雅 `SIGTERM` -> 全进程 `SIGTERM` -> 强制 `SIGKILL` 零存活屏障 + `cleanupStaleSingletonLock()`）后再用清理过环境变量的 `open -n "$APP"` 拉起，否则 `open` 会向濒死的旧 Electron 主进程发送 `activate` 导致空白黑屏窗口。
+4. **Remote SSH 远端引导与窗口隔离约束**
+   - `meter-ssh.js` 注入 `dist/remote/bootstrapScript.js` 的 POSIX `sh` 代码必须在 `set -u` 下安全运行，且**严禁向 stdout 打印任何内容**（否则会破坏 Antigravity 的 `parseBootstrapLine` 通信协议）；远端补丁日志统一写入 `$agy_datadir/hakimi-patch.log`，失败必须 fail-open 并写 `.hakimi_skip` 防止无限重启循环。
+   - `meter-main.js` 与 `local-api.js` 必须通过 `windowBackends.remoteBackendOf` 严格区分本机窗口与 SSH 窗口：**禁止**让 SSH 窗口的 `127.0.0.1:<remotePort>` 写入 `local-api.setLastKnownOrigin()` 或被 `findOriginFromElectronWebContents()` 误选；`shouldInterceptWindowClose()` 必须对 SSH 窗口直接返回 `false`，避免关闭 SSH 窗口时被隐藏而无法触发 `disposeHost`。

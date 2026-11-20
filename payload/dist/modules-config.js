@@ -259,6 +259,22 @@ function inspectDiskModules(customPath = null) {
     }
   }
 
+  let sshBootstrapInjected = false;
+  let sshManagerInjected = false;
+  let sshFilesOk = entries.includes('/dist/meter-ssh.js');
+  try {
+    if (entries.includes('/dist/remote/bootstrapScript.js')) {
+      const bootStr = builtinAsar.extractFile(asarPath, 'dist/remote/bootstrapScript.js').toString('utf8');
+      sshBootstrapInjected = bootStr.includes(TAGS.SSH_BOOTSTRAP_START) && bootStr.includes(TAGS.SSH_BOOTSTRAP_END);
+    }
+    if (entries.includes('/dist/remote/remoteManager.js')) {
+      const mgrStr = builtinAsar.extractFile(asarPath, 'dist/remote/remoteManager.js').toString('utf8');
+      sshManagerInjected = mgrStr.includes(TAGS.SSH_MANAGER_START) && mgrStr.includes(TAGS.SSH_MANAGER_END);
+    }
+  } catch {}
+  const sshSupported = entries.includes('/dist/remote/bootstrapScript.js');
+  const sshReady = sshSupported ? (sshBootstrapInjected && sshManagerInjected && sshFilesOk) : sshFilesOk;
+
   return {
     found: true,
     asarPath,
@@ -269,6 +285,8 @@ function inspectDiskModules(customPath = null) {
     chineseGate: chineseStatus === 'ready',
     chineseStatus,
     chineseReason,
+    sshSupported,
+    sshReady,
   };
 }
 

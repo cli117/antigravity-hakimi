@@ -189,11 +189,18 @@ function runDoctor(options = {}) {
 
       try {
         const entries = asarEngine.builtinAsar.listPackage(hakimiAsar);
-        const missingNew = ['/dist/meter-region-unlock.js', '/dist/meter-cli-unlock.js'].filter(
+        const missingNew = ['/dist/meter-region-unlock.js', '/dist/meter-cli-unlock.js', '/dist/meter-ssh.js'].filter(
           (p) => !entries.includes(p)
         );
         if (missingNew.length === 0) {
-          push('hakimi_asar_payload', 'OK', '内置扩展载荷', '已包含自适应地区解锁与 CLI 解锁模块');
+          push(
+            'hakimi_asar_payload',
+            'OK',
+            '内置扩展载荷',
+            mods.sshReady
+              ? '已包含自适应地区解锁、CLI 解锁与 SSH 远端自动解锁模块'
+              : '已包含自适应地区解锁与 CLI 解锁模块'
+          );
         } else {
           push(
             'hakimi_asar_payload',
