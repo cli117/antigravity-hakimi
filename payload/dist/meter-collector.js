@@ -487,8 +487,8 @@ async function collect(origin, id, options = {}) {
   if (options.force) filesCache.clear();
   if (!options.force && previous?.result && Date.now() - previous.at < 12000) return previous.result;
   const task = (async () => {
-    const html = await request(origin);
-    const token = JSON.parse(html.match(/window.__APP_CONFIG__ = (.*?);/)[1]).csrfToken;
+    const { resolveCsrfToken } = require('./local-api');
+    const token = await resolveCsrfToken(origin);
     const call = (method, body) => request(origin, method, body, token);
     const full = await call('GetCascadeTrajectory', { cascadeId: id, trajectoryVerbosity: 3 });
     const trajectory = full.trajectory;

@@ -432,7 +432,9 @@ PACK_ARGS=(
   --dest-asar "$STAGE/Contents/Resources/app.asar"
   --hash-out "$WORK/asar.sha256"
 )
+USING_CUSTOM_ICON=0
 if [[ -n "$ICON_PATH" ]]; then
+  USING_CUSTOM_ICON=1
   echo "==> [图标] 转换并替换应用图标: $ICON_PATH"
   ICON_ARGS=(
     --input "$ICON_PATH"
@@ -448,6 +450,7 @@ elif [[ $STAGE_ONLY -eq 0 && $FORCE_DEFAULT_ICON -eq 0 && -f "$APP/Contents/Reso
   SRC_ICNS_HASH="$(shasum -a 256 "$SRC/Contents/Resources/icon.icns" | awk '{print $1}')"
   CUR_ICNS_HASH="$(shasum -a 256 "$APP/Contents/Resources/icon.icns" | awk '{print $1}')"
   if [[ "$SRC_ICNS_HASH" != "$CUR_ICNS_HASH" ]]; then
+    USING_CUSTOM_ICON=1
     echo "==> [图标] 自动沿用当前 哈基米.app 的自定义图标 (如需恢复官方默认请传 --default-icon)"
     cp "$APP/Contents/Resources/icon.icns" "$STAGE/Contents/Resources/icon.icns"
     node -e '
@@ -459,6 +462,9 @@ elif [[ $STAGE_ONLY -eq 0 && $FORCE_DEFAULT_ICON -eq 0 && -f "$APP/Contents/Reso
     ' "$SCRIPT_DIR" "$APP" "$WORK/carryover-icon-512.png"
     PACK_ARGS+=(--icon-png "$WORK/carryover-icon-512.png")
   fi
+fi
+if [[ $USING_CUSTOM_ICON -eq 1 ]]; then
+  rm -f "$STAGE/Contents/Resources/Assets.car"
 fi
 if [[ $STAGE_ONLY -eq 1 ]]; then
   PACK_ARGS+=(--skip-config --state-dir "$WORK/state")
@@ -473,10 +479,10 @@ ASAR_HASH="$(node "$SCRIPT_DIR/scripts/pack-hakimi-asar.js" "${PACK_ARGS[@]}")"
 echo "  ElectronAsarIntegrity Resources/app.asar SHA256: $ASAR_HASH"
 
 echo "==> [4/4] 更新 Info.plist ASAR 完整性摘要并重签名"
-python3 - "$STAGE/Contents/Info.plist" "$ASAR_HASH" <<'PY'
+python3 - "$STAGE/Contents/Info.plist" "$ASAR_HASH" "$USING_CUSTOM_ICON" <<'PY'
 import plistlib, sys
 
-plist_path, new_hash = sys.argv[1], sys.argv[2].strip()
+plist_path, new_hash, using_custom_icon = sys.argv[1], sys.argv[2].strip(), sys.argv[3]
 if len(new_hash) != 64:
     sys.exit(f"非法 ASAR 摘要长度: {new_hash}")
 
@@ -487,6 +493,9 @@ integrity = plist.setdefault('ElectronAsarIntegrity', {})
 app_entry = integrity.setdefault('Resources/app.asar', {'algorithm': 'SHA256'})
 app_entry['algorithm'] = 'SHA256'
 app_entry['hash'] = new_hash
+
+if using_custom_icon == '1':
+    plist.pop('CFBundleIconName', None)
 
 with open(plist_path, 'wb') as f:
     plistlib.dump(plist, f, sort_keys=False)

@@ -24,6 +24,59 @@ function normalizeOrigin(originOrUrl) {
   }
 }
 
+function isSameLoopbackServer(originA, originB) {
+  if (!originA || !originB) return false;
+  if (originA === originB) return true;
+  try {
+    const ua = new URL(originA);
+    const ub = new URL(originB);
+    return (
+      ua.protocol === ub.protocol &&
+      ua.port === ub.port &&
+      isLoopbackHost(ua.hostname) &&
+      isLoopbackHost(ub.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function resolveActiveLsAuth(expectedOrigin = null, options = {}) {
+  const normalizedExpected = expectedOrigin ? normalizeOrigin(expectedOrigin) : null;
+  const sources = [];
+  if (options && options.authBootstrap) {
+    sources.push({ mod: options.authBootstrap, urlFn: 'getActiveLsBaseUrl', tokenFn: 'getActiveLsCsrfToken' });
+  } else {
+    try {
+      sources.push({ mod: require('./authBootstrap'), urlFn: 'getActiveLsBaseUrl', tokenFn: 'getActiveLsCsrfToken' });
+    } catch {}
+  }
+  if (options && options.languageServer) {
+    sources.push({ mod: options.languageServer, urlFn: 'getLsBaseUrl', tokenFn: 'getLsCsrfToken' });
+  } else {
+    try {
+      sources.push({ mod: require('./languageServer'), urlFn: 'getLsBaseUrl', tokenFn: 'getLsCsrfToken' });
+    } catch {}
+  }
+
+  for (const src of sources) {
+    try {
+      const mod = src.mod;
+      if (!mod || typeof mod !== 'object') continue;
+      const baseUrl = typeof mod[src.urlFn] === 'function' ? normalizeOrigin(mod[src.urlFn]()) : null;
+      const csrfToken =
+        typeof mod[src.tokenFn] === 'function' ? String(mod[src.tokenFn]() || '').trim() : '';
+      if (csrfToken && (!normalizedExpected || !baseUrl || isSameLoopbackServer(baseUrl, normalizedExpected))) {
+        return { origin: baseUrl || normalizedExpected, csrfToken };
+      }
+      if (!normalizedExpected && baseUrl) {
+        return { origin: baseUrl, csrfToken };
+      }
+    } catch {}
+  }
+  return { origin: null, csrfToken: '' };
+}
+
 function setLastKnownOrigin(originOrUrl) {
   const norm = normalizeOrigin(originOrUrl);
   if (norm) lastKnownOrigin = norm;
@@ -107,6 +160,11 @@ function findOriginFromElectronWebContents() {
 }
 
 async function resolveOriginAndPage() {
+  const activeAuth = resolveActiveLsAuth();
+  if (activeAuth.origin) {
+    lastKnownOrigin = activeAuth.origin;
+    return { origin: activeAuth.origin, page: { type: 'page', url: `${activeAuth.origin}/` } };
+  }
   if (lastKnownOrigin) {
     return { origin: lastKnownOrigin, page: { type: 'page', url: `${lastKnownOrigin}/` } };
   }
@@ -133,12 +191,23 @@ async function resolveOriginAndPage() {
   return { origin, page };
 }
 
+async function resolveCsrfToken(origin, options = {}) {
+  const active = resolveActiveLsAuth(origin, options);
+  if (active.csrfToken) return active.csrfToken;
+  const fetchFn = typeof options.requestFn === 'function' ? options.requestFn : request;
+  const html = await fetchFn(origin + '/');
+  const m = typeof html === 'string' ? html.match(/window\.__APP_CONFIG__\s*=\s*(.*?);/) : null;
+  if (!m) throw new Error('window.__APP_CONFIG__ not found on local host page');
+  const token = String(JSON.parse(m[1])?.csrfToken || '').trim();
+  if (!token) {
+    throw new Error('CSRF token unavailable (redacted on GET / and no active authBootstrap token)');
+  }
+  return token;
+}
+
 async function connect() {
   const { origin, page } = await resolveOriginAndPage();
-  const html = await request(origin + '/');
-  const m = html.match(/window\.__APP_CONFIG__\s*=\s*(.*?);/);
-  if (!m) throw new Error('window.__APP_CONFIG__ not found on local host page');
-  const token = JSON.parse(m[1]).csrfToken;
+  const token = await resolveCsrfToken(origin);
   return {
     origin,
     page,
@@ -153,4 +222,4 @@ async function connect() {
   };
 }
 
-module.exports = { connect, setLastKnownOrigin };
+module.exports = { connect, setLastKnownOrigin, resolveCsrfToken, resolveActiveLsAuth };

@@ -16,6 +16,7 @@ const {
 } = require(path.join(PAYLOAD_DIST, 'asar-engine'));
 
 const {
+  WINDOW_LOAD_ANCHOR_RE,
   validateSyntax,
   generateMeterUtilsCode,
   generateMeterPreloadCode,
@@ -218,11 +219,11 @@ function packHakimiAsar(rawOpts = {}) {
       (m) => m + hooks.storageFallback,
       'createWindow'
     );
-    utils = replaceUniqueExact(
+    utils = replaceUniqueRegex(
       utils,
-      '    void win.loadURL(url);',
-      `${hooks.windowLoadHook}    void win.loadURL(url);`,
-      'win.loadURL'
+      WINDOW_LOAD_ANCHOR_RE,
+      (m) => `${hooks.windowLoadHook}${m}`,
+      'win.loadURL/loadHubWindowUrl'
     );
     utils = replaceUniqueExact(
       utils,

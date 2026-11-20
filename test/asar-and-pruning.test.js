@@ -1093,3 +1093,98 @@ test('meter-core computes cache hit rate, avoids turn-1 false alarms, preserves 
   const intervalEmpty = meterCore.calculateIntervalTokens({}, ['2026-11-10'], { todayStr: '2026-11-10' });
   assert.equal(intervalEmpty.cacheHitRate, null);
 });
+
+test('v2.34.0+ dist/utils.js loadHubWindowUrl anchor and authBootstrap CSRF resolution work end-to-end', async () => {
+  const { cleanUtilsSource, verifyCleanStructure } = require(path.join(ROOT, 'payload', 'dist', 'modular-installer'));
+  const localApi = require(path.join(ROOT, 'payload', 'dist', 'local-api'));
+
+  // 1. Pack & round-trip verifyCleanStructure on v2.34.0 loadHubWindowUrl dist/utils.js layout
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hakimi-v234-test-'));
+  try {
+    const srcTree = path.join(tmp, 'src-tree');
+    fs.mkdirSync(path.join(srcTree, 'dist'), { recursive: true });
+    fs.writeFileSync(path.join(srcTree, 'package.json'), JSON.stringify({ name: 'antigravity', version: '2.34.0' }));
+    const rawV234Utils = [
+      '"use strict";',
+      'async function invokeWindowLoadUrl(win, url) {',
+      '    await win.loadURL(url);',
+      '}',
+      'async function loadHubWindowUrl(win, targetUrl, options) {',
+      '    await invokeWindowLoadUrl(win, targetUrl);',
+      '}',
+      'function createWindow(url, storageManager, options) {',
+      '    const win = {};',
+      '    const skipBootstrapMint = Boolean(options?.partition || options?.navigationPolicy);',
+      '    void loadHubWindowUrl(win, url, { skipBootstrapMint });',
+      '    return win;',
+      '}',
+      'const showOrCreateWindow = (port) => {',
+      '    const wins = [];',
+      '    if (wins.length > 0) {',
+      '        wins[0].focus();',
+      '    } else {',
+      '        createWindow(`${constants_1.WINDOW_ORIGIN}:${port}/`);',
+      '    }',
+      '};',
+      'function setupNodeWrapper(env) {',
+      '    return env;',
+      '}',
+    ].join('\n');
+    fs.writeFileSync(path.join(srcTree, 'dist', 'utils.js'), rawV234Utils, 'utf8');
+    fs.writeFileSync(path.join(srcTree, 'dist', 'preload.js'), '"use strict";\nconst electron_1 = require("electron");\n', 'utf8');
+
+    assert.equal(verifyCleanStructure(rawV234Utils), true);
+
+    const srcAsar = path.join(tmp, 'src.asar');
+    asarEngine.builtinAsar.createPackageWithOptions(srcTree, srcAsar, {});
+
+    const destAsar = path.join(tmp, 'FakeHakimi.app', 'Contents', 'Resources', 'app.asar');
+    const res = packHakimiAsar({
+      srcAsar,
+      destAsar,
+      stateDir: path.join(tmp, 'state'),
+      skipConfig: true,
+    });
+    assert.equal(res.ok, true);
+    assert.equal(res.inspect.meterReady, true);
+    assert.equal(res.inspect.chineseReady, true);
+
+    const packedUtils = asarEngine.builtinAsar.extractFile(destAsar, 'dist/utils.js').toString('utf8');
+    assert.ok(packedUtils.includes('require("./meter-main").installContextMeter(win);'));
+    assert.ok(packedUtils.includes('    void loadHubWindowUrl(win, url, { skipBootstrapMint });'));
+    assert.equal(verifyCleanStructure(cleanUtilsSource(packedUtils)), true);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // 2. local-api resolveCsrfToken prefers authBootstrap when GET / redacts csrfToken (v2.34.0+)
+  const tokenFromBootstrap = await localApi.resolveCsrfToken('https://127.0.0.1:54321', {
+    authBootstrap: {
+      getActiveLsBaseUrl: () => 'https://127.0.0.1:54321',
+      getActiveLsCsrfToken: () => 'admin-csrf-token-v234',
+    },
+    requestFn: async () => {
+      throw new Error('Should not hit GET / when authBootstrap token is available');
+    },
+  });
+  assert.equal(tokenFromBootstrap, 'admin-csrf-token-v234');
+
+  // 3. local-api resolveCsrfToken falls back to GET / window.__APP_CONFIG__ on legacy <= v2.33.x
+  const tokenFromHtml = await localApi.resolveCsrfToken('https://127.0.0.1:54321', {
+    authBootstrap: {},
+    languageServer: {},
+    requestFn: async () => '<script>window.__APP_CONFIG__ = {"csrfToken":"legacy-csrf-token"};</script>',
+  });
+  assert.equal(tokenFromHtml, 'legacy-csrf-token');
+
+  // 4. local-api resolveCsrfToken rejects redacted empty csrfToken when no authBootstrap token exists
+  await assert.rejects(
+    () =>
+      localApi.resolveCsrfToken('https://127.0.0.1:54321', {
+        authBootstrap: {},
+        languageServer: {},
+        requestFn: async () => '<script>window.__APP_CONFIG__ = {"csrfToken":""};</script>',
+      }),
+    /CSRF token unavailable/
+  );
+});

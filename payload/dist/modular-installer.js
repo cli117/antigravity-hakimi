@@ -230,18 +230,29 @@ function cleanPreloadSource(source) {
   return code;
 }
 
+const WINDOW_LOAD_ANCHOR_RE =
+  /^ {4}void (?:win\.loadURL\(url\)|loadHubWindowUrl\(win,\s*url(?:,\s*[^\r\n;]+)?\));(?=\r?$)/m;
+
+function matchWindowLoadAnchors(source) {
+  if (!source || typeof source !== 'string') return [];
+  const globalRe = new RegExp(WINDOW_LOAD_ANCHOR_RE.source, 'gm');
+  return source.match(globalRe) || [];
+}
+
 function verifyCleanStructure(cleanUtils) {
   if (!cleanUtils) return false;
   if (cleanUtils.includes('installContextMeter')) return false;
   if (cleanUtils.includes(TAGS.METER_UTILS_START)) return false;
-  const marker = '    void win.loadURL(url);';
   const setupNodeMarker = 'function setupNodeWrapper(env) {';
-  const structuralOk = cleanUtils.split(marker).length === 2 && cleanUtils.includes(setupNodeMarker);
+  const structuralOk =
+    matchWindowLoadAnchors(cleanUtils).length === 1 && cleanUtils.includes(setupNodeMarker);
   return structuralOk && validateSyntax(cleanUtils, 'dist/utils.js');
 }
 
 module.exports = {
   TAGS,
+  WINDOW_LOAD_ANCHOR_RE,
+  matchWindowLoadAnchors,
   validateSyntax,
   generateMeterUtilsCode,
   generateMainWorldDecoratorScript,

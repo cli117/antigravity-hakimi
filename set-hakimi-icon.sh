@@ -283,6 +283,16 @@ codesign -d --entitlements - --xml "$APP" 2>/dev/null > "$ENT_APP" || true
 echo "==> [2/4] 仅替换 app.asar 内 icon.png 与 Contents/Resources/icon.icns"
 cp "$NEW_ICNS" "$APP/Contents/Resources/icon.icns.tmp.$$"
 mv -f "$APP/Contents/Resources/icon.icns.tmp.$$" "$APP/Contents/Resources/icon.icns"
+if [[ $RESTORE -eq 1 ]]; then
+  if [[ -f "$SRC/Contents/Resources/Assets.car" ]]; then
+    cp "$SRC/Contents/Resources/Assets.car" "$APP/Contents/Resources/Assets.car.tmp.$$"
+    mv -f "$APP/Contents/Resources/Assets.car.tmp.$$" "$APP/Contents/Resources/Assets.car"
+  else
+    rm -f "$APP/Contents/Resources/Assets.car"
+  fi
+else
+  rm -f "$APP/Contents/Resources/Assets.car"
+fi
 
 ASAR_HASH="$(node "$SCRIPT_DIR/scripts/replace-asar-icon.js" \
   --asar "$APP/Contents/Resources/app.asar" \
@@ -290,10 +300,10 @@ ASAR_HASH="$(node "$SCRIPT_DIR/scripts/replace-asar-icon.js" \
 echo "  新 ElectronAsarIntegrity Resources/app.asar SHA256: $ASAR_HASH"
 
 echo "==> [3/4] 更新 Info.plist 摘要并重签外层应用（保留 language_server 原样）"
-python3 - "$APP/Contents/Info.plist" "$ASAR_HASH" <<'PY'
-import plistlib, sys
+python3 - "$APP/Contents/Info.plist" "$ASAR_HASH" "$RESTORE" "${SRC:-}" <<'PY'
+import os, plistlib, sys
 
-plist_path, new_hash = sys.argv[1], sys.argv[2].strip()
+plist_path, new_hash, restore_flag, src_app = sys.argv[1], sys.argv[2].strip(), sys.argv[3], sys.argv[4]
 if len(new_hash) != 64:
     sys.exit(f"非法 ASAR 摘要长度: {new_hash}")
 
@@ -304,6 +314,20 @@ integrity = plist.setdefault('ElectronAsarIntegrity', {})
 app_entry = integrity.setdefault('Resources/app.asar', {'algorithm': 'SHA256'})
 app_entry['algorithm'] = 'SHA256'
 app_entry['hash'] = new_hash
+
+if restore_flag == '1':
+    src_plist_path = os.path.join(src_app, 'Contents', 'Info.plist') if src_app else ''
+    src_icon_name = None
+    if src_plist_path and os.path.isfile(src_plist_path):
+        with open(src_plist_path, 'rb') as sf:
+            src_plist = plistlib.load(sf)
+        src_icon_name = src_plist.get('CFBundleIconName')
+    if src_icon_name:
+        plist['CFBundleIconName'] = src_icon_name
+    else:
+        plist.pop('CFBundleIconName', None)
+else:
+    plist.pop('CFBundleIconName', None)
 
 with open(plist_path, 'wb') as f:
     plistlib.dump(plist, f, sort_keys=False)
