@@ -72,7 +72,6 @@
       <button id="btn-twp-toggle-scope" class="twp-scope-toggle-btn" type="button"></button>
     </div>
     <div id="twp-preset-grid" class="twp-preset-grid" role="group" aria-label="上下文长度预设" data-i18n-aria="models.preset.aria">
-      <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="256000">256K</button>
       <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="512000">512K</button>
       <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="1000000">1M</button>
       <button type="button" class="twp-preset-btn" data-qctx-mode="dynamic" data-qctx-limit="" data-i18n="twp.preset.dynamic">动态</button>
@@ -212,7 +211,6 @@
             <button id="btn-goto-model-settings" class="ctx-compact-link-btn" type="button" data-i18n="session.compact.gotoModels">管理全部模型 ›</button>
           </div>
           <div id="session-ctx-preset-bar" class="twp-preset-grid session-ctx-preset-bar" role="group" aria-label="上下文长度预设" data-i18n-aria="models.preset.aria">
-            <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="256000">256K</button>
             <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="512000">512K</button>
             <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="1000000">1M</button>
             <button type="button" class="twp-preset-btn" data-qctx-mode="dynamic" data-qctx-limit="" data-i18n="twp.preset.dynamic">动态</button>
@@ -305,13 +303,9 @@
         <!-- 5. 核心操作区（前置到首屏，点选预设即时生效） -->
         <div class="ctx-adjust-box" id="ctx-adjust-box">
           <div class="ctx-preset-grid" id="ctx-preset-grid" role="group" aria-label="上下文长度预设" data-i18n-aria="models.preset.aria">
-            <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="256000">
-              <span class="ctx-preset-title">256,000 (256K)</span>
-              <span class="ctx-preset-sub" data-i18n="models.preset.p256Sub">反重力默认 · 256,000 tokens</span>
-            </button>
             <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="512000">
               <span class="ctx-preset-title">512,000 (512K)</span>
-              <span class="ctx-preset-sub" data-i18n="models.preset.p512Sub">进阶预设 · 512,000 tokens</span>
+              <span class="ctx-preset-sub" data-i18n="models.preset.p512Sub">标准预设 · 512,000 tokens</span>
             </button>
             <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="1000000">
               <span class="ctx-preset-title">1,000,000 (1M)</span>

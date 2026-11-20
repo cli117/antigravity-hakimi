@@ -2245,7 +2245,6 @@
     if (pref.mode === 'dynamic') return t('models.preset.dynamic');
     if (pref.mode === 'fixed' && pref.limitTokens) {
       const num = Number(pref.limitTokens);
-      if (num === 256000) return '256K';
       if (num === 512000) return '512K';
       if (num === 1000000) return '1M';
       return t('models.card.savedCustom', { val: `${formatKShort(num)}（${fmt(num)}）` });
@@ -7202,7 +7201,7 @@
     if (!twpFeedbackTimer) {
       if (info.scopeMode === 'per_model' && !info.ready) {
         showQuickContextNote('popover', null, t('twp.unconfirmedHint'));
-      } else if (info.pref?.mode === 'fixed' && info.pref.limitTokens && ![256000, 512000, 1000000].includes(Number(info.pref.limitTokens))) {
+      } else if (info.pref?.mode === 'fixed' && info.pref.limitTokens && ![512000, 1000000].includes(Number(info.pref.limitTokens))) {
         showQuickContextNote('popover', null, t('twp.customActiveNote', { val: formatKShort(info.pref.limitTokens) }));
       } else {
         showQuickContextNote('popover', null, '');
@@ -7211,7 +7210,7 @@
     if (!sessionCardFeedbackTimer) {
       if (info.scopeMode === 'per_model' && !info.ready) {
         showQuickContextNote('session_card', null, t('twp.unconfirmedHint'));
-      } else if (info.pref?.mode === 'fixed' && info.pref.limitTokens && ![256000, 512000, 1000000].includes(Number(info.pref.limitTokens))) {
+      } else if (info.pref?.mode === 'fixed' && info.pref.limitTokens && ![512000, 1000000].includes(Number(info.pref.limitTokens))) {
         showQuickContextNote('session_card', null, t('twp.customActiveNote', { val: formatKShort(info.pref.limitTokens) }));
       } else {
         showQuickContextNote('session_card', null, '');
@@ -7243,7 +7242,7 @@
     }
 
     const nextMode = mode === 'dynamic' ? 'dynamic' : 'fixed';
-    const nextTokens = nextMode === 'fixed' ? Number(limitTokens || 256000) : null;
+    const nextTokens = nextMode === 'fixed' ? Number(limitTokens || 512000) : null;
     const targetLabel = nextMode === 'dynamic' ? t('twp.preset.dynamic') : formatKShort(nextTokens);
 
     isQuickPresetSaving = true;

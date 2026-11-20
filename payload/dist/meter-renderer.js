@@ -602,7 +602,7 @@
       transition:background-color .12s ease,color .12s ease,border-color .12s ease;
     }
     .twp-scope-toggle-btn:hover{background:var(--ag-btn-hover);color:var(--ag-text-primary);border-color:var(--ag-btn-border-hover)}
-    .twp-preset-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+    .twp-preset-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
     .twp-preset-btn{
       display:flex;align-items:center;justify-content:center;
       height:26px;padding:0 4px;border-radius:6px;
@@ -1208,7 +1208,7 @@
     .ctx-model-select{background:var(--ag-bg-card);color:var(--ag-text-primary);border:1px solid var(--ag-border-subcard);border-radius:4px;padding:3px 6px;font-size:10.5px;width:100%;outline:none}
     .ctx-pref-banner{border-top:1px dashed var(--ag-border-subtle);padding-top:5px;display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
     .ctx-pref-val{font-size:10.5px;font-weight:600;color:var(--ag-link,#38bdf8)}
-    .ctx-preset-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+    .ctx-preset-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
     .ctx-preset-btn{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;background:var(--ag-bg-card);border:1px solid var(--ag-border-subcard);border-radius:5px;padding:6px 8px;cursor:pointer;transition:all .15s ease;color:var(--ag-text-primary)}
     .ctx-preset-btn:hover:not(:disabled){background:var(--ag-bg-card-hover);border-color:var(--ag-text-muted)}
     .ctx-preset-btn.active{border-color:#2563eb;background:rgba(37,99,235,0.14);box-shadow:inset 0 0 0 1px rgba(37,99,235,0.35)}
@@ -1484,7 +1484,7 @@
     .ctx-adjust-box{background:var(--ag-bg-card);border:1px solid var(--ag-border-card);border-radius:8px;padding:9px 10px;margin-bottom:8px;display:flex;flex-direction:column;gap:7px}
     .ctx-small-label{font-size:10.5px;color:var(--ag-text-muted)}
     .ctx-model-select{background:var(--ag-bg-card);color:var(--ag-text-primary);border:1px solid var(--ag-border-subcard);border-radius:4px;padding:3px 6px;font-size:10.5px;width:100%;outline:none}
-    .ctx-preset-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+    .ctx-preset-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
     .ctx-preset-btn{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);border-radius:5px;padding:6px 8px;cursor:pointer;transition:all .15s ease;color:var(--ag-text-primary)}
     .ctx-preset-btn:hover:not(:disabled){background:var(--ag-bg-card-hover);border-color:var(--ag-text-muted)}
     .ctx-preset-btn.active{border-color:#2563eb;background:rgba(37,99,235,0.14);box-shadow:inset 0 0 0 1px rgba(37,99,235,0.35)}
@@ -1691,7 +1691,6 @@
       <button id="btn-twp-toggle-scope" class="twp-scope-toggle-btn" type="button"></button>
     </div>
     <div id="twp-preset-grid" class="twp-preset-grid" role="group" aria-label="上下文长度预设" data-i18n-aria="models.preset.aria">
-      <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="256000">256K</button>
       <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="512000">512K</button>
       <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="1000000">1M</button>
       <button type="button" class="twp-preset-btn" data-qctx-mode="dynamic" data-qctx-limit="" data-i18n="twp.preset.dynamic">动态</button>
@@ -1831,7 +1830,6 @@
             <button id="btn-goto-model-settings" class="ctx-compact-link-btn" type="button" data-i18n="session.compact.gotoModels">管理全部模型 ›</button>
           </div>
           <div id="session-ctx-preset-bar" class="twp-preset-grid session-ctx-preset-bar" role="group" aria-label="上下文长度预设" data-i18n-aria="models.preset.aria">
-            <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="256000">256K</button>
             <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="512000">512K</button>
             <button type="button" class="twp-preset-btn" data-qctx-mode="fixed" data-qctx-limit="1000000">1M</button>
             <button type="button" class="twp-preset-btn" data-qctx-mode="dynamic" data-qctx-limit="" data-i18n="twp.preset.dynamic">动态</button>
@@ -1924,13 +1922,9 @@
         <!-- 5. 核心操作区（前置到首屏，点选预设即时生效） -->
         <div class="ctx-adjust-box" id="ctx-adjust-box">
           <div class="ctx-preset-grid" id="ctx-preset-grid" role="group" aria-label="上下文长度预设" data-i18n-aria="models.preset.aria">
-            <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="256000">
-              <span class="ctx-preset-title">256,000 (256K)</span>
-              <span class="ctx-preset-sub" data-i18n="models.preset.p256Sub">反重力默认 · 256,000 tokens</span>
-            </button>
             <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="512000">
               <span class="ctx-preset-title">512,000 (512K)</span>
-              <span class="ctx-preset-sub" data-i18n="models.preset.p512Sub">进阶预设 · 512,000 tokens</span>
+              <span class="ctx-preset-sub" data-i18n="models.preset.p512Sub">标准预设 · 512,000 tokens</span>
             </button>
             <button type="button" class="ctx-preset-btn" data-ctx-mode="fixed" data-ctx-limit="1000000">
               <span class="ctx-preset-title">1,000,000 (1M)</span>
@@ -2824,8 +2818,8 @@
     'topbar.quick.compactBusyDesc': { 'zh-CN': '正在向当前会话发送 /compact 指令…', 'zh-TW': '正在向目前對話發送 /compact 指令…', en: 'Sending /compact command to active chat…' },
     'twp.aria': { 'zh-CN': '调整上下文窗口上限', 'zh-TW': '調整上下文視窗上限', en: 'Adjust context window limit' },
     'twp.tipTitle': { 'zh-CN': '上下文窗口（{cur}）', 'zh-TW': '上下文視窗（{cur}）', en: 'Context Window ({cur})' },
-    'twp.tipDescUnified': { 'zh-CN': '全局统一 · 点击切换 256K / 512K / 1M / 动态', 'zh-TW': '全域統一 · 點擊切換 256K / 512K / 1M / 動態', en: 'All models · Click to switch 256K / 512K / 1M / Dynamic' },
-    'twp.tipDescModel': { 'zh-CN': '{model} · 点击切换 256K / 512K / 1M / 动态', 'zh-TW': '{model} · 點擊切換 256K / 512K / 1M / 動態', en: '{model} · Click to switch 256K / 512K / 1M / Dynamic' },
+    'twp.tipDescUnified': { 'zh-CN': '全局统一 · 点击切换 512K / 1M / 动态', 'zh-TW': '全域統一 · 點擊切換 512K / 1M / 動態', en: 'All models · Click to switch 512K / 1M / Dynamic' },
+    'twp.tipDescModel': { 'zh-CN': '{model} · 点击切换 512K / 1M / 动态', 'zh-TW': '{model} · 點擊切換 512K / 1M / 動態', en: '{model} · Click to switch 512K / 1M / Dynamic' },
     'twp.scopeUnified': { 'zh-CN': '作用域：全部模型统一', 'zh-TW': '作用域：全部模型統一', en: 'Scope: All Models' },
     'twp.scopeModel': { 'zh-CN': '当前：{model}', 'zh-TW': '目前：{model}', en: 'Model: {model}' },
     'twp.scopeModelPending': { 'zh-CN': '当前模型：待识别', 'zh-TW': '目前模型：待識別', en: 'Current Model: Detecting…' },
@@ -2952,8 +2946,7 @@
     'models.preset.aria': { 'zh-CN': '上下文长度预设', 'zh-TW': '上下文長度預設', en: 'Context length presets' },
     'models.preset.default': { 'zh-CN': '恢复客户端默认', 'zh-TW': '恢復用戶端預設', en: 'Restore Client Default' },
     'models.preset.defaultSub': { 'zh-CN': '清除请求覆盖，由当前底座策略决定', 'zh-TW': '清除請求覆寫，由目前底座策略決定', en: 'Clear request override; follow active host policy' },
-    'models.preset.p256Sub': { 'zh-CN': '反重力默认 · 256,000 tokens', 'zh-TW': '反重力預設 · 256,000 tokens', en: 'Antigravity default · 256,000 tokens' },
-    'models.preset.p512Sub': { 'zh-CN': '进阶预设 · 512,000 tokens', 'zh-TW': '進階預設 · 512,000 tokens', en: 'Extended preset · 512,000 tokens' },
+    'models.preset.p512Sub': { 'zh-CN': '标准预设 · 512,000 tokens', 'zh-TW': '標準預設 · 512,000 tokens', en: 'Standard preset · 512,000 tokens' },
     'models.preset.p1mSub': { 'zh-CN': '1M 满血窗口 · 自动预留输出', 'zh-TW': '1M 滿血視窗 · 自動預留輸出', en: '1M full window · auto output reserve' },
     'models.preset.modelMax': { 'zh-CN': '按模型最大可用', 'zh-TW': '依模型最大可用', en: 'Max Usable for Model' },
     'models.preset.modelMaxSub': { 'zh-CN': '总窗口 - 最大输出（需元数据）', 'zh-TW': '總視窗 - 最大輸出（需中繼資料）', en: 'Context window - max output (needs metadata)' },
@@ -2994,7 +2987,7 @@
       'zh-TW': '<strong>驗證範圍</strong>：<div>已驗證：用戶端重啟後讀到了新設定，並在之後的對話中觀測到對應預算。</div><div>未驗證：真實超長請求能否被伺服器端完整接受；帳號風險未知。</div>',
       en: '<strong>Verification scope</strong>:<div>Verified: client read the new setting after restart and live turns showed the updated budget.</div><div>Unverified: whether the server accepts full ultra-long requests; account risk is unknown.</div>'
     },
-    'models.details.li5': { 'zh-CN': '<strong>精确数值</strong>：256K = 256,000 tokens；512K = 512,000 tokens；1M = 1,000,000 tokens；可设置范围 16,384 – 2,097,152 tokens；跟随模型不固定数值。', 'zh-TW': '<strong>精確數值</strong>：256K = 256,000 tokens；512K = 512,000 tokens；1M = 1,000,000 tokens；可設定範圍 16,384 – 2,097,152 tokens；跟隨模型不固定數值。', en: '<strong>Exact values</strong>: 256K = 256,000; 512K = 512,000; 1M = 1,000,000 tokens; allowed range 16,384 – 2,097,152 tokens; Follow Model has no fixed cap.' },
+    'models.details.li5': { 'zh-CN': '<strong>精确数值</strong>：512K = 512,000 tokens；1M = 1,000,000 tokens；可设置范围 16,384 – 2,097,152 tokens；跟随模型不固定数值。', 'zh-TW': '<strong>精確數值</strong>：512K = 512,000 tokens；1M = 1,000,000 tokens；可設定範圍 16,384 – 2,097,152 tokens；跟隨模型不固定數值。', en: '<strong>Exact values</strong>: 512K = 512,000; 1M = 1,000,000 tokens; allowed range 16,384 – 2,097,152 tokens; Follow Model has no fixed cap.' },
     'models.btn.restoreOriginal': { 'zh-CN': '客户端恢复原始设置', 'zh-TW': '用戶端恢復原始設定', en: 'Restore Client Default' },
     'models.btn.refreshStatus': { 'zh-CN': '刷新状态', 'zh-TW': '重新整理狀態', en: 'Refresh' },
     'models.status.detecting': { 'zh-CN': '正在检测当前 Antigravity 状态…', 'zh-TW': '正在偵測目前 Antigravity 狀態…', en: 'Detecting current Antigravity status…' },
@@ -9255,7 +9248,6 @@
     if (pref.mode === 'dynamic') return t('models.preset.dynamic');
     if (pref.mode === 'fixed' && pref.limitTokens) {
       const num = Number(pref.limitTokens);
-      if (num === 256000) return '256K';
       if (num === 512000) return '512K';
       if (num === 1000000) return '1M';
       return t('models.card.savedCustom', { val: `${formatKShort(num)}（${fmt(num)}）` });
@@ -14950,7 +14942,7 @@
     if (!twpFeedbackTimer) {
       if (info.scopeMode === 'per_model' && !info.ready) {
         showQuickContextNote('popover', null, t('twp.unconfirmedHint'));
-      } else if (info.pref?.mode === 'fixed' && info.pref.limitTokens && ![256000, 512000, 1000000].includes(Number(info.pref.limitTokens))) {
+      } else if (info.pref?.mode === 'fixed' && info.pref.limitTokens && ![512000, 1000000].includes(Number(info.pref.limitTokens))) {
         showQuickContextNote('popover', null, t('twp.customActiveNote', { val: formatKShort(info.pref.limitTokens) }));
       } else {
         showQuickContextNote('popover', null, '');
@@ -14959,7 +14951,7 @@
     if (!sessionCardFeedbackTimer) {
       if (info.scopeMode === 'per_model' && !info.ready) {
         showQuickContextNote('session_card', null, t('twp.unconfirmedHint'));
-      } else if (info.pref?.mode === 'fixed' && info.pref.limitTokens && ![256000, 512000, 1000000].includes(Number(info.pref.limitTokens))) {
+      } else if (info.pref?.mode === 'fixed' && info.pref.limitTokens && ![512000, 1000000].includes(Number(info.pref.limitTokens))) {
         showQuickContextNote('session_card', null, t('twp.customActiveNote', { val: formatKShort(info.pref.limitTokens) }));
       } else {
         showQuickContextNote('session_card', null, '');
@@ -14991,7 +14983,7 @@
     }
 
     const nextMode = mode === 'dynamic' ? 'dynamic' : 'fixed';
-    const nextTokens = nextMode === 'fixed' ? Number(limitTokens || 256000) : null;
+    const nextTokens = nextMode === 'fixed' ? Number(limitTokens || 512000) : null;
     const targetLabel = nextMode === 'dynamic' ? t('twp.preset.dynamic') : formatKShort(nextTokens);
 
     isQuickPresetSaving = true;

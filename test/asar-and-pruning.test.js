@@ -655,11 +655,15 @@ test('buildMacosIcon converts JPEG/PNG/ICNS and packHakimiAsar optionally swaps 
   }
 });
 
-test('context presets start at 256K up to 1M and arm64 clients enable Apply button', () => {
+test('context presets start at 512K up to 1M and arm64 clients enable Apply button', () => {
   const tpl = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'template.html'), 'utf8');
-  assert.equal(tpl.includes('data-ctx-limit="128000"'), false, '128K preset should be removed');
-  for (const preset of ['256000', '512000', '1000000']) {
+  for (const dropped of ['128000', '256000']) {
+    assert.equal(tpl.includes(`data-ctx-limit="${dropped}"`), false, `${dropped} preset should not exist in settings grid`);
+    assert.equal(tpl.includes(`data-qctx-limit="${dropped}"`), false, `${dropped} preset should not exist in quick preset grids`);
+  }
+  for (const preset of ['512000', '1000000']) {
     assert.ok(tpl.includes(`data-ctx-limit="${preset}"`), `Missing preset button for ${preset}`);
+    assert.ok(tpl.includes(`data-qctx-limit="${preset}"`), `Missing quick preset button for ${preset}`);
   }
 
   const mainJs = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'main.js'), 'utf8');
