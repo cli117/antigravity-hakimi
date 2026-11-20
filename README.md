@@ -11,7 +11,7 @@
    - **版本同步横幅**：面板自动对比只读官方 `/Applications/Antigravity.app` 与 `/Applications/哈基米.app` 的 `CFBundleShortVersionString`，当检测到官方客户端已更新时会在面板顶部提示重建命令。
    - **不可回滚保证**：脚本先应用地区解锁再由引擎生成备份，且 UI 内“恢复官方设置”仅原位还原上下文与界面语言，**绝不会回滚地区解锁**。
 2. **上下文窗口解锁（桌面端 + `agy` CLI 联动）**
-   - 桌面端原生支持 `default` (256K)、`fixed` (`16384 ~ 2097152`) 与 `dynamic`（默认启用，跟随模型原生上限透传），通过 ARM64 Gate 3A (`CLAMP_256K_ARM64` / `DEF_ORIG_ARM64`) 与 Gate 3B (`applyFeatureProviderCheckpointOverrideConfig`) 双重修补生效。
+   - 桌面端原生支持 `default`（恢复官方默认策略，当前如 512K）、`fixed` (`16384 ~ 2097152`) 与 `dynamic`（默认启用，跟随模型原生上限透传），通过 ARM64 Gate 3A (`CLAMP_256K_ARM64` / `DEF_ORIG_ARM64` 底层 256K 钳位) 与 Gate 3B (`applyFeatureProviderCheckpointOverrideConfig`) 双重修补生效。
    - 渲染层 Hook 在发送 `SendUserCascadeMessage` 请求时按当前配置动态覆写 `checkpointConfig.maxTokenLimit`；设置面板与顶栏快调浮层均提供 `512K`、`1M` 与 `动态跟随` 预设，支持自定义整数与 Apple Silicon (`arm64`) 在 UI 内即时保存应用。
    - **`agy` CLI 联动解锁**：内置 [`meter-cli-unlock.js`](payload/dist/meter-cli-unlock.js)（与 [`unlock/agy-cli/agy-patch.py`](unlock/agy-cli/agy-patch.py)），支持在构建时加 `--patch-cli`、独立执行 `npm run unlock:cli` 或在面板「配置」页点击按钮，一键修补本机 `agy` CLI 二进制（绕过 `/model` 上下文选择器机型白名单 + 修复 `AGY_CLI_AUTO_COMPACT_OVERRIDE` 读取）并同步 CLI 配置文件。
 3. **实时上下文监控、缓存命中率告警与会话快捷操作**

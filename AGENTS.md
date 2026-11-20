@@ -73,7 +73,7 @@ npm run unlock:cli
   - `asar-engine.js`：纯 Node ASAR 读写引擎、`computeAsarHeaderSha256()`、`getHakimiAppPath()`、`assertNotOfficialAntigravityApp()`。
   - `modular-installer.js` / `modules-config.js`：`app.asar` 注入配置管理与 `~/.antigravity-context-meter/` 持久化工具（含 `cleanupStaleSingletonLock()`）。
   - `meter-region-unlock.js`：自适应 Mach-O `__TEXT` + Go `.gopclntab`（`0xFFFFFFF1` / `0xFFFFFFF0`）符号解析器，定位 `authclient.ValidateAndOnboardAccount` 并自适应修补 `"free-tier"` 分支（不依赖写死二进制 SHA-256 或固定偏移）。
-  - `meter-context-unlock.js`：ARM64 Gate 3A（`CLAMP_256K_ARM64` / `DEF_ORIG_ARM64`）与 Gate 3B（`config.applyFeatureProviderCheckpointOverrideConfig`）双门上下文窗口补丁引擎，支持 `default` (256K) / `fixed` (`16384..2097152`) / `dynamic`；包含 `restoreUnlock()`。
+  - `meter-context-unlock.js`：ARM64 Gate 3A（`CLAMP_256K_ARM64` / `DEF_ORIG_ARM64` 底层 256K 钳位）与 Gate 3B（`config.applyFeatureProviderCheckpointOverrideConfig`）双门上下文窗口补丁引擎，支持 `default`（恢复官方默认策略，当前如 512K） / `fixed` (`16384..2097152`) / `dynamic`；包含 `restoreUnlock()`。
   - `meter-enhance.js`：`language_server` 进程检测/重启与上下文窗口补丁委托封装（包含 `restoreAllEnhance()`；严禁包含任何提示词或标题改写逻辑）。
   - `meter-cli-unlock.js`（与 `unlock/agy-cli/agy-patch.py`）：`agy` CLI 机型白名单绕过与 `AGY_CLI_AUTO_COMPACT_OVERRIDE` 修复补丁及配置同步。
   - `meter-ssh.js`：Remote SSH 远端 Linux ELF64（`x86-64` & `arm64`，含 PIE `.rela.dyn` `firstmoduledata` 解析）自适应地区解锁 + 上下文 Gate 3A/3B 补丁引擎、`bootstrapScript.js` POSIX `sh` 装饰器、远端会话内存注册表及 Electron `session.fetch` 代理通道。

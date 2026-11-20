@@ -6,7 +6,7 @@
 #   2. 严格保护官方 /Applications/Antigravity.app 及 .orig 绝不被修改
 #   3. 内核级与客户端能力整合：
 #      - 账号地区 / Free-tier 检测解锁 (ValidateAndOnboardAccount，UI 还原操作绝不回滚该补丁)
-#      - 上下文窗口解锁 (default 256K / fixed / dynamic) + 发送链路 maxTokenLimit 动态覆写
+#      - 上下文窗口解锁 (default 官方默认 / fixed / dynamic) + 发送链路 maxTokenLimit 动态覆写
 #      - 桌面端简体中文界面与 4 态品牌标题 (默认：哈基米 / 反重力 / 隐藏 / Antigravity)
 #      - 实时上下文占用监控、速率监测、8 类错误诊断与 Token 消费历史看板
 #
