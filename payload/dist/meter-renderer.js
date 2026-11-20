@@ -1376,7 +1376,6 @@
     .ag-modal-body{font-size:11.5px;line-height:1.5;color:var(--ag-text-secondary)}
     .ag-modal-feedback{font-size:11px;line-height:1.4;padding:6px 8px;border-radius:5px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);color:var(--ag-text-primary)}
     .ag-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
-    .ctx-brand-feedback{font-size:11px;margin-top:6px;padding:5px 8px;border-radius:5px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);color:var(--ag-text-primary)}
     .ctx-tab-pane[hidden]{display:none!important}
 
     /* 当前会话紧凑卡片 */
@@ -2264,10 +2263,10 @@
           </div>
         </div>
 
-        <!-- 2. 客户端界面语言与品牌标题 (哈基米) -->
-        <div class="ctx-settings-card" id="client-brand-lang-card">
+        <!-- 2. 客户端界面语言 (哈基米) -->
+        <div class="ctx-settings-card" id="client-lang-card">
           <div class="ctx-settings-card-hdr">
-            <div class="ctx-settings-card-title" data-i18n="settings.clientLang.title">🖥️ 客户端界面语言与品牌（哈基米）</div>
+            <div class="ctx-settings-card-title" data-i18n="settings.clientLang.title">🖥️ 客户端界面语言（哈基米）</div>
             <span id="chinese-badge" class="key-pill pill-muted" data-i18n="settings.common.reading">读取中…</span>
           </div>
           <div id="chinese-status-desc" class="ctx-settings-card-desc" data-i18n="settings.clientLang.detecting">正在检测桌面端汉化运行状态…</div>
@@ -2275,18 +2274,9 @@
             <button id="btn-client-lang-zh-CN" class="ctx-seg-btn" type="button" data-client-lang="zh-CN">简体中文</button>
             <button id="btn-client-lang-en" class="ctx-seg-btn" type="button" data-client-lang="en">English</button>
           </div>
-          <div class="ctx-small-label" style="margin-top:8px" data-i18n="enhance.brand.label">左上角品牌文字显示（仅作用于左上角品牌位，不影响 Logo、菜单或代码）：</div>
-          <div class="ctx-segmented ctx-lang-segmented" id="brand-title-segmented" role="group" aria-label="品牌名称选项" data-i18n-aria="enhance.brand.aria">
-            <button id="btn-brand-hakimi" class="ctx-seg-btn active" type="button" data-brand-title="hakimi" data-i18n="enhance.brand.hakimi">哈基米</button>
-            <button id="btn-brand-translated" class="ctx-seg-btn" type="button" data-brand-title="translated" data-i18n="enhance.brand.translated">反重力</button>
-            <button id="btn-brand-hidden" class="ctx-seg-btn" type="button" data-brand-title="hidden" data-i18n="enhance.brand.hidden">隐藏品牌字样</button>
-            <button id="btn-brand-english" class="ctx-seg-btn" type="button" data-brand-title="english" data-i18n="enhance.brand.english">Antigravity (英文原样)</button>
-          </div>
-          <div id="brand-apply-feedback" class="ctx-brand-feedback" style="display:none;"></div>
-          <div id="client-lang-license-note" class="ctx-client-lang-note" data-i18n="settings.clientLang.licenseNote">说明：此设置控制桌面端壳层，与顶部插件面板语言相互独立。切换客户端语言或品牌标题在保存后需重启客户端完全生效。</div>
+          <div id="client-lang-license-note" class="ctx-client-lang-note" data-i18n="settings.clientLang.licenseNote">说明：此设置控制桌面端壳层，与顶部插件面板语言相互独立。切换客户端语言在保存后需重启客户端完全生效。</div>
           <div class="ctx-settings-card-actions">
             <button id="btn-toggle-chinese-module" class="unlock-btn unlock-btn-primary" type="button" data-i18n="settings.clientLang.toggle">切换汉化状态</button>
-            <button id="btn-apply-brand-title" class="unlock-btn unlock-btn-secondary" type="button" data-i18n="enhance.brand.applyBtn">保存品牌选择并应用</button>
           </div>
         </div>
 
@@ -3611,7 +3601,7 @@
       'models.btn.recheck': { 'zh-CN': '重新检测', 'zh-TW': '重新偵測', en: 'Re-detect' },
       'models.card.partialFailDetail': { 'zh-CN': '未定位到完整的上下文写入点，为保护二进制完整性已中止写入。{reason}', 'zh-TW': '未定位到完整的上下文寫入點，為保護二進位完整性已中止寫入。{reason}', en: 'Could not locate all required binary gates; aborted safely. {reason}' },
 
-      // 推荐配置与品牌标题设置
+      // 推荐配置设置
       'enhance.preset.title': { 'zh-CN': '✨ 推荐配置（按需主动应用）', 'zh-TW': '✨ 推薦設定（依需求主動套用）', en: '✨ Recommended Setup (Opt-In)' },
       'enhance.preset.desc': { 'zh-CN': '下方列出推荐增强组合；勾选并确认后写入 哈基米.app，且始终保留账号地区免切锁补丁。', 'zh-TW': '下方列出推薦增強組合；勾選並確認後寫入 哈基米.app，且始終保留帳號地區免切鎖修補。', en: 'Select desired features below and confirm before writing to 哈基米.app. Region unlock patch is always preserved.' },
       'enhance.preset.itemLang': { 'zh-CN': '客户端界面简体中文', 'zh-TW': '用戶端介面簡體中文', en: 'Client Simplified Chinese UI' },
@@ -3622,17 +3612,9 @@
       'enhance.restoreAll.btn': { 'zh-CN': '恢复功能默认…', 'zh-TW': '恢復功能預設…', en: 'Restore Feature Defaults…' },
       'enhance.confirm.go': { 'zh-CN': '确认执行', 'zh-TW': '確認執行', en: 'Confirm' },
       'enhance.confirm.presetSummary': { 'zh-CN': '即将执行以下已勾选项：{items}；未勾选项目保持不变。变更后可能需要重启语言服务或 哈基米 客户端加载生效。', 'zh-TW': '即將執行以下已勾選項：{items}；未勾選項目維持不變。變更後可能需要重啟語言服務或 哈基米 用戶端載入生效。', en: 'About to apply checked items: {items}; unchecked items stay untouched. A language server or client restart may be required.' },
-      'enhance.confirm.restoreSummary': { 'zh-CN': '「恢复功能默认」将还原以下 2 项：切换客户端英文界面与品牌(Antigravity)、还原宿主默认上下文行为；账号地区免切锁补丁会完整保留，已保存的模型偏好不清除。是否继续？', 'zh-TW': '「恢復功能預設」將還原以下 2 項：切換用戶端英文介面與品牌(Antigravity)、還原宿主預設上下文行為；帳號地區免切鎖修補會完整保留，已儲存的模型偏好不清除。是否繼續？', en: '"Restore Feature Defaults" resets these 2 items: English host UI & brand (Antigravity), and native context behavior. Account region unlock and saved model preferences are preserved. Continue?' },
+      'enhance.confirm.restoreSummary': { 'zh-CN': '「恢复功能默认」将还原以下 2 项：切换客户端为英文界面、还原宿主默认上下文行为；账号地区免切锁补丁会完整保留，已保存的模型偏好不清除。是否继续？', 'zh-TW': '「恢復功能預設」將還原以下 2 項：切換用戶端為英文介面、還原宿主預設上下文行為；帳號地區免切鎖修補會完整保留，已儲存的模型偏好不清除。是否繼續？', en: '"Restore Feature Defaults" resets these 2 items: English host UI and native context behavior. Account region unlock and saved model preferences are preserved. Continue?' },
       'enhance.confirm.noneSelected': { 'zh-CN': '请至少勾选一项要应用的配置。', 'zh-TW': '請至少勾選一項要套用的設定。', en: 'Select at least one option first.' },
       'enhance.btn.restartLs': { 'zh-CN': '重启语言服务', 'zh-TW': '重啟語言服務', en: 'Restart Language Server' },
-      'enhance.brand.label': { 'zh-CN': '左上角品牌文字显示（仅作用于左上角品牌位，不影响 Logo、菜单或代码）：', 'zh-TW': '左上角品牌文字顯示（僅作用於左上角品牌位，不影響 Logo、選單或程式碼）：', en: 'Header Brand Text (applies only to top-left brand slot; does not alter logo, menus, or code):' },
-      'enhance.brand.aria': { 'zh-CN': '品牌显示模式', 'zh-TW': '品牌顯示模式', en: 'Brand display mode' },
-      'enhance.brand.hakimi': { 'zh-CN': '哈基米', 'zh-TW': '哈基米', en: '哈基米 (Hakimi)' },
-      'enhance.brand.translated': { 'zh-CN': '反重力', 'zh-TW': '反重力', en: '反重力 (Translated)' },
-      'enhance.brand.hidden': { 'zh-CN': '隐藏品牌字样', 'zh-TW': '隱藏品牌字樣', en: 'Hide' },
-      'enhance.brand.english': { 'zh-CN': 'Antigravity (英文原样)', 'zh-TW': 'Antigravity (英文原樣)', en: 'Keep Antigravity' },
-      'enhance.brand.applyBtn': { 'zh-CN': '保存品牌选择并应用', 'zh-TW': '儲存品牌選擇並套用', en: 'Save & Apply Brand' },
-      'enhance.brand.switched': { 'zh-CN': '品牌显示已保存为「{mode}」，重启客户端后生效。', 'zh-TW': '品牌顯示已儲存為「{mode}」，重新啟動用戶端後生效。', en: 'Brand display saved as "{mode}". Restart client to take effect.' },
       'enhance.btn.applyPresetBusy': { 'zh-CN': '正在应用推荐配置…', 'zh-TW': '正在套用推薦設定…', en: 'Applying preset…' },
       'enhance.btn.restoreAllBusy': { 'zh-CN': '正在恢复默认…', 'zh-TW': '正在恢復預設…', en: 'Restoring defaults…' },
       'enhance.status.unread': { 'zh-CN': '未读取', 'zh-TW': '未讀取', en: 'Unread' },
@@ -12289,34 +12271,12 @@
   const chkPresetLang = el('chk-rec-lang');
   const chkPresetCtx = el('chk-rec-ctx');
 
-  const brandTitleBtns = {
-    hakimi: el('btn-brand-hakimi'),
-    translated: el('btn-brand-translated'),
-    hidden: el('btn-brand-hidden'),
-    english: el('btn-brand-english')
-  };
-
-  const btnApplyBrandTitle = el('btn-apply-brand-title');
-  const brandApplyFeedback = el('brand-apply-feedback');
-
-  let currentBrandTitle = 'hakimi';
   let currentEnhanceStatus = null;
   let pendingEnhanceConfirmMode = null; // 'preset' | 'restore' | null
   let isEnhanceBusy = false;
   let hasPendingLsReload = false;
 
-  function syncBrandTitleButtons(mode = currentBrandTitle) {
-    for (const [k, btn] of Object.entries(brandTitleBtns)) {
-      if (!btn) continue;
-      const active = k === mode;
-      if (active) addClass(btn, 'active');
-      else removeClass(btn, 'active');
-      btn.setAttribute?.('aria-pressed', String(active));
-    }
-  }
-
   function renderEnhanceSectionUI() {
-    syncBrandTitleButtons(currentBrandTitle);
     const data = currentEnhanceStatus;
     const s = data?.summary || data;
     const ctxUnlock = s?.contextUnlock || null;
@@ -12414,8 +12374,7 @@
         if (wantLang) {
           try {
             const lRes = await invokeModulesApi('toggle', 'chinese', true, {
-              language: 'zh-CN',
-              brandTitle: currentBrandTitle
+              language: 'zh-CN'
             });
             if (!lRes || !lRes.ok) {
               throw new Error(translateBackendText(lRes?.error) || t('mod.zh.toggleFail'));
@@ -12441,11 +12400,10 @@
         }
       } else if (mode === 'restore') {
         try {
-          const lRes = await invokeModulesApi('toggle', 'chinese', false, { language: 'en', brandTitle: 'english' });
+          const lRes = await invokeModulesApi('toggle', 'chinese', false, { language: 'en' });
           if (!lRes || !lRes.ok) {
             throw new Error(translateBackendText(lRes?.error) || t('mod.zh.toggleFail'));
           }
-          currentBrandTitle = 'english';
           doneParts.push(t('enhance.preset.itemLang'));
           needsHostRestart = true;
         } catch (stepErr) {
@@ -12506,201 +12464,6 @@
 
   btnEnhanceRestartHost?.addEventListener('click', openClientRestartConfirmFlow);
 
-  let selectedBrandTitle = currentBrandTitle;
-  let brandObserver = null;
-
-  function getBrandDisplayText(modeKey) {
-    if (modeKey === 'hakimi') return '哈基米';
-    if (modeKey === 'translated') return '反重力';
-    if (modeKey === 'hidden') return '';
-    return 'Antigravity';
-  }
-
-  function ensureBrandObserver(modeKey, targetBtn) {
-    if (brandObserver) {
-      try { brandObserver.disconnect(); } catch {}
-      brandObserver = null;
-    }
-    if (!targetBtn || modeKey === 'english') return;
-    const expected = getBrandDisplayText(modeKey);
-    try {
-      const container = targetBtn.parentElement || targetBtn;
-      brandObserver = new MutationObserver(() => {
-        const btn = document.querySelector('button[data-agy-brand-item="true"]') || targetBtn;
-        if (!btn) return;
-        const txt = btn.textContent?.trim() || '';
-        if (txt !== expected) {
-          btn.textContent = expected;
-        }
-      });
-      brandObserver.observe(container, { childList: true, subtree: true, characterData: true });
-    } catch {}
-  }
-
-  function applyBrandTitleToDom(modeKey) {
-    if (typeof document === 'undefined' || typeof document.querySelector !== 'function') {
-      return { found: false, applied: false, nodeText: null };
-    }
-    // 1. 优先通过持久化标记锁定曾确认过的品牌节点（确保隐藏清空文字后仍可精准识别与无损恢复）
-    let targetBtn = document.querySelector('button[data-agy-brand-item="true"]');
-
-    // 2. 若尚未标记，遍历所有 title-menu-bar-item 菜单按钮，精准仅匹配原文本或已知品牌文案节点
-    if (!targetBtn && typeof document.querySelectorAll === 'function') {
-      const menuItems = document.querySelectorAll('button[data-testid="title-menu-bar-item"]');
-      for (const btn of menuItems) {
-        const txt = btn.textContent?.trim();
-        if (txt === 'Antigravity' || txt === '反重力' || txt === '哈基米' || btn._agyBrandManaged) {
-          targetBtn = btn;
-          break;
-        }
-      }
-    }
-
-    // 3. 备选：极左上角区域（top <= 70 && left <= 300）候选定位
-    if (!targetBtn && typeof document.querySelectorAll === 'function') {
-      const candidateBtns = document.querySelectorAll('button.agy-button, button[class*="agy-button"]');
-      for (const btn of candidateBtns) {
-        const rect = btn.getBoundingClientRect ? btn.getBoundingClientRect() : { top: 0, left: 0 };
-        if (rect.top <= 70 && rect.left <= 300) {
-          const txt = btn.textContent?.trim();
-          if (txt === 'Antigravity' || txt === '反重力' || txt === '哈基米' || btn._agyBrandManaged) {
-            targetBtn = btn;
-            break;
-          }
-        }
-      }
-    }
-
-    if (!targetBtn) {
-      return { found: false, applied: false, nodeText: null };
-    }
-
-    // 永久保留节点引用与原始身份标记，不顺带修改 document.title 或任务栏标题
-    targetBtn.setAttribute('data-agy-brand-item', 'true');
-    targetBtn._agyBrandManaged = true;
-    if (!targetBtn._agyOriginalText) {
-      targetBtn._agyOriginalText = 'Antigravity';
-    }
-
-    const expectedText = getBrandDisplayText(modeKey);
-
-    const nodes = targetBtn.childNodes ? Array.from(targetBtn.childNodes) : (targetBtn.children || []);
-    let textNode = null;
-    for (const node of nodes) {
-      if (node && node.nodeType === 3) {
-        textNode = node;
-        break;
-      }
-    }
-
-    // 保留菜单入口可用（不设置 display: none，隐藏模式仅清空文字），确保菜单功能随时可点击
-    targetBtn.style.display = '';
-    if (textNode) {
-      textNode.nodeValue = expectedText;
-    } else {
-      targetBtn.textContent = expectedText;
-    }
-    targetBtn.setAttribute('data-agy-brand-mode', modeKey);
-
-    ensureBrandObserver(modeKey, targetBtn);
-
-    const currentText = targetBtn.textContent?.trim() || '';
-    const isApplied = (modeKey === 'hidden' ? currentText === '' : currentText === expectedText);
-
-    return {
-      found: true,
-      applied: isApplied,
-      nodeText: currentText
-    };
-  }
-
-  function showBrandFeedback(mode, isSuccess = true, customMsg = '', isApplied = false) {
-    if (!brandApplyFeedback) return;
-    if (!isSuccess) {
-      brandApplyFeedback.textContent = customMsg || t('msg.saveFail');
-      brandApplyFeedback.style.color = '#ef4444';
-      brandApplyFeedback.hidden = false;
-      return;
-    }
-    const modeLabel = t(`enhance.brand.${mode}`) || mode;
-    let msg = customMsg;
-    if (!msg) {
-      msg = isApplied
-        ? `${t('enhance.brand.switched', { mode: modeLabel })}（已即时生效）`
-        : `${t('enhance.brand.switched', { mode: modeLabel })}（未检测到目标，${t('models.status.pendingRestart')}）`;
-    }
-    brandApplyFeedback.textContent = msg;
-    if (!isApplied) {
-      const rBtn = document.createElement('button');
-      rBtn.type = 'button';
-      rBtn.className = 'unlock-btn unlock-btn-secondary';
-      rBtn.style.cssText = 'margin-left:8px;padding:2px 8px;font-size:11px;cursor:pointer;';
-      rBtn.textContent = t('models.btnRestartHost');
-      rBtn.addEventListener('click', () => openClientRestartConfirmFlow());
-      brandApplyFeedback.appendChild(rBtn);
-    }
-    brandApplyFeedback.style.color = isApplied ? '#10b981' : 'var(--ag-text-primary)';
-    brandApplyFeedback.hidden = false;
-  }
-
-  async function applyBrandTitleSetting(modeKey) {
-    try {
-      const res = await invokeModulesApi('toggle', 'chinese', currentChineseEnabled, {
-        language: currentChineseEnabled ? 'zh-CN' : 'en',
-        brandTitle: modeKey
-      });
-      if (!res || !res.ok) {
-        const err = translateBackendText(res?.error) || t('msg.saveFail');
-        showBrandFeedback(modeKey, false, err, false);
-        showEnhanceResultBox(false, err);
-        return;
-      }
-      currentBrandTitle = modeKey;
-      selectedBrandTitle = modeKey;
-      syncBrandTitleButtons(modeKey);
-
-      // 实时真实 DOM 应用
-      const domResult = applyBrandTitleToDom(modeKey);
-
-      // 实时热同步（若已注入运行时环境）
-      try {
-        if (typeof window !== 'undefined' && window.__AGY_I18N_CONFIG__) {
-          window.__AGY_I18N_CONFIG__.brandTitle = modeKey;
-          if (typeof window.__AGY_RUN_FULL_SCAN__ === 'function') {
-            window.__AGY_RUN_FULL_SCAN__();
-          }
-        }
-      } catch {}
-
-      const modeLabel = t(`enhance.brand.${modeKey}`) || modeKey;
-      if (domResult.applied) {
-        const appliedMsg = `${t('enhance.brand.switched', { mode: modeLabel })}（左上角品牌已切换为：${modeLabel}）`;
-        showBrandFeedback(modeKey, true, appliedMsg, true);
-        showEnhanceResultBox(true, appliedMsg, { needsHostRestart: false });
-      } else {
-        const pendingMsg = `${t('enhance.brand.switched', { mode: modeLabel })}（当前窗口未检测到品牌节点，重启客户端后生效）`;
-        showBrandFeedback(modeKey, true, pendingMsg, false);
-        showEnhanceResultBox(true, pendingMsg, { needsHostRestart: true });
-      }
-    } catch (e) {
-      const err = e?.message || t('msg.saveFail');
-      showBrandFeedback(modeKey, false, err, false);
-      showEnhanceResultBox(false, err);
-    }
-  }
-
-  for (const [modeKey, btn] of Object.entries(brandTitleBtns)) {
-    btn?.addEventListener('click', () => {
-      selectedBrandTitle = modeKey;
-      syncBrandTitleButtons(modeKey);
-      void applyBrandTitleSetting(modeKey);
-    });
-  }
-
-  btnApplyBrandTitle?.addEventListener('click', () => {
-    void applyBrandTitleSetting(selectedBrandTitle || currentBrandTitle);
-  });
-
   let lastVersionSyncState = null;
 
   function renderVersionSyncBanner(vs = lastVersionSyncState) {
@@ -12738,9 +12501,6 @@
       const cfg = res.data;
 
       currentChineseEnabled = Boolean(cfg.modules?.chinese?.enabled);
-      currentBrandTitle = cfg.modules?.chinese?.brandTitle || 'hakimi';
-      syncBrandTitleButtons(currentBrandTitle);
-      applyBrandTitleToDom(currentBrandTitle);
       // 判定宿主界面是否已翻译：定向检查系统导航、活动栏、菜单及操作按钮等固有系统壳层（排除用户消息内容区域）
       const isDomTranslated = (() => {
         if (typeof window.__AGY_I18N_DATA__ !== 'undefined' || typeof window.__AGY_TRANSLATE_EL__ !== 'undefined') {
@@ -12837,8 +12597,7 @@
     }
     try {
       const res = await invokeModulesApi('toggle', 'chinese', Boolean(wantChinese), {
-        language: wantChinese ? 'zh-CN' : 'en',
-        brandTitle: currentBrandTitle
+        language: wantChinese ? 'zh-CN' : 'en'
       });
       if (!res || !res.ok) {
         showEnhanceResultBox(false, translateBackendText(res?.error) || t('mod.zh.toggleFail'));

@@ -7,7 +7,7 @@
 #   3. 内核级与客户端能力整合：
 #      - 账号地区 / Free-tier 检测解锁 (ValidateAndOnboardAccount，UI 还原操作绝不回滚该补丁)
 #      - 上下文窗口解锁 (default 官方默认 / fixed / dynamic) + 发送链路 maxTokenLimit 动态覆写
-#      - 桌面端简体中文界面与 4 态品牌标题 (默认：哈基米 / 反重力 / 隐藏 / Antigravity)
+#      - 桌面端简体中文界面（纯本地 DOM 翻译，不影响请求与提示词）
 #      - 实时上下文占用监控、速率监测、8 类错误诊断与 Token 消费历史看板
 #
 # 用法:
@@ -27,7 +27,6 @@ FORCE=0
 CONTEXT_MODE="dynamic"
 CONTEXT_LIMIT=""
 CLIENT_LANG=""
-BRAND=""
 ICON_PATH=""
 RAW_ICON=0
 FORCE_DEFAULT_ICON=0
@@ -53,8 +52,6 @@ usage() {
   --patch-cli                     构建完成后联动修补本机 agy CLI 二进制并同步 CLI 上下文配置
   --cli-bin <path>                可选：配合 --patch-cli 指定 agy 二进制路径
   --client-lang <zh-CN|en>        桌面端界面语言 (首次写入配置默认为 zh-CN)
-  --brand <hakimi|translated|hidden|english>
-                                  左上角品牌标题模式 (首次写入配置默认为 hakimi，即 哈基米)
   -h, --help                      显示本帮助信息
 EOF
 }
@@ -111,11 +108,6 @@ while [[ $# -gt 0 ]]; do
       CLIENT_LANG="$2"
       shift 2
       ;;
-    --brand)
-      require_arg "$@"
-      BRAND="$2"
-      shift 2
-      ;;
     -i|--icon)
       require_arg "$@"
       ICON_PATH="$2"
@@ -161,13 +153,6 @@ if [[ -n "$CLIENT_LANG" ]]; then
   case "$CLIENT_LANG" in
     zh-CN|en) ;;
     *) echo "无效 --client-lang: $CLIENT_LANG (可选: zh-CN | en)" >&2; exit 2 ;;
-  esac
-fi
-
-if [[ -n "$BRAND" ]]; then
-  case "$BRAND" in
-    hakimi|translated|hidden|english) ;;
-    *) echo "无效 --brand: $BRAND (可选: hakimi | translated | hidden | english)" >&2; exit 2 ;;
   esac
 fi
 
@@ -471,9 +456,6 @@ if [[ $STAGE_ONLY -eq 1 ]]; then
 fi
 if [[ -n "$CLIENT_LANG" ]]; then
   PACK_ARGS+=(--client-lang "$CLIENT_LANG")
-fi
-if [[ -n "$BRAND" ]]; then
-  PACK_ARGS+=(--brand "$BRAND")
 fi
 ASAR_HASH="$(node "$SCRIPT_DIR/scripts/pack-hakimi-asar.js" "${PACK_ARGS[@]}")"
 echo "  ElectronAsarIntegrity Resources/app.asar SHA256: $ASAR_HASH"

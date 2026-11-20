@@ -111,29 +111,16 @@ function generateChinesePreloadCode(dictContent, runtimeContent) {
   return `\n${TAGS.CHINESE_START}
 (function() {
   try {
-    var _i18nConfig = { enabled: true, language: 'zh-CN', brandTitle: 'hakimi' };
+    var _i18nConfig = { enabled: true, language: 'zh-CN' };
     try {
       if (typeof electron_1 !== 'undefined' && electron_1.ipcRenderer && typeof electron_1.ipcRenderer.sendSync === 'function') {
         var _syncCfg = electron_1.ipcRenderer.sendSync('context-meter:get-chinese-config-sync');
         if (_syncCfg && typeof _syncCfg === 'object') {
           _i18nConfig.enabled = _syncCfg.enabled !== false && _syncCfg.language !== 'en';
           _i18nConfig.language = _syncCfg.language || (_i18nConfig.enabled ? 'zh-CN' : 'en');
-          _i18nConfig.brandTitle = _syncCfg.brandTitle || 'hakimi';
         }
       }
     } catch(ipcErr) {}
-    try {
-      if (typeof electron_1 !== 'undefined' && electron_1.ipcRenderer && typeof electron_1.ipcRenderer.on === 'function') {
-        electron_1.ipcRenderer.on('context-meter:brand-title-changed', function(_e, newBrand) {
-          try {
-            _i18nConfig.brandTitle = newBrand || 'hakimi';
-            if (typeof window !== 'undefined' && typeof window.__AGY_RUN_FULL_SCAN__ === 'function') {
-              window.__AGY_RUN_FULL_SCAN__();
-            }
-          } catch(e) {}
-        });
-      }
-    } catch(ipcErr2) {}
     var _fs = typeof require === 'function' ? (function() { try { return require('fs'); } catch(e) { return null; } })() : null;
     var _path = typeof require === 'function' ? (function() { try { return require('path'); } catch(e) { return null; } })() : null;
     var _os = typeof require === 'function' ? (function() { try { return require('os'); } catch(e) { return null; } })() : null;
@@ -153,8 +140,7 @@ function generateChinesePreloadCode(dictContent, runtimeContent) {
           if (_ch) {
             _i18nConfig.enabled = _ch.enabled !== false && _ch.language !== 'en';
             _i18nConfig.language = _ch.language || (_i18nConfig.enabled ? 'zh-CN' : 'en');
-            _i18nConfig.brandTitle = _ch.brandTitle || 'hakimi';
-            if (_c && _c.modules && _c.modules.chinese && _c.modules.chinese.enabled === false && _i18nConfig.brandTitle === 'english') {
+            if (_c && _c.modules && _c.modules.chinese && _c.modules.chinese.enabled === false) {
               return;
             }
           }

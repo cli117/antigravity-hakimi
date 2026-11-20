@@ -20,15 +20,11 @@
    - **一级顶栏纯图标快捷入口 + 窗口快速微浮层**：顶部监控条紧邻圆环提供**纯图标**按钮（无文字占位，悬停显示说明气泡）：一键触发 `/compact` 压缩当前会话，以及点击弹出**上下文窗口快调浮层**——顶部自动标识并一键切换 `全部模型统一 / 仅当前模型` 作用域，原地直选 `512K / 1M / 动态` 即时生效；当前会话详情卡片同步提供即时预设条与 `512K → 1M` 下条生效预览。
 4. **纯 Token 消耗历史与额度池看板**
    - 专注于统计桌面端与 CLI 的纯 Token 历史用量（输入 / 输出 / 缓存读取）、日/周/月/年/累计热力图（日/月悬浮气泡与区间汇总栏支持展示缓存命中率），以及账号套餐与 Prompt / Flow 额度池状态（已移除全部 API 参考费率、货币换算与订阅价格表单）。
-5. **桌面端简体中文界面与四态品牌标题控制**
-   - 通过 `app.asar` 预加载注入全量简体中文词库（`zh-CN.json`）与 DOM 翻译引擎（`i18n-runtime.js`），支持 **四态无损切换** 左上角品牌标题：
-     - `hakimi`：**`哈基米`**（默认）
-     - `translated`：**`反重力`**
-     - `hidden`：隐藏文字但保留菜单入口
-     - `english`：**`Antigravity`**
+5. **桌面端简体中文界面**
+   - 通过 `app.asar` 预加载注入全量简体中文词库（`zh-CN.json`）与 DOM 翻译引擎（`i18n-runtime.js`），仅作用于本地 Electron 界面渲染（不触碰聊天正文、代码块或任何外发请求），支持在面板中随时切回英文界面。
 6. **Remote SSH 远端无缝适配（Linux `x86-64` & `arm64`）**
    - 内置 [`meter-ssh.js`](payload/dist/meter-ssh.js)，在打包 `app.asar` 时注入 `dist/remote/bootstrapScript.js` 与 `dist/remote/remoteManager.js`：当用户通过 Remote SSH 连接任意 Linux 主机时，自动对远端 `~/.antigravity-hub-server/bin/<ver>-<arch>/language_server`（64 位 ELF `x86-64` / `arm64`，兼容 PIE `.rela.dyn`）执行**自适应账号地区解锁**与**上下文窗口 Gate 3A / Gate 3B 解锁**（自动同步本机当前上下文模式与上限），且能平滑接管并重启已运行的未修补官方远端服务（日志位于远端 `~/.antigravity-hub-server/data/hakimi-patch.log`，不污染 SSH 引导协议且异常自动 fail-open）。
-   - SSH 窗口内同样完整生效：桌面端汉化与四态品牌标题、顶部 Context Meter 监控条（复用窗口独立 Electron `session` 走反重力内置 SSH SOCKS5 通道直连远端语言服务，实时展示上下文占比、`tok/s`、缓存命中率、`/compact`、窗口快调、会话详情与额度池），并与本机窗口严格隔离。
+   - SSH 窗口内同样完整生效：桌面端简体中文界面、顶部 Context Meter 监控条（复用窗口独立 Electron `session` 走反重力内置 SSH SOCKS5 通道直连远端语言服务，实时展示上下文占比、`tok/s`、缓存命中率、`/compact`、窗口快调、会话详情与额度池），并与本机窗口严格隔离。
 7. **自定义应用图标（可选 `--icon`）与一键健康诊断（`npm run doctor`）**
    - 支持传入本地图片（`PNG` / `JPG` / `WebP` / `HEIC` / `ICNS` 等）作为 `哈基米.app` 的应用图标；覆盖构建时不传 `--icon` 会自动保留旧副本已有的自定义图标，也可传入 `--default-icon` 恢复官方默认图标。
    - 对非透明背景照片会自动居中裁剪为 1:1 并施加 macOS 圆角矩形留白遮罩（带透明圆角/边缘的图标则原样保留，也可配合 `--raw-icon` 禁用遮罩），同时更新 **`Contents/Resources/icon.icns`**（访达 / 启动台 / Spotlight）与 **`app.asar/icon.png`**（运行态 Dock 图标）。
@@ -101,8 +97,6 @@ bash ./set-hakimi-icon.sh --restore --restart
   --patch-cli                     构建完成后联动修补本机 agy CLI 二进制并同步 CLI 上下文配置
   --cli-bin <path>                可选：配合 --patch-cli 指定 agy 二进制路径
   --client-lang <zh-CN|en>        初始化/强制覆盖桌面端界面语言 (默认首次为 zh-CN)
-  --brand <hakimi|translated|hidden|english>
-                                  初始化/强制覆盖左上角品牌标题模式 (默认首次为 hakimi)
 ```
 
 ---
@@ -113,7 +107,7 @@ bash ./set-hakimi-icon.sh --restore --restart
 # 重新编译 Context Meter 渲染层 -> payload/dist/meter-renderer.js
 npm run build:renderer
 
-# 运行自动化测试（ASAR 打包校验、四态品牌 DOM、官方路径守卫、自适应解锁与诊断测试）
+# 运行自动化测试（ASAR 打包校验、DOM 守卫、官方路径守卫、自适应解锁、SSH 与诊断测试）
 npm test
 
 # 一键只读健康诊断（支持 --json / --allow-missing）
@@ -139,5 +133,5 @@ npm run doctor
 
 ## 致谢与上游项目
 
-- **Context Meter / 看板 / 汉化与解锁框架**：本项目的前端监控面板、纯 Token 用量统计、桌面端简体中文化运行时及上下文解锁基础代码基于 [`elviscjn-cjn/antigravity-context-viewer`](https://github.com/elviscjn-cjn/antigravity-context-viewer)（基于 `v0.8.3`）改造，在此基础上新增了 macOS Apple Silicon (`arm64`) 独立 `/Applications/哈基米.app` 构建流程、自适应账号地区与 `agy` CLI 解锁、快捷操作、四态品牌标题与自定义图标支持，并移除了计价/代理/自动更新等模块。
+- **Context Meter / 看板 / 汉化与解锁框架**：本项目的前端监控面板、纯 Token 用量统计、桌面端简体中文化运行时及上下文解锁基础代码基于 [`elviscjn-cjn/antigravity-context-viewer`](https://github.com/elviscjn-cjn/antigravity-context-viewer)（基于 `v0.8.3`）改造，在此基础上新增了 macOS Apple Silicon (`arm64`) 独立 `/Applications/哈基米.app` 构建流程、自适应账号地区与 `agy` CLI 解锁、Remote SSH 远端自动解锁、快捷操作与自定义图标支持，并移除了计价/代理/自动更新等模块。
 - **上下文解锁方案原作者**：致谢 [Linux.do @23375](https://linux.do/t/topic/3117832) 提供的上下文窗口解锁技术方案。

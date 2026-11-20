@@ -857,7 +857,7 @@
       'models.btn.recheck': { 'zh-CN': '重新检测', 'zh-TW': '重新偵測', en: 'Re-detect' },
       'models.card.partialFailDetail': { 'zh-CN': '未定位到完整的上下文写入点，为保护二进制完整性已中止写入。{reason}', 'zh-TW': '未定位到完整的上下文寫入點，為保護二進位完整性已中止寫入。{reason}', en: 'Could not locate all required binary gates; aborted safely. {reason}' },
 
-      // 推荐配置与品牌标题设置
+      // 推荐配置设置
       'enhance.preset.title': { 'zh-CN': '✨ 推荐配置（按需主动应用）', 'zh-TW': '✨ 推薦設定（依需求主動套用）', en: '✨ Recommended Setup (Opt-In)' },
       'enhance.preset.desc': { 'zh-CN': '下方列出推荐增强组合；勾选并确认后写入 哈基米.app，且始终保留账号地区免切锁补丁。', 'zh-TW': '下方列出推薦增強組合；勾選並確認後寫入 哈基米.app，且始終保留帳號地區免切鎖修補。', en: 'Select desired features below and confirm before writing to 哈基米.app. Region unlock patch is always preserved.' },
       'enhance.preset.itemLang': { 'zh-CN': '客户端界面简体中文', 'zh-TW': '用戶端介面簡體中文', en: 'Client Simplified Chinese UI' },
@@ -868,17 +868,9 @@
       'enhance.restoreAll.btn': { 'zh-CN': '恢复功能默认…', 'zh-TW': '恢復功能預設…', en: 'Restore Feature Defaults…' },
       'enhance.confirm.go': { 'zh-CN': '确认执行', 'zh-TW': '確認執行', en: 'Confirm' },
       'enhance.confirm.presetSummary': { 'zh-CN': '即将执行以下已勾选项：{items}；未勾选项目保持不变。变更后可能需要重启语言服务或 哈基米 客户端加载生效。', 'zh-TW': '即將執行以下已勾選項：{items}；未勾選項目維持不變。變更後可能需要重啟語言服務或 哈基米 用戶端載入生效。', en: 'About to apply checked items: {items}; unchecked items stay untouched. A language server or client restart may be required.' },
-      'enhance.confirm.restoreSummary': { 'zh-CN': '「恢复功能默认」将还原以下 2 项：切换客户端英文界面与品牌(Antigravity)、还原宿主默认上下文行为；账号地区免切锁补丁会完整保留，已保存的模型偏好不清除。是否继续？', 'zh-TW': '「恢復功能預設」將還原以下 2 項：切換用戶端英文介面與品牌(Antigravity)、還原宿主預設上下文行為；帳號地區免切鎖修補會完整保留，已儲存的模型偏好不清除。是否繼續？', en: '"Restore Feature Defaults" resets these 2 items: English host UI & brand (Antigravity), and native context behavior. Account region unlock and saved model preferences are preserved. Continue?' },
+      'enhance.confirm.restoreSummary': { 'zh-CN': '「恢复功能默认」将还原以下 2 项：切换客户端为英文界面、还原宿主默认上下文行为；账号地区免切锁补丁会完整保留，已保存的模型偏好不清除。是否继续？', 'zh-TW': '「恢復功能預設」將還原以下 2 項：切換用戶端為英文介面、還原宿主預設上下文行為；帳號地區免切鎖修補會完整保留，已儲存的模型偏好不清除。是否繼續？', en: '"Restore Feature Defaults" resets these 2 items: English host UI and native context behavior. Account region unlock and saved model preferences are preserved. Continue?' },
       'enhance.confirm.noneSelected': { 'zh-CN': '请至少勾选一项要应用的配置。', 'zh-TW': '請至少勾選一項要套用的設定。', en: 'Select at least one option first.' },
       'enhance.btn.restartLs': { 'zh-CN': '重启语言服务', 'zh-TW': '重啟語言服務', en: 'Restart Language Server' },
-      'enhance.brand.label': { 'zh-CN': '左上角品牌文字显示（仅作用于左上角品牌位，不影响 Logo、菜单或代码）：', 'zh-TW': '左上角品牌文字顯示（僅作用於左上角品牌位，不影響 Logo、選單或程式碼）：', en: 'Header Brand Text (applies only to top-left brand slot; does not alter logo, menus, or code):' },
-      'enhance.brand.aria': { 'zh-CN': '品牌显示模式', 'zh-TW': '品牌顯示模式', en: 'Brand display mode' },
-      'enhance.brand.hakimi': { 'zh-CN': '哈基米', 'zh-TW': '哈基米', en: '哈基米 (Hakimi)' },
-      'enhance.brand.translated': { 'zh-CN': '反重力', 'zh-TW': '反重力', en: '反重力 (Translated)' },
-      'enhance.brand.hidden': { 'zh-CN': '隐藏品牌字样', 'zh-TW': '隱藏品牌字樣', en: 'Hide' },
-      'enhance.brand.english': { 'zh-CN': 'Antigravity (英文原样)', 'zh-TW': 'Antigravity (英文原樣)', en: 'Keep Antigravity' },
-      'enhance.brand.applyBtn': { 'zh-CN': '保存品牌选择并应用', 'zh-TW': '儲存品牌選擇並套用', en: 'Save & Apply Brand' },
-      'enhance.brand.switched': { 'zh-CN': '品牌显示已保存为「{mode}」，重启客户端后生效。', 'zh-TW': '品牌顯示已儲存為「{mode}」，重新啟動用戶端後生效。', en: 'Brand display saved as "{mode}". Restart client to take effect.' },
       'enhance.btn.applyPresetBusy': { 'zh-CN': '正在应用推荐配置…', 'zh-TW': '正在套用推薦設定…', en: 'Applying preset…' },
       'enhance.btn.restoreAllBusy': { 'zh-CN': '正在恢复默认…', 'zh-TW': '正在恢復預設…', en: 'Restoring defaults…' },
       'enhance.status.unread': { 'zh-CN': '未读取', 'zh-TW': '未讀取', en: 'Unread' },

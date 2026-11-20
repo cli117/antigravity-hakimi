@@ -78,7 +78,7 @@ npm run unlock:cli
   - `meter-cli-unlock.js`（与 `unlock/agy-cli/agy-patch.py`）：`agy` CLI 机型白名单绕过与 `AGY_CLI_AUTO_COMPACT_OVERRIDE` 修复补丁及配置同步。
   - `meter-ssh.js`：Remote SSH 远端 Linux ELF64（`x86-64` & `arm64`，含 PIE `.rela.dyn` `firstmoduledata` 解析）自适应地区解锁 + 上下文 Gate 3A/3B 补丁引擎、`bootstrapScript.js` POSIX `sh` 装饰器、远端会话内存注册表及 Electron `session.fetch` 代理通道。
   - `meter-main.js` / `local-api.js` / `meter-collector.js` / `meter-core.js` / `meter-storage.js` / `attachment_scan.py`：主进程 IPC（区分本机与 SSH 窗口）、本地 API、对话轨迹采集、纯 Token 统计分析、历史存储与附件预算估算。
-  - `i18n/i18n-runtime.js` & `i18n/zh-CN.json`：桌面端界面全量简体中文运行时与四态品牌标题控制（`hakimi` / `translated` / `hidden` / `english`）。
+  - `i18n/i18n-runtime.js` & `i18n/zh-CN.json`：桌面端界面全量简体中文运行时（仅作用于本地 Electron DOM，支持简体中文 / 英文切换）。
 - `src/renderer/`：Context Meter 悬浮胶囊、一级顶栏纯图标快捷操作 & `#topbar-window-popover`、会话详情、模型上下文设置、速率对比与纯 Token 热力图源码（`template.html`、`styles.css`、`i18n.js`、`colors.js`、`dropdown.js`、`heatmap.js`、`context-budget-engine.js`、`main.js`）。
 - `test/`：
   - `arm64-patches.test.js`：Mach-O / `.gopclntab` / ARM64 / `agy` CLI 二进制补丁与可逆性测试。

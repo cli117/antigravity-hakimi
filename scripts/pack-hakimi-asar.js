@@ -32,7 +32,6 @@ const {
 
 const {
   DEFAULT_CONFIG,
-  normalizeBrandTitle,
   normalizeClientLanguage,
   getModulesConfigPath,
   loadModulesConfig,
@@ -145,9 +144,7 @@ function parseArgs(argv) {
     destAsar: null,
     stateDir: null,
     clientLang: 'zh-CN',
-    brand: 'hakimi',
     hasExplicitLang: false,
-    hasExplicitBrand: false,
     hashOut: null,
     iconPng: null,
     forceConfig: false,
@@ -165,9 +162,6 @@ function parseArgs(argv) {
     } else if (arg === '--client-lang') {
       opts.clientLang = argv[++i];
       opts.hasExplicitLang = true;
-    } else if (arg === '--brand') {
-      opts.brand = argv[++i];
-      opts.hasExplicitBrand = true;
     } else if (arg === '--hash-out') {
       opts.hashOut = argv[++i];
     } else if (arg === '--icon-png') {
@@ -178,7 +172,7 @@ function parseArgs(argv) {
       opts.skipConfig = true;
     } else if (arg === '-h' || arg === '--help') {
       console.log(
-        'Usage: node scripts/pack-hakimi-asar.js --src-asar <path> --dest-asar <path> [--state-dir <dir>] [--client-lang <zh-CN|en>] [--brand <hakimi|translated|hidden|english>] [--hash-out <file>] [--icon-png <file>] [--force-config] [--skip-config]'
+        'Usage: node scripts/pack-hakimi-asar.js --src-asar <path> --dest-asar <path> [--state-dir <dir>] [--client-lang <zh-CN|en>] [--hash-out <file>] [--icon-png <file>] [--force-config] [--skip-config]'
       );
       process.exit(0);
     } else {
@@ -200,9 +194,7 @@ function packHakimiAsar(rawOpts = {}) {
   assertNotOfficialAntigravityApp(destAsar, 'pack ASAR');
 
   const hasExplicitLang = Boolean(rawOpts.hasExplicitLang);
-  const hasExplicitBrand = Boolean(rawOpts.hasExplicitBrand);
   const clientLang = rawOpts.clientLang || 'zh-CN';
-  const brand = rawOpts.brand || 'hakimi';
   const forceConfig = Boolean(rawOpts.forceConfig);
   const skipConfig = Boolean(rawOpts.skipConfig);
 
@@ -369,10 +361,6 @@ function packHakimiAsar(rawOpts = {}) {
       if (!cfgExists || forceConfig || hasExplicitLang) {
         cfg.modules.chinese.language = normalizeClientLanguage(clientLang);
         cfg.modules.chinese.enabled = cfg.modules.chinese.language !== 'en';
-        dirty = true;
-      }
-      if (!cfgExists || forceConfig || hasExplicitBrand) {
-        cfg.modules.chinese.brandTitle = normalizeBrandTitle(brand);
         dirty = true;
       }
       if (dirty) {

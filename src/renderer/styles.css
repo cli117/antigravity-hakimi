@@ -1322,7 +1322,6 @@
     .ag-modal-body{font-size:11.5px;line-height:1.5;color:var(--ag-text-secondary)}
     .ag-modal-feedback{font-size:11px;line-height:1.4;padding:6px 8px;border-radius:5px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);color:var(--ag-text-primary)}
     .ag-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
-    .ctx-brand-feedback{font-size:11px;margin-top:6px;padding:5px 8px;border-radius:5px;background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);color:var(--ag-text-primary)}
     .ctx-tab-pane[hidden]{display:none!important}
 
     /* 当前会话紧凑卡片 */

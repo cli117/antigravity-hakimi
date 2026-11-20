@@ -148,37 +148,19 @@ async function handleToggleModule(event, moduleName, enable, extraOpts = {}) {
     // 结果类型 1: 已有完整运行时可通过配置切换 (config_toggled)
     if (hasDiskCapability) {
       if (moduleName === 'chinese') {
-        const { normalizeBrandTitle, normalizeClientLanguage } = require('./modules-config');
+        const { normalizeClientLanguage } = require('./modules-config');
         const nextLang = normalizeClientLanguage(extraOpts?.language, targetEnable);
-        const nextBrand = extraOpts?.brandTitle !== undefined
-          ? normalizeBrandTitle(extraOpts.brandTitle)
-          : cfg.modules.chinese.brandTitle;
         cfg.modules.chinese.language = nextLang;
         cfg.modules.chinese.enabled = nextLang === 'zh-CN';
-        cfg.modules.chinese.brandTitle = nextBrand;
         cfg.modules.chinese.lastUpdated = new Date().toISOString();
       } else {
         cfg.modules[moduleName].enabled = targetEnable;
       }
       saveModulesConfig(cfg);
-      if (moduleName === 'chinese' && extraOpts?.brandTitle !== undefined) {
-        try {
-          const utils = require('./utils');
-          const wins = typeof utils.getHubWindows === 'function' ? utils.getHubWindows() : [];
-          for (const w of wins) {
-            const wc = getWindowWebContents(w);
-            if (wc && !wc.isDestroyed()) {
-              wc.send('context-meter:brand-title-changed', cfg.modules.chinese.brandTitle);
-            }
-          }
-        } catch {}
-      }
       const isEnabledNow = cfg.modules[moduleName].enabled;
       const msg = isEnabledNow
         ? '已更新并保存设置，重启客户端后生效'
-        : (moduleName === 'chinese' && cfg.modules.chinese.brandTitle !== 'english')
-          ? '已保存品牌标题设置，重启客户端后生效'
-          : '已关闭配置，重启客户端后生效';
+        : '已关闭配置，重启客户端后生效';
       return {
         ok: true,
         status: 'config_toggled',
@@ -190,25 +172,12 @@ async function handleToggleModule(event, moduleName, enable, extraOpts = {}) {
     }
 
     // 若用户是关闭一个原本就未注入的模块，直接同步配置
-    if (!targetEnable && !(moduleName === 'chinese' && extraOpts?.brandTitle && extraOpts.brandTitle !== 'english')) {
+    if (!targetEnable) {
       cfg.modules[moduleName].enabled = false;
       if (moduleName === 'chinese') {
         cfg.modules.chinese.language = 'en';
-        cfg.modules.chinese.brandTitle = 'english';
       }
       saveModulesConfig(cfg);
-      if (moduleName === 'chinese' && extraOpts?.brandTitle !== undefined) {
-        try {
-          const utils = require('./utils');
-          const wins = typeof utils.getHubWindows === 'function' ? utils.getHubWindows() : [];
-          for (const w of wins) {
-            const wc = getWindowWebContents(w);
-            if (wc && !wc.isDestroyed()) {
-              wc.send('context-meter:brand-title-changed', cfg.modules.chinese.brandTitle);
-            }
-          }
-        } catch {}
-      }
       return {
         ok: true,
         status: 'config_toggled',

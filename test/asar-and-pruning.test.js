@@ -113,19 +113,13 @@ test('excluded features (Tiers 0-4, No-TUN proxy, CLI launcher, updater) are pru
   }
 });
 
-test('src/renderer/template.html has balanced <div> tags and 4 brand title modes including hakimi', () => {
+test('src/renderer/template.html has balanced <div> tags and no legacy brand title buttons', () => {
   const tpl = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'template.html'), 'utf8');
   const opens = (tpl.match(/<div\b/g) || []).length;
   const closes = (tpl.match(/<\/div>/g) || []).length;
   assert.equal(opens, closes, `Unbalanced <div> tags: opens=${opens}, closes=${closes}`);
-
-  for (const mode of ['hakimi', 'translated', 'hidden', 'english']) {
-    assert.ok(
-      tpl.includes(`data-brand-title="${mode}"`),
-      `Missing brand title button for mode: ${mode}`
-    );
-  }
-  assert.ok(tpl.includes('id="btn-brand-hakimi"'), 'Missing #btn-brand-hakimi');
+  assert.equal(tpl.includes('data-brand-title='), false, 'Legacy data-brand-title controls should be removed');
+  assert.equal(tpl.includes('id="btn-brand-hakimi"'), false, 'Legacy #btn-brand-hakimi should be removed');
 });
 
 test('assertNotOfficialAntigravityApp blocks official Antigravity.app, .orig, and symlinks while allowing 哈基米.app', () => {
@@ -247,23 +241,21 @@ function createMockTextNode(value) {
   };
 }
 
-test('i18n-runtime supports lossless 4-way brand title switching (hakimi <-> hidden <-> translated <-> english) without touching chat prose', () => {
+test('i18n-runtime translates desktop UI labels without touching chat prose or code blocks', () => {
   const runtimeCode = fs.readFileSync(path.join(ROOT, 'payload', 'dist', 'i18n', 'i18n-runtime.js'), 'utf8');
 
   const rootEl = createMockElement('HTML');
   const bodyEl = createMockElement('BODY');
-  const titleBar = createMockElement('DIV', {}, 'titlebar-container');
-  const brandBtn = createMockElement('DIV', { 'data-testid': 'title-menu-bar-item' }, 'titlebar-left');
-  const brandText = createMockTextNode('Antigravity');
-  brandBtn.appendChild(brandText);
-  titleBar.appendChild(brandBtn);
+  const navBtn = createMockElement('BUTTON', {}, 'sidebar-btn');
+  const navText = createMockTextNode('Settings');
+  navBtn.appendChild(navText);
 
-  const chatMsg = createMockElement('P', {}, 'chat-message');
-  const chatText = createMockTextNode('Antigravity');
-  chatMsg.appendChild(chatText);
+  const codeEl = createMockElement('CODE', {}, '');
+  const codeText = createMockTextNode('Settings');
+  codeEl.appendChild(codeText);
 
-  bodyEl.appendChild(titleBar);
-  bodyEl.appendChild(chatMsg);
+  bodyEl.appendChild(navBtn);
+  bodyEl.appendChild(codeEl);
   rootEl.appendChild(bodyEl);
 
   const doc = {
@@ -306,41 +298,16 @@ test('i18n-runtime supports lossless 4-way brand title switching (hakimi <-> hid
       return 1;
     },
     console,
-    __AGY_I18N_CONFIG__: { enabled: true, language: 'zh-CN', brandTitle: 'hakimi' },
-    __AGY_I18N_DATA__: { exact: {}, patterns: [], rules: [] },
+    __AGY_I18N_CONFIG__: { enabled: true, language: 'zh-CN' },
+    __AGY_I18N_DATA__: { exact: { Settings: '设置' }, patterns: [], rules: [] },
   };
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
 
   vm.runInNewContext(runtimeCode, sandbox, { filename: 'i18n-runtime.js' });
 
-  // Initial scan should apply default 'hakimi' mode
-  assert.equal(brandText.nodeValue, '哈基米');
-  assert.equal(brandBtn.getAttribute('data-agy-brand-item'), 'true');
-  assert.equal(chatText.nodeValue, 'Antigravity', 'Chat prose must never be mutated by brand replacement');
-
-  // Switch to 'hidden'
-  sandbox.__AGY_I18N_CONFIG__.brandTitle = 'hidden';
-  sandbox.__AGY_RUN_FULL_SCAN__();
-  assert.equal(brandText.nodeValue, '');
-  assert.equal(brandBtn.getAttribute('data-agy-brand-item'), 'true');
-  assert.equal(brandBtn.style.display, '');
-
-  // Recover from 'hidden' -> 'translated'
-  sandbox.__AGY_I18N_CONFIG__.brandTitle = 'translated';
-  sandbox.__AGY_RUN_FULL_SCAN__();
-  assert.equal(brandText.nodeValue, '反重力');
-
-  // 'translated' -> 'english'
-  sandbox.__AGY_I18N_CONFIG__.brandTitle = 'english';
-  sandbox.__AGY_RUN_FULL_SCAN__();
-  assert.equal(brandText.nodeValue, 'Antigravity');
-
-  // 'english' -> 'hakimi'
-  sandbox.__AGY_I18N_CONFIG__.brandTitle = 'hakimi';
-  sandbox.__AGY_RUN_FULL_SCAN__();
-  assert.equal(brandText.nodeValue, '哈基米');
-  assert.equal(chatText.nodeValue, 'Antigravity');
+  assert.equal(navText.nodeValue, '设置');
+  assert.equal(codeText.nodeValue, 'Settings', 'Code elements must never be mutated by i18n runtime');
 });
 
 test('computeAsarHeaderSha256 matches official Info.plist ElectronAsarIntegrity hash when official app is installed', () => {
@@ -432,9 +399,7 @@ test('asar-engine and packHakimiAsar preserve file-only unpacked/executable meta
       destAsar,
       stateDir,
       clientLang: 'zh-CN',
-      brand: 'hakimi',
       hasExplicitLang: true,
-      hasExplicitBrand: true,
     });
 
     assert.equal(res.ok, true);
@@ -447,7 +412,6 @@ test('asar-engine and packHakimiAsar preserve file-only unpacked/executable meta
     const savedCfg = JSON.parse(fs.readFileSync(res.configPath, 'utf8'));
     assert.equal(savedCfg.modules.chinese.enabled, true);
     assert.equal(savedCfg.modules.chinese.language, 'zh-CN');
-    assert.equal(savedCfg.modules.chinese.brandTitle, 'hakimi');
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -1303,7 +1267,7 @@ test('i18n engine & zh-CN.json cover v2.34.0 UI, Unicode/case normalization, ter
       return 1;
     },
     console,
-    __AGY_I18N_CONFIG__: { enabled: true, language: 'zh-CN', brandTitle: 'hakimi' },
+    __AGY_I18N_CONFIG__: { enabled: true, language: 'zh-CN' },
     __AGY_I18N_DATA__: dict,
   };
   sandbox.window = sandbox;

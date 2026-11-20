@@ -5286,34 +5286,12 @@
   const chkPresetLang = el('chk-rec-lang');
   const chkPresetCtx = el('chk-rec-ctx');
 
-  const brandTitleBtns = {
-    hakimi: el('btn-brand-hakimi'),
-    translated: el('btn-brand-translated'),
-    hidden: el('btn-brand-hidden'),
-    english: el('btn-brand-english')
-  };
-
-  const btnApplyBrandTitle = el('btn-apply-brand-title');
-  const brandApplyFeedback = el('brand-apply-feedback');
-
-  let currentBrandTitle = 'hakimi';
   let currentEnhanceStatus = null;
   let pendingEnhanceConfirmMode = null; // 'preset' | 'restore' | null
   let isEnhanceBusy = false;
   let hasPendingLsReload = false;
 
-  function syncBrandTitleButtons(mode = currentBrandTitle) {
-    for (const [k, btn] of Object.entries(brandTitleBtns)) {
-      if (!btn) continue;
-      const active = k === mode;
-      if (active) addClass(btn, 'active');
-      else removeClass(btn, 'active');
-      btn.setAttribute?.('aria-pressed', String(active));
-    }
-  }
-
   function renderEnhanceSectionUI() {
-    syncBrandTitleButtons(currentBrandTitle);
     const data = currentEnhanceStatus;
     const s = data?.summary || data;
     const ctxUnlock = s?.contextUnlock || null;
@@ -5411,8 +5389,7 @@
         if (wantLang) {
           try {
             const lRes = await invokeModulesApi('toggle', 'chinese', true, {
-              language: 'zh-CN',
-              brandTitle: currentBrandTitle
+              language: 'zh-CN'
             });
             if (!lRes || !lRes.ok) {
               throw new Error(translateBackendText(lRes?.error) || t('mod.zh.toggleFail'));
@@ -5438,11 +5415,10 @@
         }
       } else if (mode === 'restore') {
         try {
-          const lRes = await invokeModulesApi('toggle', 'chinese', false, { language: 'en', brandTitle: 'english' });
+          const lRes = await invokeModulesApi('toggle', 'chinese', false, { language: 'en' });
           if (!lRes || !lRes.ok) {
             throw new Error(translateBackendText(lRes?.error) || t('mod.zh.toggleFail'));
           }
-          currentBrandTitle = 'english';
           doneParts.push(t('enhance.preset.itemLang'));
           needsHostRestart = true;
         } catch (stepErr) {
@@ -5503,201 +5479,6 @@
 
   btnEnhanceRestartHost?.addEventListener('click', openClientRestartConfirmFlow);
 
-  let selectedBrandTitle = currentBrandTitle;
-  let brandObserver = null;
-
-  function getBrandDisplayText(modeKey) {
-    if (modeKey === 'hakimi') return '哈基米';
-    if (modeKey === 'translated') return '反重力';
-    if (modeKey === 'hidden') return '';
-    return 'Antigravity';
-  }
-
-  function ensureBrandObserver(modeKey, targetBtn) {
-    if (brandObserver) {
-      try { brandObserver.disconnect(); } catch {}
-      brandObserver = null;
-    }
-    if (!targetBtn || modeKey === 'english') return;
-    const expected = getBrandDisplayText(modeKey);
-    try {
-      const container = targetBtn.parentElement || targetBtn;
-      brandObserver = new MutationObserver(() => {
-        const btn = document.querySelector('button[data-agy-brand-item="true"]') || targetBtn;
-        if (!btn) return;
-        const txt = btn.textContent?.trim() || '';
-        if (txt !== expected) {
-          btn.textContent = expected;
-        }
-      });
-      brandObserver.observe(container, { childList: true, subtree: true, characterData: true });
-    } catch {}
-  }
-
-  function applyBrandTitleToDom(modeKey) {
-    if (typeof document === 'undefined' || typeof document.querySelector !== 'function') {
-      return { found: false, applied: false, nodeText: null };
-    }
-    // 1. 优先通过持久化标记锁定曾确认过的品牌节点（确保隐藏清空文字后仍可精准识别与无损恢复）
-    let targetBtn = document.querySelector('button[data-agy-brand-item="true"]');
-
-    // 2. 若尚未标记，遍历所有 title-menu-bar-item 菜单按钮，精准仅匹配原文本或已知品牌文案节点
-    if (!targetBtn && typeof document.querySelectorAll === 'function') {
-      const menuItems = document.querySelectorAll('button[data-testid="title-menu-bar-item"]');
-      for (const btn of menuItems) {
-        const txt = btn.textContent?.trim();
-        if (txt === 'Antigravity' || txt === '反重力' || txt === '哈基米' || btn._agyBrandManaged) {
-          targetBtn = btn;
-          break;
-        }
-      }
-    }
-
-    // 3. 备选：极左上角区域（top <= 70 && left <= 300）候选定位
-    if (!targetBtn && typeof document.querySelectorAll === 'function') {
-      const candidateBtns = document.querySelectorAll('button.agy-button, button[class*="agy-button"]');
-      for (const btn of candidateBtns) {
-        const rect = btn.getBoundingClientRect ? btn.getBoundingClientRect() : { top: 0, left: 0 };
-        if (rect.top <= 70 && rect.left <= 300) {
-          const txt = btn.textContent?.trim();
-          if (txt === 'Antigravity' || txt === '反重力' || txt === '哈基米' || btn._agyBrandManaged) {
-            targetBtn = btn;
-            break;
-          }
-        }
-      }
-    }
-
-    if (!targetBtn) {
-      return { found: false, applied: false, nodeText: null };
-    }
-
-    // 永久保留节点引用与原始身份标记，不顺带修改 document.title 或任务栏标题
-    targetBtn.setAttribute('data-agy-brand-item', 'true');
-    targetBtn._agyBrandManaged = true;
-    if (!targetBtn._agyOriginalText) {
-      targetBtn._agyOriginalText = 'Antigravity';
-    }
-
-    const expectedText = getBrandDisplayText(modeKey);
-
-    const nodes = targetBtn.childNodes ? Array.from(targetBtn.childNodes) : (targetBtn.children || []);
-    let textNode = null;
-    for (const node of nodes) {
-      if (node && node.nodeType === 3) {
-        textNode = node;
-        break;
-      }
-    }
-
-    // 保留菜单入口可用（不设置 display: none，隐藏模式仅清空文字），确保菜单功能随时可点击
-    targetBtn.style.display = '';
-    if (textNode) {
-      textNode.nodeValue = expectedText;
-    } else {
-      targetBtn.textContent = expectedText;
-    }
-    targetBtn.setAttribute('data-agy-brand-mode', modeKey);
-
-    ensureBrandObserver(modeKey, targetBtn);
-
-    const currentText = targetBtn.textContent?.trim() || '';
-    const isApplied = (modeKey === 'hidden' ? currentText === '' : currentText === expectedText);
-
-    return {
-      found: true,
-      applied: isApplied,
-      nodeText: currentText
-    };
-  }
-
-  function showBrandFeedback(mode, isSuccess = true, customMsg = '', isApplied = false) {
-    if (!brandApplyFeedback) return;
-    if (!isSuccess) {
-      brandApplyFeedback.textContent = customMsg || t('msg.saveFail');
-      brandApplyFeedback.style.color = '#ef4444';
-      brandApplyFeedback.hidden = false;
-      return;
-    }
-    const modeLabel = t(`enhance.brand.${mode}`) || mode;
-    let msg = customMsg;
-    if (!msg) {
-      msg = isApplied
-        ? `${t('enhance.brand.switched', { mode: modeLabel })}（已即时生效）`
-        : `${t('enhance.brand.switched', { mode: modeLabel })}（未检测到目标，${t('models.status.pendingRestart')}）`;
-    }
-    brandApplyFeedback.textContent = msg;
-    if (!isApplied) {
-      const rBtn = document.createElement('button');
-      rBtn.type = 'button';
-      rBtn.className = 'unlock-btn unlock-btn-secondary';
-      rBtn.style.cssText = 'margin-left:8px;padding:2px 8px;font-size:11px;cursor:pointer;';
-      rBtn.textContent = t('models.btnRestartHost');
-      rBtn.addEventListener('click', () => openClientRestartConfirmFlow());
-      brandApplyFeedback.appendChild(rBtn);
-    }
-    brandApplyFeedback.style.color = isApplied ? '#10b981' : 'var(--ag-text-primary)';
-    brandApplyFeedback.hidden = false;
-  }
-
-  async function applyBrandTitleSetting(modeKey) {
-    try {
-      const res = await invokeModulesApi('toggle', 'chinese', currentChineseEnabled, {
-        language: currentChineseEnabled ? 'zh-CN' : 'en',
-        brandTitle: modeKey
-      });
-      if (!res || !res.ok) {
-        const err = translateBackendText(res?.error) || t('msg.saveFail');
-        showBrandFeedback(modeKey, false, err, false);
-        showEnhanceResultBox(false, err);
-        return;
-      }
-      currentBrandTitle = modeKey;
-      selectedBrandTitle = modeKey;
-      syncBrandTitleButtons(modeKey);
-
-      // 实时真实 DOM 应用
-      const domResult = applyBrandTitleToDom(modeKey);
-
-      // 实时热同步（若已注入运行时环境）
-      try {
-        if (typeof window !== 'undefined' && window.__AGY_I18N_CONFIG__) {
-          window.__AGY_I18N_CONFIG__.brandTitle = modeKey;
-          if (typeof window.__AGY_RUN_FULL_SCAN__ === 'function') {
-            window.__AGY_RUN_FULL_SCAN__();
-          }
-        }
-      } catch {}
-
-      const modeLabel = t(`enhance.brand.${modeKey}`) || modeKey;
-      if (domResult.applied) {
-        const appliedMsg = `${t('enhance.brand.switched', { mode: modeLabel })}（左上角品牌已切换为：${modeLabel}）`;
-        showBrandFeedback(modeKey, true, appliedMsg, true);
-        showEnhanceResultBox(true, appliedMsg, { needsHostRestart: false });
-      } else {
-        const pendingMsg = `${t('enhance.brand.switched', { mode: modeLabel })}（当前窗口未检测到品牌节点，重启客户端后生效）`;
-        showBrandFeedback(modeKey, true, pendingMsg, false);
-        showEnhanceResultBox(true, pendingMsg, { needsHostRestart: true });
-      }
-    } catch (e) {
-      const err = e?.message || t('msg.saveFail');
-      showBrandFeedback(modeKey, false, err, false);
-      showEnhanceResultBox(false, err);
-    }
-  }
-
-  for (const [modeKey, btn] of Object.entries(brandTitleBtns)) {
-    btn?.addEventListener('click', () => {
-      selectedBrandTitle = modeKey;
-      syncBrandTitleButtons(modeKey);
-      void applyBrandTitleSetting(modeKey);
-    });
-  }
-
-  btnApplyBrandTitle?.addEventListener('click', () => {
-    void applyBrandTitleSetting(selectedBrandTitle || currentBrandTitle);
-  });
-
   let lastVersionSyncState = null;
 
   function renderVersionSyncBanner(vs = lastVersionSyncState) {
@@ -5735,9 +5516,6 @@
       const cfg = res.data;
 
       currentChineseEnabled = Boolean(cfg.modules?.chinese?.enabled);
-      currentBrandTitle = cfg.modules?.chinese?.brandTitle || 'hakimi';
-      syncBrandTitleButtons(currentBrandTitle);
-      applyBrandTitleToDom(currentBrandTitle);
       // 判定宿主界面是否已翻译：定向检查系统导航、活动栏、菜单及操作按钮等固有系统壳层（排除用户消息内容区域）
       const isDomTranslated = (() => {
         if (typeof window.__AGY_I18N_DATA__ !== 'undefined' || typeof window.__AGY_TRANSLATE_EL__ !== 'undefined') {
@@ -5834,8 +5612,7 @@
     }
     try {
       const res = await invokeModulesApi('toggle', 'chinese', Boolean(wantChinese), {
-        language: wantChinese ? 'zh-CN' : 'en',
-        brandTitle: currentBrandTitle
+        language: wantChinese ? 'zh-CN' : 'en'
       });
       if (!res || !res.ok) {
         showEnhanceResultBox(false, translateBackendText(res?.error) || t('mod.zh.toggleFail'));

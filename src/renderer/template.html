@@ -645,10 +645,10 @@
           </div>
         </div>
 
-        <!-- 2. 客户端界面语言与品牌标题 (哈基米) -->
-        <div class="ctx-settings-card" id="client-brand-lang-card">
+        <!-- 2. 客户端界面语言 (哈基米) -->
+        <div class="ctx-settings-card" id="client-lang-card">
           <div class="ctx-settings-card-hdr">
-            <div class="ctx-settings-card-title" data-i18n="settings.clientLang.title">🖥️ 客户端界面语言与品牌（哈基米）</div>
+            <div class="ctx-settings-card-title" data-i18n="settings.clientLang.title">🖥️ 客户端界面语言（哈基米）</div>
             <span id="chinese-badge" class="key-pill pill-muted" data-i18n="settings.common.reading">读取中…</span>
           </div>
           <div id="chinese-status-desc" class="ctx-settings-card-desc" data-i18n="settings.clientLang.detecting">正在检测桌面端汉化运行状态…</div>
@@ -656,18 +656,9 @@
             <button id="btn-client-lang-zh-CN" class="ctx-seg-btn" type="button" data-client-lang="zh-CN">简体中文</button>
             <button id="btn-client-lang-en" class="ctx-seg-btn" type="button" data-client-lang="en">English</button>
           </div>
-          <div class="ctx-small-label" style="margin-top:8px" data-i18n="enhance.brand.label">左上角品牌文字显示（仅作用于左上角品牌位，不影响 Logo、菜单或代码）：</div>
-          <div class="ctx-segmented ctx-lang-segmented" id="brand-title-segmented" role="group" aria-label="品牌名称选项" data-i18n-aria="enhance.brand.aria">
-            <button id="btn-brand-hakimi" class="ctx-seg-btn active" type="button" data-brand-title="hakimi" data-i18n="enhance.brand.hakimi">哈基米</button>
-            <button id="btn-brand-translated" class="ctx-seg-btn" type="button" data-brand-title="translated" data-i18n="enhance.brand.translated">反重力</button>
-            <button id="btn-brand-hidden" class="ctx-seg-btn" type="button" data-brand-title="hidden" data-i18n="enhance.brand.hidden">隐藏品牌字样</button>
-            <button id="btn-brand-english" class="ctx-seg-btn" type="button" data-brand-title="english" data-i18n="enhance.brand.english">Antigravity (英文原样)</button>
-          </div>
-          <div id="brand-apply-feedback" class="ctx-brand-feedback" style="display:none;"></div>
-          <div id="client-lang-license-note" class="ctx-client-lang-note" data-i18n="settings.clientLang.licenseNote">说明：此设置控制桌面端壳层，与顶部插件面板语言相互独立。切换客户端语言或品牌标题在保存后需重启客户端完全生效。</div>
+          <div id="client-lang-license-note" class="ctx-client-lang-note" data-i18n="settings.clientLang.licenseNote">说明：此设置控制桌面端壳层，与顶部插件面板语言相互独立。切换客户端语言在保存后需重启客户端完全生效。</div>
           <div class="ctx-settings-card-actions">
             <button id="btn-toggle-chinese-module" class="unlock-btn unlock-btn-primary" type="button" data-i18n="settings.clientLang.toggle">切换汉化状态</button>
-            <button id="btn-apply-brand-title" class="unlock-btn unlock-btn-secondary" type="button" data-i18n="enhance.brand.applyBtn">保存品牌选择并应用</button>
           </div>
         </div>
 

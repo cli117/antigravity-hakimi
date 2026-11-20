@@ -16,30 +16,11 @@ const DEFAULT_CONFIG = {
     chinese: {
       enabled: true,
       language: 'zh-CN', // 'zh-CN' | 'en'
-      brandTitle: 'hakimi', // 'english' | 'hidden' | 'translated' | 'hakimi'
       desktopOnly: true,
       lastUpdated: null,
     },
   },
 };
-
-function normalizeBrandTitle(val) {
-  const raw = String(val || '').trim();
-  const s = raw.toLowerCase();
-  if (s === 'hidden' || s === 'hide' || s === 'off' || s === 'none') return 'hidden';
-  if (
-    s === 'translated' ||
-    s === 'zh' ||
-    s === 'cn' ||
-    s === 'fanzhongli' ||
-    s === 'anti-gravity' ||
-    raw === '反重力'
-  ) {
-    return 'translated';
-  }
-  if (s === 'hakimi' || raw === '哈基米') return 'hakimi';
-  return 'english';
-}
 
 function normalizeClientLanguage(val, enabledHint) {
   const s = String(val || '').trim().toLowerCase();
@@ -67,15 +48,12 @@ function loadModulesConfig() {
           parsed.modules.meter || {}
         );
         const rawChinese = parsed.modules.chinese || {};
-        current.modules.chinese = Object.assign({}, DEFAULT_CONFIG.modules.chinese, rawChinese);
-        current.modules.chinese.language = normalizeClientLanguage(
-          rawChinese.language,
-          rawChinese.enabled
-        );
-        current.modules.chinese.brandTitle =
-          rawChinese.brandTitle !== undefined
-            ? normalizeBrandTitle(rawChinese.brandTitle)
-            : DEFAULT_CONFIG.modules.chinese.brandTitle;
+        current.modules.chinese = {
+          enabled: true,
+          language: normalizeClientLanguage(rawChinese.language, rawChinese.enabled),
+          desktopOnly: true,
+          lastUpdated: rawChinese.lastUpdated || null,
+        };
         current.modules.chinese.enabled = current.modules.chinese.language === 'zh-CN';
         return current;
       }
@@ -101,10 +79,6 @@ function saveModulesConfig(cfg) {
           cfg?.modules?.chinese?.language,
           cfg?.modules?.chinese?.enabled
         ),
-        brandTitle:
-          cfg?.modules?.chinese?.brandTitle !== undefined
-            ? normalizeBrandTitle(cfg.modules.chinese.brandTitle)
-            : DEFAULT_CONFIG.modules.chinese.brandTitle,
         desktopOnly: true,
         lastUpdated: cfg?.modules?.chinese?.lastUpdated || null,
       },
@@ -377,7 +351,6 @@ module.exports = {
   SCHEMA_VERSION,
   PROJECT_VERSION,
   DEFAULT_CONFIG,
-  normalizeBrandTitle,
   normalizeClientLanguage,
   getModulesConfigPath,
   loadModulesConfig,
