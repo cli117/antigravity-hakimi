@@ -1188,3 +1188,143 @@ test('v2.34.0+ dist/utils.js loadHubWindowUrl anchor and authBootstrap CSRF reso
     /CSRF token unavailable/
   );
 });
+
+test('i18n engine & zh-CN.json cover v2.34.0 UI, Unicode/case normalization, terminal-card boundary, and dynamic attributes', () => {
+  const dictPath = path.join(ROOT, 'payload', 'dist', 'i18n', 'zh-CN.json');
+  const runtimePath = path.join(ROOT, 'payload', 'dist', 'i18n', 'i18n-runtime.js');
+  const dict = JSON.parse(fs.readFileSync(dictPath, 'utf8'));
+  const runtimeCode = fs.readFileSync(runtimePath, 'utf8');
+  const { createI18nEngine } = require(runtimePath);
+
+  // Every pattern regex in zh-CN.json must compile cleanly
+  assert.ok(Array.isArray(dict.patterns) && dict.patterns.length >= 500);
+  for (const p of dict.patterns) {
+    assert.doesNotThrow(() => new RegExp(p.regex), `Invalid i18n regex: ${p.regex}`);
+  }
+
+  const engine = createI18nEngine(dict);
+
+  // Unicode ellipsis & curly quote normalization
+  assert.equal(engine.translate('Updating…'), '正在更新...');
+  assert.equal(engine.translate('This site can’t be reached'), '无法访问此网站');
+  assert.equal(engine.translate('“foo” isn’t a valid folder name.'), '“foo”不是有效的文件夹名称。');
+  assert.equal(engine.translate('Retrying transcription (attempt 2)…'), '正在重试音频转录（第 2 次）…');
+
+  // Case-insensitive fallback for multi-word / capitalized UI strings while keeping short acronyms untouched
+  assert.equal(engine.translate('CLOSE PANEL'), '关闭面板');
+  assert.equal(engine.translate('voice speed'), '语速');
+  assert.equal(engine.translate('OK'), null);
+
+  // Key v2.34.0 exact & dynamic UI strings
+  assert.equal(engine.translate('Orchestrator'), '编排器');
+  assert.equal(engine.translate('Side Question'), '旁路提问');
+  assert.equal(engine.translate('Connectors'), '连接器');
+  assert.equal(engine.translate('Customize Sidebar'), '自定义侧边栏');
+  assert.equal(engine.translate('Plan, 2 of 5 steps done'), '计划：已完成 2 / 5 步');
+  assert.equal(engine.translate('Open Subagent: Codebase Researcher'), '打开子智能体：Codebase Researcher');
+  assert.equal(engine.translate('Show 3 more subagents'), '显示其余 3 个子智能体');
+  assert.equal(engine.translate('Working directory: /tmp/demo'), '工作目录：/tmp/demo');
+  assert.equal(engine.translate('12 lines added, 4 lines removed'), '新增 12 行，删除 4 行');
+  assert.equal(engine.translate('Show more (8)'), '显示更多 (8)');
+  assert.equal(engine.translate('Close (Escape)'), '关闭 (Escape)');
+
+  // DOM boundary check: group/terminal-card must be translated, while exact .terminal / .token stay untouched
+  const rootEl = createMockElement('HTML');
+  const bodyEl = createMockElement('BODY');
+
+  const terminalCard = createMockElement('DIV', {}, 'group/terminal-card mt-0.5 flex');
+  const cardLabel = createMockElement('SPAN', { title: 'Working directory' }, 'text-xs');
+  const cardText = createMockTextNode('Working directory: /tmp/demo');
+  cardLabel.appendChild(cardText);
+  terminalCard.appendChild(cardLabel);
+
+  const rawTerminal = createMockElement('DIV', {}, 'terminal xterm-rows');
+  const rawTermText = createMockTextNode('Working directory: /tmp/demo');
+  rawTerminal.appendChild(rawTermText);
+
+  const prismToken = createMockElement('SPAN', {}, 'token keyword');
+  const prismText = createMockTextNode('Orchestrator');
+  prismToken.appendChild(prismText);
+
+  const popoverEl = createMockElement('DIV', { 'data-popover-popup': '' }, '');
+  const listboxEl = createMockElement('DIV', { role: 'listbox' }, '');
+
+  bodyEl.appendChild(terminalCard);
+  bodyEl.appendChild(rawTerminal);
+  bodyEl.appendChild(prismToken);
+  bodyEl.appendChild(popoverEl);
+  bodyEl.appendChild(listboxEl);
+  rootEl.appendChild(bodyEl);
+
+  let observerOpts = null;
+  let observerCb = null;
+  class CapturingMutationObserver {
+    constructor(cb) {
+      observerCb = cb;
+    }
+    observe(_target, opts) {
+      observerOpts = opts;
+    }
+    disconnect() {}
+  }
+
+  const doc = {
+    documentElement: rootEl,
+    body: bodyEl,
+    readyState: 'complete',
+    title: 'Antigravity',
+    addEventListener() {},
+    querySelectorAll() {
+      return [];
+    },
+  };
+
+  const sandbox = {
+    document: doc,
+    Document: function FakeDocument() {},
+    MutationObserver: CapturingMutationObserver,
+    Set,
+    Map,
+    RegExp,
+    Object,
+    String,
+    Array,
+    Date,
+    setInterval() {
+      return 1;
+    },
+    clearInterval() {},
+    setTimeout() {
+      return 1;
+    },
+    clearTimeout() {},
+    requestAnimationFrame(cb) {
+      cb();
+      return 1;
+    },
+    console,
+    __AGY_I18N_CONFIG__: { enabled: true, language: 'zh-CN', brandTitle: 'hakimi' },
+    __AGY_I18N_DATA__: dict,
+  };
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+
+  vm.runInNewContext(runtimeCode, sandbox, { filename: 'i18n-runtime.js' });
+
+  // group/terminal-card translated; exact .terminal and .token preserved
+  assert.equal(cardText.nodeValue, '工作目录：/tmp/demo');
+  assert.equal(cardLabel.getAttribute('title'), '工作目录');
+  assert.equal(rawTermText.nodeValue, 'Working directory: /tmp/demo');
+  assert.equal(prismText.nodeValue, 'Orchestrator');
+
+  // Floating selectors recognize data-popover-popup and role="listbox"
+  assert.equal(sandbox.__AGY_IS_FLOATING__(popoverEl), true);
+  assert.equal(sandbox.__AGY_IS_FLOATING__(listboxEl), true);
+
+  // MutationObserver safely watches dynamic translatable attributes
+  assert.equal(observerOpts.attributes, true);
+  assert.ok(Array.isArray(observerOpts.attributeFilter) && observerOpts.attributeFilter.includes('title'));
+  cardLabel.setAttribute('title', 'Customize Sidebar');
+  observerCb([{ type: 'attributes', target: cardLabel, attributeName: 'title' }]);
+  assert.equal(cardLabel.getAttribute('title'), '自定义侧边栏');
+});

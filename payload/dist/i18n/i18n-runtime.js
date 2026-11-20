@@ -1,12 +1,13 @@
 /**
- * Antigravity Chinese Localization Engine (Runtime v3.3.4)
- * 支持 2.17.0 复合 Alert 自愈 / WSL 跨平台菜单与弹窗适配 / 官方 10 大插件与 131 项技能全量汉化 / 极速性能闭环
+ * Antigravity Chinese Localization Engine (Runtime v3.4.0)
+ * 支持 Antigravity v2.34.0 全量界面汉化 / Unicode 标点与大小写智能归一化 / 动态属性监听 / 精准忽略边界
  *
  * 核心改进：
  * 1. 彻底阻断 requestIdleCallback 自旋死循环，改为 15 秒低频保底扫描
  * 2. 增加 DOM 否定标记，未命中节点二次扫描 O(1) 瞬时退出
- * 3. 增加悬浮 Portal/Tooltip 门禁过滤与 100ms 节流阀，根绝 mouseover 树暴搜
- * 4. 算法与死代码优化：英文字母快速短路、移除 Step 5 patterns 死代码、空格/长度门禁、双向 Map 缓存
+ * 3. 增加悬浮 Portal/Tooltip/Popover/Listbox 门禁过滤与 120ms 节流阀，根绝 mouseover 树暴搜
+ * 4. 精准类名边界匹配：区分 .terminal / .token 与 group/terminal-card，避免误伤终端卡片 UI
+ * 5. Unicode 引号/省略号归一化、安全大小写回退、macOS 快捷键符号与安全动态属性观察
  */
 (function (root) {
   'use strict';
@@ -27,11 +28,56 @@
       };
     });
 
+    var hasOwn = Object.prototype.hasOwnProperty;
+
+    function normalizeWhitespace(str) {
+      return str.replace(/[\u00a0\s]+/g, ' ').trim();
+    }
+
+    function canonicalizeForLookup(str) {
+      return str
+        .replace(/[\u2018\u2019]/g, "'")
+        .replace(/[\u201c\u201d]/g, '"')
+        .replace(/\u2026/g, '...');
+    }
+
     var translatedValues = {};
+    var exactDictCanonical = {};
+    var exactDictLower = {};
     for (var k in exactDict) {
-      if (exactDict.hasOwnProperty(k)) {
-        translatedValues[exactDict[k]] = true;
+      if (hasOwn.call(exactDict, k)) {
+        var v = exactDict[k];
+        translatedValues[v] = true;
+        var ck = canonicalizeForLookup(normalizeWhitespace(k));
+        if (ck && !hasOwn.call(exactDictCanonical, ck)) {
+          exactDictCanonical[ck] = v;
+        }
+        if (ck && ck.length >= 4 && !/^[A-Z0-9\s\-_]+$/.test(ck)) {
+          var lk = ck.toLowerCase();
+          if (!hasOwn.call(exactDictLower, lk)) {
+            exactDictLower[lk] = v;
+          }
+        }
       }
+    }
+
+    function lookupExact(normalized, canonical) {
+      if (hasOwn.call(exactDict, normalized)) {
+        return exactDict[normalized];
+      }
+      if (canonical !== normalized && hasOwn.call(exactDict, canonical)) {
+        return exactDict[canonical];
+      }
+      if (hasOwn.call(exactDictCanonical, canonical)) {
+        return exactDictCanonical[canonical];
+      }
+      if (canonical.length >= 4 && (canonical.indexOf(' ') !== -1 || /^[A-Z]/.test(canonical))) {
+        var lower = canonical.toLowerCase();
+        if (hasOwn.call(exactDictLower, lower)) {
+          return exactDictLower[lower];
+        }
+      }
+      return null;
     }
 
     var translationCache = typeof Map !== 'undefined' ? new Map() : null;
@@ -55,11 +101,23 @@
       return value;
     }
 
-    function normalizeWhitespace(str) {
-      return str.replace(/\s+/g, ' ').trim();
+    function runPatterns(str) {
+      for (var i = 0; i < patterns.length; i++) {
+        var p = patterns[i];
+        if (p.regex.test(str)) {
+          p.regex.lastIndex = 0;
+          var result = str.replace(p.regex, p.replacement);
+          for (var pi = 0; pi < patterns.length; pi++) {
+            if (patterns[pi].regex.test(result)) {
+              patterns[pi].regex.lastIndex = 0;
+              result = result.replace(patterns[pi].regex, patterns[pi].replacement);
+            }
+          }
+          return result;
+        }
+      }
+      return null;
     }
-
-    var hasOwn = Object.prototype.hasOwnProperty;
 
     function translateSingleUnit(rawStr) {
       if (!rawStr || typeof rawStr !== 'string') return null;
@@ -70,11 +128,14 @@
         return translationCache.get(normalized);
       }
 
-      if (hasOwn.call(exactDict, normalized)) {
-        return cacheAndReturn(normalized, exactDict[normalized]);
+      var canonical = canonicalizeForLookup(normalized);
+
+      var exactHit = lookupExact(normalized, canonical);
+      if (exactHit !== null) {
+        return cacheAndReturn(normalized, exactHit);
       }
 
-      if (!/[a-zA-Z]/.test(normalized)) {
+      if (!/[a-zA-Z]/.test(canonical)) {
         return cacheAndReturn(normalized, null);
       }
 
@@ -86,40 +147,36 @@
         return cacheAndReturn(normalized, null);
       }
 
-      for (var i = 0; i < patterns.length; i++) {
-        var p = patterns[i];
-        if (p.regex.test(normalized)) {
-          var result = normalized.replace(p.regex, p.replacement);
-          for (var pi = 0; pi < patterns.length; pi++) {
-            if (patterns[pi].regex.test(result)) {
-              result = result.replace(patterns[pi].regex, patterns[pi].replacement);
-            }
-          }
-          p.regex.lastIndex = 0;
-          return cacheAndReturn(normalized, result);
-        }
+      var patternHit = runPatterns(canonical);
+      if (patternHit !== null && patternHit !== canonical) {
+        return cacheAndReturn(normalized, patternHit);
       }
 
-      var punctuationMatch = normalized.match(/^([\w\s\-\/]+)([:：…\.？\?!！]+)$/);
+      var punctuationMatch = canonical.match(/^([\w\s\-\/'",+&()]+?)(\.\.\.|[:：…\.？\?!！]+)$/);
       if (punctuationMatch) {
         var base = punctuationMatch[1].trim();
         var punc = punctuationMatch[2];
-        if (hasOwn.call(exactDict, base)) {
-          return cacheAndReturn(normalized, exactDict[base] + (punc === ':' ? '：' : punc));
+        if (base) {
+          var baseHit = lookupExact(base, base);
+          if (baseHit !== null) {
+            var zhPunc = punc === ':' ? '：' : (punc === '...' ? '…' : punc);
+            return cacheAndReturn(normalized, baseHit + zhPunc);
+          }
         }
       }
 
-      var hotkeyMatch = normalized.match(/^([\w\s\-\/]+?)\s*(\((?:Ctrl|Cmd|Alt|Shift)\+[^\s\)]+\)|\b(?:Ctrl|Cmd|Alt|Shift)\+[\w;:,\\/+\-]+)$/i);
+      var hotkeyMatch = canonical.match(/^([\w\s\-\/'&]+?)\s*(\((?:(?:Ctrl|Cmd|Alt|Shift|Option|Meta|⌘|⇧|⌥|⌃)\+|Escape|Esc|Enter|Return|Tab|Delete|Backspace|↵|⌫)[^\)]*\)|(?:(?:Ctrl|Cmd|Alt|Shift|⌘|⇧|⌥|⌃)\+[\w;:,\\/+\-⌘⇧⌥⌃↵⌫]+|[⌘⇧⌥⌃]+[\w↵⌫]+))$/i);
       if (hotkeyMatch) {
         var cmdBase = hotkeyMatch[1].trim();
         var hotkey = hotkeyMatch[2].trim();
-        if (hasOwn.call(exactDict, cmdBase)) {
-          return cacheAndReturn(normalized, exactDict[cmdBase] + (hotkey.charAt(0) === '(' ? ' ' + hotkey : ' ' + hotkey));
+        var cmdHit = lookupExact(cmdBase, cmdBase);
+        if (cmdHit !== null) {
+          return cacheAndReturn(normalized, cmdHit + ' ' + hotkey);
         }
       }
 
-      if (normalized.indexOf('. ') !== -1 || normalized.indexOf('! ') !== -1 || normalized.indexOf('? ') !== -1 || normalized.indexOf('。') !== -1) {
-        var sentences = normalized.split(/([.!?]\s+|[。！？]\s*)/);
+      if (canonical.indexOf('. ') !== -1 || canonical.indexOf('! ') !== -1 || canonical.indexOf('? ') !== -1 || canonical.indexOf('。') !== -1) {
+        var sentences = canonical.split(/([.!?]\s+|[。！？]\s*)/);
         var anyTranslated = false;
         var allTranslated = true;
         var translatedParts = [];
@@ -130,25 +187,19 @@
             translatedParts.push(part.replace(/\.\s*/g, '。 '));
             continue;
           }
-          var transPart = (hasOwn.call(exactDict, trimmedPart) ? exactDict[trimmedPart] : null) ||
-                          (hasOwn.call(exactDict, trimmedPart + '.') ? exactDict[trimmedPart + '.'] : null);
+          var transPart = lookupExact(trimmedPart, trimmedPart) ||
+                          lookupExact(trimmedPart + '.', trimmedPart + '.');
           if (!transPart) {
-            for (var pIdx = 0; pIdx < patterns.length; pIdx++) {
-              if (patterns[pIdx].regex.test(trimmedPart)) {
-                transPart = trimmedPart.replace(patterns[pIdx].regex, patterns[pIdx].replacement);
-                for (var pi2 = 0; pi2 < patterns.length; pi2++) {
-                  if (patterns[pi2].regex.test(transPart)) {
-                    transPart = transPart.replace(patterns[pi2].regex, patterns[pi2].replacement);
-                  }
-                }
-                break;
-              }
-            }
+            transPart = runPatterns(trimmedPart);
           }
           if (!transPart) {
-            var pMatch = trimmedPart.match(/^([\w\s\-\/]+)([:：…\.？\?!！]+)$/);
-            if (pMatch && hasOwn.call(exactDict, pMatch[1].trim())) {
-              transPart = exactDict[pMatch[1].trim()] + (pMatch[2] === ':' ? '：' : pMatch[2]);
+            var pMatch = trimmedPart.match(/^([\w\s\-\/'",+&()]+?)(\.\.\.|[:：…\.？\?!！]+)$/);
+            if (pMatch) {
+              var pBase = pMatch[1].trim();
+              var pBaseHit = pBase ? lookupExact(pBase, pBase) : null;
+              if (pBaseHit !== null) {
+                transPart = pBaseHit + (pMatch[2] === ':' ? '：' : (pMatch[2] === '...' ? '…' : pMatch[2]));
+              }
             }
           }
           if (transPart) {
@@ -212,18 +263,36 @@
     'IFRAME': 1, 'VIDEO': 1, 'AUDIO': 1
   };
 
-  var IGNORED_CLASSES = [
+  var IGNORED_CLASS_SUBSTRINGS = [
     'monaco-editor',
     'view-lines',
     'view-line',
     'monaco-mouse-cursor-text',
     'xterm',
-    'terminal',
-    'token',
     'hljs',
     'code-block',
     'editor-instance'
   ];
+
+  // 仅精确匹配独立类名 token，避免将 Tailwind 语义类名如 group/terminal-card 或 token-count 误判为代码/终端输出区
+  var IGNORED_EXACT_CLASSES = {
+    'terminal': 1,
+    'token': 1
+  };
+
+  function hasIgnoredClass(className) {
+    if (!className || typeof className !== 'string') return false;
+    for (var i = 0; i < IGNORED_CLASS_SUBSTRINGS.length; i++) {
+      if (className.indexOf(IGNORED_CLASS_SUBSTRINGS[i]) !== -1) return true;
+    }
+    if (className.indexOf('terminal') !== -1 || className.indexOf('token') !== -1) {
+      var parts = className.split(/\s+/);
+      for (var j = 0; j < parts.length; j++) {
+        if (IGNORED_EXACT_CLASSES[parts[j]]) return true;
+      }
+    }
+    return false;
+  }
 
   var TRANSLATABLE_ATTRS = ['title', 'placeholder', 'aria-label', 'data-tooltip', 'alt', 'aria-description'];
 
@@ -256,11 +325,7 @@
     if (isModelSelectorBoundary(el)) return true;
 
     var className = typeof el.className === 'string' ? el.className : '';
-    if (className) {
-      for (var i = 0; i < IGNORED_CLASSES.length; i++) {
-        if (className.indexOf(IGNORED_CLASSES[i]) !== -1) return true;
-      }
-    }
+    if (className && hasIgnoredClass(className)) return true;
 
     // 向上检查最近 3 层祖先，防止子文本/图标元素在受保护区域（如 trigger/item 内部）
     var ancestor = el.parentElement;
@@ -268,11 +333,7 @@
       if (IGNORED_TAGS[ancestor.tagName]) return true;
       if (isModelSelectorBoundary(ancestor)) return true;
       var ancestorClass = typeof ancestor.className === 'string' ? ancestor.className : '';
-      if (ancestorClass) {
-        for (var ci = 0; ci < IGNORED_CLASSES.length; ci++) {
-          if (ancestorClass.indexOf(IGNORED_CLASSES[ci]) !== -1) return true;
-        }
-      }
+      if (ancestorClass && hasIgnoredClass(ancestorClass)) return true;
       ancestor = ancestor.parentElement;
     }
     return false;
@@ -474,23 +535,25 @@
       }
     }
 
-    // 翻译属性
-    for (var i = 0; i < TRANSLATABLE_ATTRS.length; i++) {
-      var attr = TRANSLATABLE_ATTRS[i];
-      if (el.hasAttribute && el.hasAttribute(attr)) {
-        var val = el.getAttribute(attr);
-        if (val) {
-          // 检查是否已翻译过此属性
-          var markKey = MARK_ATTR + '_' + attr;
-          if (el[markKey] === val) continue;
+    // 翻译属性（仅在启用汉化时）
+    if (i18nEnabled) {
+      for (var i = 0; i < TRANSLATABLE_ATTRS.length; i++) {
+        var attr = TRANSLATABLE_ATTRS[i];
+        if (el.hasAttribute && el.hasAttribute(attr)) {
+          var val = el.getAttribute(attr);
+          if (val) {
+            // 检查是否已翻译过此属性
+            var markKey = MARK_ATTR + '_' + attr;
+            if (el[markKey] === val) continue;
 
-          var trans = translateSingleUnit(val);
-          if (trans !== null && trans !== val) {
-            el.setAttribute(attr, trans);
-            el[markKey] = trans; // 标记已翻译的值
-          } else {
-            // 关键性能优化：补充 DOM 否定标记，未命中时记录原属性值，二次扫描直接 O(1) 退出
-            el[markKey] = val;
+            var trans = translateSingleUnit(val);
+            if (trans !== null && trans !== val) {
+              el.setAttribute(attr, trans);
+              el[markKey] = trans; // 标记已翻译的值
+            } else {
+              // 关键性能优化：补充 DOM 否定标记，未命中时记录原属性值，二次扫描直接 O(1) 退出
+              el[markKey] = val;
+            }
           }
         }
       }
@@ -499,7 +562,7 @@
     // 遍历子节点
     // 联合文本自愈：如果元素直接子节点全为纯文本节点且数量 > 1（常见于 React 碎片化模板拆分，如 "All ", e, "s run as Flash."）
     var first = el.firstChild;
-    if (first && first.nextSibling) {
+    if (i18nEnabled && first && first.nextSibling) {
       var allText = true;
       var cur = first;
       while (cur) {
@@ -592,13 +655,16 @@
     }
   }
 
+  var FLOATING_SELECTOR = '[role="tooltip"], [role="menu"], [role="dialog"], [role="alertdialog"], [role="listbox"], [data-floating-ui-portal], [data-popover-popup], [data-radix-popper-content-wrapper], .popover, .tooltip, .context-view, .monaco-hover';
+
   function reconnectObserver() {
     if (observer && !observing && doc && doc.documentElement) {
       observer.observe(doc.documentElement, {
         childList: true,
         subtree: true,
-        characterData: true
-        // 不再监听 attributes！避免 setAttribute 触发死循环
+        characterData: true,
+        attributes: true,
+        attributeFilter: TRANSLATABLE_ATTRS
       });
       observing = true;
     }
@@ -707,6 +773,16 @@
               mutation.target._agyOriginal = undefined;
               enqueueNode(mutation.target);
             }
+          } else if (mutation.type === 'attributes') {
+            var attrTarget = mutation.target;
+            var attrName = mutation.attributeName;
+            if (attrTarget && attrTarget.nodeType === 1 && attrName && attrTarget.getAttribute) {
+              var curAttrVal = attrTarget.getAttribute(attrName);
+              var attrMarkKey = MARK_ATTR + '_' + attrName;
+              if (curAttrVal && attrTarget[attrMarkKey] !== curAttrVal) {
+                enqueueNode(attrTarget);
+              }
+            }
           }
         }
         if (pendingNodes.length > 0) {
@@ -743,14 +819,14 @@
 
     if (el.matches) {
       try {
-        if (el.matches('[role="tooltip"], [role="menu"], [role="dialog"], [data-floating-ui-portal], [data-radix-popper-content-wrapper], .popover, .tooltip, .context-view, .monaco-hover')) {
+        if (el.matches(FLOATING_SELECTOR)) {
           return true;
         }
       } catch (e) {}
     }
     var role = el.getAttribute ? el.getAttribute('role') : '';
-    if (role === 'tooltip' || role === 'menu' || role === 'dialog') return true;
-    if (el.hasAttribute && (el.hasAttribute('data-floating-ui-portal') || el.hasAttribute('data-radix-popper-content-wrapper'))) return true;
+    if (role === 'tooltip' || role === 'menu' || role === 'dialog' || role === 'alertdialog' || role === 'listbox') return true;
+    if (el.hasAttribute && (el.hasAttribute('data-floating-ui-portal') || el.hasAttribute('data-popover-popup') || el.hasAttribute('data-radix-popper-content-wrapper'))) return true;
     if (cls) {
       if (cls.indexOf('popover') !== -1 || cls.indexOf('tooltip') !== -1 || cls.indexOf('context-view') !== -1 || cls.indexOf('monaco-hover') !== -1) {
         return true;
@@ -816,7 +892,7 @@
           if (last && last.previousElementSibling && isFloatingElement(last.previousElementSibling)) {
             translateElement(last.previousElementSibling);
           }
-          var tooltips = doc.querySelectorAll ? doc.querySelectorAll('[role="tooltip"], [role="menu"], [role="dialog"], [data-floating-ui-portal], [data-radix-popper-content-wrapper], .popover, .tooltip, .context-view, .monaco-hover') : null;
+          var tooltips = doc.querySelectorAll ? doc.querySelectorAll(FLOATING_SELECTOR) : null;
           if (tooltips && tooltips.length > 0) {
             for (var tIdx = 0; tIdx < tooltips.length; tIdx++) {
               translateElement(tooltips[tIdx]);
