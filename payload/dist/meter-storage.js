@@ -43,9 +43,11 @@ function safeWriteJsonSync(targetPath, data, options = {}) {
 
   // 序列化
   let serialized;
+  let expectedBuf;
   try {
     const indent = options.indent !== undefined ? options.indent : 2;
     serialized = JSON.stringify(data, null, indent) + '\n';
+    expectedBuf = Buffer.from(serialized, 'utf8');
   } catch (err) {
     return { ok: false, phase: 'serialize', error: err?.message || 'JSON 序列化失败', path: resolved };
   }
@@ -58,22 +60,33 @@ function safeWriteJsonSync(targetPath, data, options = {}) {
 
   // 1. 写入临时文件
   try {
-    fsImpl.writeFileSync(tmpPath, serialized, 'utf8');
+    fsImpl.writeFileSync(tmpPath, expectedBuf);
   } catch (err) {
     try { if (fsImpl.existsSync(tmpPath)) fsImpl.unlinkSync(tmpPath); } catch {}
     return { ok: false, phase: 'write_temp', error: err?.message || '写入临时文件失败', path: resolved };
   }
 
-  // 2. 替换前校验（pre-verify）
-  try {
-    const tmpContent = fsImpl.readFileSync(tmpPath, 'utf8');
-    const parsed = JSON.parse(tmpContent);
-    if (typeof options.validate === 'function') {
-      const valid = options.validate(parsed);
-      if (!valid) {
-        throw new Error('临时文件内容未通过业务校验规则');
-      }
+  const verifyWrittenContent = (filePath, strictReparse) => {
+    const raw = fsImpl.readFileSync(filePath);
+    const bytesMatch = Buffer.isBuffer(raw)
+      ? raw.equals(expectedBuf)
+      : String(raw) === serialized;
+    if (!bytesMatch) {
+      throw new Error('落盘内容与序列化字节不一致');
     }
+    if (strictReparse) {
+      const parsed = JSON.parse(Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw));
+      if (typeof options.validate === 'function' && !options.validate(parsed)) {
+        throw new Error('文件内容未通过业务校验规则');
+      }
+    } else if (typeof options.validate === 'function' && !options.validate(data)) {
+      throw new Error('文件内容未通过业务校验规则');
+    }
+  };
+
+  // 2. 替换前校验（pre-verify：字节一致性比对 + 业务校验，避免大账本重复全量 JSON.parse）
+  try {
+    verifyWrittenContent(tmpPath, options.strictReparse === true);
   } catch (err) {
     try { if (fsImpl.existsSync(tmpPath)) fsImpl.unlinkSync(tmpPath); } catch {}
     return { ok: false, phase: 'pre_verify', error: err?.message || '临时文件校验失败', path: resolved };
@@ -97,14 +110,7 @@ function safeWriteJsonSync(targetPath, data, options = {}) {
 
   // 4. 替换后校验（post-verify）
   try {
-    const finalContent = fsImpl.readFileSync(resolved, 'utf8');
-    const finalParsed = JSON.parse(finalContent);
-    if (typeof options.validate === 'function') {
-      const valid = options.validate(finalParsed);
-      if (!valid) {
-        throw new Error('目标文件写后校验未通过业务规则');
-      }
-    }
+    verifyWrittenContent(resolved, options.strictReparse === true);
   } catch (postErr) {
     // 此时目标已被替换，明确报告 post_verify 阶段失败，不虚报回滚成功
     return { ok: false, phase: 'post_verify', error: postErr?.message || '替换后读回校验失败', path: resolved };
@@ -113,7 +119,7 @@ function safeWriteJsonSync(targetPath, data, options = {}) {
   return {
     ok: true,
     path: resolved,
-    bytesWritten: Buffer.byteLength(serialized, 'utf8')
+    bytesWritten: expectedBuf.length
   };
 }
 

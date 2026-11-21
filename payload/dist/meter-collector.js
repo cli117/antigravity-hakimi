@@ -33,6 +33,23 @@ const {
   MAX_SPEED_SAMPLES_PER_MODEL
 } = require('./meter-core');
 
+const MAX_CONVERSATION_WORKSPACES = 200;
+const MAX_FILES_CACHE = 200;
+const MAX_CONVERSATIONS_CACHE = 60;
+const MAX_REMOTE_HOST_STATUS_CACHE = 32;
+
+function setBoundedMap(map, key, value, maxSize, shouldSkipEvict = null) {
+  if (map.has(key)) map.delete(key);
+  map.set(key, value);
+  if (map.size <= maxSize) return;
+  for (const [oldKey, oldVal] of map.entries()) {
+    if (map.size <= maxSize) break;
+    if (oldKey === key) continue;
+    if (typeof shouldSkipEvict === 'function' && shouldSkipEvict(oldVal)) continue;
+    map.delete(oldKey);
+  }
+}
+
 const conversationWorkspaces = new Map();
 
 /**
@@ -482,7 +499,7 @@ async function scanFiles(media, options = {}) {
   if (work.length) {
     try {
       const parsed = await pythonScan(work.map(({ key, path }) => ({ key, path })));
-      for (const result of parsed) { const job = work.find(w => w.key === result.key); if (job) { filesCache.set(job.cacheKey, result); results.set(job.key, result); } }
+      for (const result of parsed) { const job = work.find(w => w.key === result.key); if (job) { setBoundedMap(filesCache, job.cacheKey, result, MAX_FILES_CACHE); results.set(job.key, result); } }
     } catch (e) { for (const job of work) results.set(job.key, { ...empty(), status: 'unknown', unknownParts: [e.message] }); }
   }
   return media.map(item => ({ ...item, ...(results.get(item.uri) || { ...empty(), status: 'unknown', unknownParts: ['未返回附件统计'] }), uri: undefined, key: undefined }));
@@ -510,7 +527,7 @@ async function collect(origin, id, options = {}) {
     const trajectory = full.trajectory;
     if (!trajectory) throw new Error('未取得会话历史，无法完整统计');
     const wsPath = extractWorkspaceFromTrajectory(trajectory, { isRemote });
-    if (wsPath && !isRemote) conversationWorkspaces.set(id.toLowerCase(), wsPath);
+    if (wsPath && !isRemote) setBoundedMap(conversationWorkspaces, id.toLowerCase(), wsPath, MAX_CONVERSATION_WORKSPACES);
     const steps = trajectory.steps || [];
     const expected = Number(full.numTotalSteps ?? steps.length);
     while (steps.length < expected) {
@@ -625,10 +642,10 @@ async function collect(origin, id, options = {}) {
       scannedAt: Date.now(),
       errors: []
     };
-    conversations.set(key, { result, at: Date.now() });
+    setBoundedMap(conversations, key, { result, at: Date.now() }, MAX_CONVERSATIONS_CACHE, (v) => Boolean(v && v.pending));
     return result;
   })();
-  conversations.set(key, { ...previous, pending: task });
+  setBoundedMap(conversations, key, { ...previous, pending: task }, MAX_CONVERSATIONS_CACHE, (v) => Boolean(v && v.pending));
   try { return await task; } catch (e) { conversations.delete(key); throw e; }
 }
 
@@ -659,6 +676,30 @@ function isCompanionOrTempFile(fileName) {
 // 逐请求已计价账本持久化、合成数据隔离与幂等入账
 // ============================================================================
 let cachedLedger = null;
+let pendingLedgerFlushTimer = null;
+let pendingLedgerDraft = null;
+let lastLedgerFlushAt = 0;
+const STREAMING_LEDGER_DEBOUNCE_MS = 1500;
+const STREAMING_LEDGER_MAX_DELAY_MS = 2500;
+
+function flushPricingLedger() {
+  if (pendingLedgerFlushTimer) {
+    clearTimeout(pendingLedgerFlushTimer);
+    pendingLedgerFlushTimer = null;
+  }
+  if (!pendingLedgerDraft) {
+    return { ok: true, flushed: false };
+  }
+  const toSave = pendingLedgerDraft;
+  pendingLedgerDraft = null;
+  const saveRes = savePricingLedger(toSave);
+  if (saveRes.ok) {
+    lastLedgerFlushAt = Date.now();
+  } else {
+    pendingLedgerDraft = toSave;
+  }
+  return { ...saveRes, flushed: Boolean(saveRes.ok) };
+}
 
 function isSyntheticCall(callId, call = {}) {
   if (!callId) return false;
@@ -879,6 +920,7 @@ function recordModelCalls(newCalls = [], options = {}) {
   // 使用独立副本避免在写入磁盘失败前原地修改共享缓存
   const draftCalls = { ...(ledger.calls || {}) };
   let changed = false;
+  let hasFinalUpdate = false;
 
   for (const call of newCalls) {
     if (!call || !call.callId) continue;
@@ -892,6 +934,7 @@ function recordModelCalls(newCalls = [], options = {}) {
         updatedAt: Date.now()
       };
       changed = true;
+      if (call.status !== 'streaming') hasFinalUpdate = true;
       continue;
     }
 
@@ -912,6 +955,7 @@ function recordModelCalls(newCalls = [], options = {}) {
         updatedAt: Date.now()
       };
       changed = true;
+      if (stateProgressed || call.status !== 'streaming') hasFinalUpdate = true;
     }
   }
 
@@ -925,11 +969,37 @@ function recordModelCalls(newCalls = [], options = {}) {
       calls: draftCalls,
       updatedAt: new Date().toISOString()
     };
+    const canDebounce =
+      !targetDir &&
+      options.immediate !== true &&
+      !hasFinalUpdate &&
+      Date.now() - lastLedgerFlushAt < STREAMING_LEDGER_MAX_DELAY_MS;
+    if (canDebounce) {
+      cachedLedger = draftLedger;
+      pendingLedgerDraft = draftLedger;
+      cachedTokenHistoryAt = 0;
+      if (!pendingLedgerFlushTimer) {
+        pendingLedgerFlushTimer = setTimeout(() => {
+          pendingLedgerFlushTimer = null;
+          flushPricingLedger();
+        }, STREAMING_LEDGER_DEBOUNCE_MS);
+        if (typeof pendingLedgerFlushTimer.unref === 'function') {
+          pendingLedgerFlushTimer.unref();
+        }
+      }
+      return createRecordResult(true, true);
+    }
+    if (!targetDir && pendingLedgerFlushTimer) {
+      clearTimeout(pendingLedgerFlushTimer);
+      pendingLedgerFlushTimer = null;
+      pendingLedgerDraft = null;
+    }
     const saveRes = savePricingLedger(draftLedger, targetDir);
     if (!saveRes.ok) {
       return createRecordResult(false, false, saveRes.error || '保存账本落盘失败', saveRes.phase);
     }
     if (!targetDir) {
+      lastLedgerFlushAt = Date.now();
       cachedTokenHistoryAt = 0;
     }
   }
@@ -1459,7 +1529,7 @@ async function fetchUserStatusFromHost(options = {}) {
       if (parsed) {
         if (Object.keys(availMap).length) parsed.availableModelDetails = availMap;
         if (configs.length) parsed.cascadeModelConfigs = mergeModelCapabilitiesIntoConfigs(configs, availMap);
-        remoteHostUserStatusCache.set(cacheKey, { data: parsed, at: Date.now() });
+        setBoundedMap(remoteHostUserStatusCache, cacheKey, { data: parsed, at: Date.now() }, MAX_REMOTE_HOST_STATUS_CACHE);
       }
       return parsed;
     } catch {
@@ -2071,8 +2141,10 @@ module.exports = {
   isCompanionOrTempFile,
   formatLocalDateKey,
   recordModelCalls,
+  flushPricingLedger,
   loadPricingLedger,
   savePricingLedger,
+  setBoundedMap,
   getPricingLedgerPath,
   isSyntheticCall,
   quarantineSyntheticCalls,

@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { getStateDir, findAsarPath, builtinAsar, assertNotOfficialAntigravityApp, getHakimiAppPath } = require('./asar-engine');
 
@@ -198,7 +199,9 @@ function inspectDiskModules(customPath = null) {
     chineseReady = false;
     chineseReason = '磁盘尚未注入汉化脚本代码';
   } else {
-    const hasDictData = preloadStr.includes('__AGY_I18N_DATA__') && preloadStr.includes('_dictData');
+    const hasDictData =
+      preloadStr.includes('__AGY_I18N_DATA__') &&
+      (preloadStr.includes('_dictData') || preloadStr.includes('context-meter:get-i18n-dict-sync'));
     const hasRuntimeEngine =
       preloadStr.includes('createI18nEngine') ||
       preloadStr.includes('translateSingleUnit') ||
@@ -211,7 +214,10 @@ function inspectDiskModules(customPath = null) {
     if (dictMatch && dictMatch[1]) {
       dictNonEmpty = dictMatch[1].length > 500 && dictMatch[1].includes('"');
     } else if (entries.includes('/dist/i18n/zh-CN.json')) {
-      dictNonEmpty = true;
+      try {
+        const externalDictBuf = builtinAsar.extractFile(asarPath, 'dist/i18n/zh-CN.json');
+        dictNonEmpty = externalDictBuf.length > 500 && externalDictBuf.includes('"exact"');
+      } catch {}
     }
 
     if (!hasDictData || !dictNonEmpty) {
@@ -359,5 +365,6 @@ module.exports = {
   inspectDiskModules,
   readBundleShortVersion,
   checkAppVersionSync,
+  getDefaultUserDataDir,
   cleanupStaleSingletonLock,
 };

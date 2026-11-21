@@ -189,17 +189,18 @@ function runDoctor(options = {}) {
 
       try {
         const entries = asarEngine.builtinAsar.listPackage(hakimiAsar);
-        const missingNew = ['/dist/meter-region-unlock.js', '/dist/meter-cli-unlock.js', '/dist/meter-ssh.js'].filter(
-          (p) => !entries.includes(p)
-        );
+        const missingNew = [
+          '/dist/binary-utils.js',
+          '/dist/meter-region-unlock.js',
+          '/dist/meter-cli-unlock.js',
+          '/dist/meter-ssh.js',
+        ].filter((p) => !entries.includes(p));
         if (missingNew.length === 0) {
           push(
             'hakimi_asar_payload',
             'OK',
             '内置扩展载荷',
-            mods.sshReady
-              ? '已包含自适应地区解锁、CLI 解锁与 SSH 远端自动解锁模块'
-              : '已包含自适应地区解锁与 CLI 解锁模块'
+            '已包含公共二进制解析器、自适应地区解锁、CLI 解锁与 SSH 远端自动解锁模块'
           );
         } else {
           push(
@@ -211,6 +212,21 @@ function runDoctor(options = {}) {
         }
       } catch (e) {
         push('hakimi_asar_payload', 'WARN', '内置扩展载荷', `列表读取异常: ${e.message}`);
+      }
+
+      if (mods.sshSupported) {
+        if (mods.sshReady) {
+          push('hakimi_ssh_hooks', 'OK', 'Remote SSH 远端钩子', 'bootstrapScript 与 remoteManager 钩子已就绪');
+        } else {
+          push(
+            'hakimi_ssh_hooks',
+            'WARN',
+            'Remote SSH 远端钩子',
+            '检测到客户端支持 Remote SSH，但当前副本未注入远端自动解锁钩子，建议运行 bash ./build-hakimi.sh --force --restart 更新'
+          );
+        }
+      } else {
+        push('hakimi_ssh_hooks', 'OK', 'Remote SSH 远端钩子', '当前官方版本未含 Remote SSH 远端模块（跳过）');
       }
     }
 

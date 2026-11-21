@@ -1064,6 +1064,12 @@
       font-size:10px;padding:1px 4px;border-radius:4px;
       background:var(--ag-bg-subcard);border:1px solid var(--ag-border-subcard);
     }
+    .ssh-remote-banner{
+      background:rgba(59,130,246,0.11);border:1px solid rgba(59,130,246,0.34);
+      color:var(--ag-text-primary);border-radius:7px;padding:7px 10px;
+      margin-bottom:8px;font-size:11px;line-height:1.45;
+    }
+    .ssh-remote-banner[hidden]{display:none!important}
 
     #status{padding:7px 10px;border:0;border-left:2.5px solid var(--tone,#666);border-radius:4px;background:var(--ag-bg-status);color:var(--ag-text-status);font-weight:500;font-size:11.5px}
     #model{overflow-wrap:anywhere;font-size:11.5px;color:var(--ag-text-muted)}
@@ -1882,6 +1888,10 @@
           <div id="ctx-restart-feedback" class="ctx-restart-feedback" hidden></div>
         </div>
 
+        <div id="ctx-ssh-remote-banner" class="ssh-remote-banner" hidden role="note">
+          <div id="ctx-ssh-remote-banner-text" class="ssh-remote-banner-text"></div>
+        </div>
+
         <!-- 2. 模式选择器（统一设置 vs 按模型分别设置） -->
         <div class="ctx-scope-selector-wrap" id="ctx-scope-selector-wrap">
           <div class="ctx-scope-mode-toggle" role="radiogroup" aria-label="上下文设置模式" data-i18n-aria="models.mode.aria">
@@ -2219,6 +2229,9 @@
 
       <!-- 设置与系统配置 (第四分页: 配置 / setting) -->
       <div id="pane-ctx-settings" class="ctx-tab-pane" role="tabpanel" aria-labelledby="tab-ctx-settings" hidden>
+        <div id="enhance-ssh-remote-banner" class="ssh-remote-banner" hidden role="note">
+          <div id="enhance-ssh-remote-banner-text" class="ssh-remote-banner-text"></div>
+        </div>
         <!-- 1. 一键推荐配置与总览（默认不自动应用，需用户预览勾选并确认） -->
         <div class="ctx-settings-card" id="enhance-preset-card">
           <div class="ctx-settings-card-hdr">
@@ -2799,6 +2812,16 @@
 
     // 分页 1: 当前会话与版本同步提示
     'versionSync.mismatch': { 'zh-CN': '⚠️ 检测到官方 Antigravity 已更新至 v{officialVer}（当前哈基米基于 v{hakimiVer}）。如需同步新版底座，请运行：bash ./build-hakimi.sh --force --restart', 'zh-TW': '⚠️ 偵測到官方 Antigravity 已更新至 v{officialVer}（目前哈基米基於 v{hakimiVer}）。如需同步新版底座，請執行：bash ./build-hakimi.sh --force --restart', en: '⚠️ Official Antigravity updated to v{officialVer} (Hakimi is on v{hakimiVer}). Rebuild with: bash ./build-hakimi.sh --force --restart' },
+    'ssh.remote.contextBanner': {
+      'zh-CN': '🌐 SSH 远端窗口（{host}）：修改并应用上下文模式后会同步保存到本机配置，并在下次重连 SSH 时自动应用到远端 language_server；“重启语言服务”仅作用于本机 哈基米.app 后端。',
+      'zh-TW': '🌐 SSH 遠端視窗（{host}）：修改並套用上下文模式後會同步儲存至本機設定，並在下次重連 SSH 時自動套用到遠端 language_server；「重啟語言服務」僅作用於本機 哈基米.app 後端。',
+      en: '🌐 SSH Remote Window ({host}): Context window changes are saved locally and automatically synced to the remote language_server on the next SSH reconnect; "Restart Language Server" only restarts the local 哈基米.app backend.'
+    },
+    'ssh.remote.localRestartLsTitle': {
+      'zh-CN': '仅重启本机 哈基米.app 语言服务（不影响已连接的 SSH 远端主机）',
+      'zh-TW': '僅重啟本機 哈基米.app 語言服務（不影響已連線的 SSH 遠端主機）',
+      en: 'Only restarts local 哈基米.app language_server (does not restart connected SSH remote host)'
+    },
     'session.quick.compactBusy': { 'zh-CN': '⏳ 正在压缩…', 'zh-TW': '⏳ 正在壓縮…', en: '⏳ Compacting…' },
     'session.quick.compactDone': { 'zh-CN': '✔ 已向当前会话发送 /compact 指令，上下文即将更新。', 'zh-TW': '✔ 已向目前工作階段發送 /compact 指令，上下文即將更新。', en: '✔ Sent /compact command to active chat; context will refresh shortly.' },
     'session.quick.compactFail': { 'zh-CN': '✖ 触发压缩失败：{err}', 'zh-TW': '✖ 觸發壓縮失敗：{err}', en: '✖ Failed to trigger compact: {err}' },
@@ -9729,7 +9752,44 @@
     if (typeof renderQuickContextControls === 'function') renderQuickContextControls();
   }
 
+  function getRemoteSshMeta() {
+    const meta = typeof window !== 'undefined' ? window.__AGContextMeterRemote : null;
+    if (meta && meta.kind === 'ssh') {
+      return {
+        hostId: String(meta.hostId || ''),
+        label: String(meta.label || meta.hostId || 'SSH')
+      };
+    }
+    return null;
+  }
+
+  function renderSshRemoteContextBanners() {
+    const remote = getRemoteSshMeta();
+    const bannerPairs = [
+      [el('ctx-ssh-remote-banner'), el('ctx-ssh-remote-banner-text')],
+      [el('enhance-ssh-remote-banner'), el('enhance-ssh-remote-banner-text')]
+    ];
+    for (const [box, textEl] of bannerPairs) {
+      if (!box || !textEl) continue;
+      if (remote) {
+        textEl.textContent = t('ssh.remote.contextBanner', { host: remote.label });
+        box.hidden = false;
+      } else {
+        box.hidden = true;
+      }
+    }
+    const restartLsBtn = el('btn-enhance-restart-ls');
+    if (restartLsBtn) {
+      if (remote) {
+        restartLsBtn.title = t('ssh.remote.localRestartLsTitle');
+      } else {
+        restartLsBtn.removeAttribute('title');
+      }
+    }
+  }
+
   function renderClientStatusBar() {
+    renderSshRemoteContextBanners();
     const statusInfo = mapUnlockDisplayStatus(currentUnlockStatus);
     if (unlockBadge) {
       unlockBadge.textContent = statusInfo.badge;
@@ -12277,6 +12337,7 @@
   let hasPendingLsReload = false;
 
   function renderEnhanceSectionUI() {
+    if (typeof renderSshRemoteContextBanners === 'function') renderSshRemoteContextBanners();
     const data = currentEnhanceStatus;
     const s = data?.summary || data;
     const ctxUnlock = s?.contextUnlock || null;

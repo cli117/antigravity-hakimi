@@ -262,12 +262,24 @@ test('i18n-runtime translates desktop UI labels without touching chat prose or c
     documentElement: rootEl,
     body: bodyEl,
     readyState: 'complete',
-    title: 'Antigravity',
+    _title: 'Antigravity',
     addEventListener() {},
     querySelectorAll() {
       return [];
     },
   };
+  function FakeDocument() {}
+  Object.defineProperty(FakeDocument.prototype, 'title', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      return this._title;
+    },
+    set(v) {
+      this._title = String(v);
+    },
+  });
+  Object.setPrototypeOf(doc, FakeDocument.prototype);
 
   class FakeMutationObserver {
     observe() {}
@@ -276,7 +288,7 @@ test('i18n-runtime translates desktop UI labels without touching chat prose or c
 
   const sandbox = {
     document: doc,
-    Document: function FakeDocument() {},
+    Document: FakeDocument,
     MutationObserver: FakeMutationObserver,
     Set,
     Map,
@@ -308,6 +320,10 @@ test('i18n-runtime translates desktop UI labels without touching chat prose or c
 
   assert.equal(navText.nodeValue, '设置');
   assert.equal(codeText.nodeValue, 'Settings', 'Code elements must never be mutated by i18n runtime');
+  assert.doesNotThrow(() => {
+    doc.title = 'Session - Antigravity';
+  }, 'Setting document.title must not throw after i18n-runtime initializes');
+  assert.equal(doc.title, 'Session - Antigravity');
 });
 
 test('computeAsarHeaderSha256 matches official Info.plist ElectronAsarIntegrity hash when official app is installed', () => {
@@ -630,14 +646,16 @@ test('context presets start at 512K up to 1M and arm64 clients enable Apply butt
     assert.ok(tpl.includes(`data-qctx-limit="${preset}"`), `Missing quick preset button for ${preset}`);
   }
 
-  const mainJs = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'main.js'), 'utf8');
+  const rendererSources = collectJsFiles(path.join(ROOT, 'src', 'renderer'))
+    .map((f) => fs.readFileSync(f, 'utf8'))
+    .join('\n');
   assert.ok(
-    mainJs.includes("data.arch === 'arm64'"),
-    'src/renderer/main.js must enable btnApplyUnlock on Apple Silicon (arm64)'
+    rendererSources.includes("data.arch === 'arm64'"),
+    'src/renderer/*.js must enable btnApplyUnlock on Apple Silicon (arm64)'
   );
   assert.ok(
-    mainJs.includes('rawWindowMax'),
-    'src/renderer/main.js must compare presets against rawWindowMax so 1M stays enabled on 1M models'
+    rendererSources.includes('rawWindowMax'),
+    'src/renderer/*.js must compare presets against rawWindowMax so 1M stays enabled on 1M models'
   );
 });
 
@@ -822,14 +840,31 @@ test('checkAppVersionSync detects version mismatch and renderer exposes quick ac
 });
 
 test('build-hakimi.sh and set-hakimi-icon.sh escalate to SIGKILL on stuck processes, clean stale SingletonLock, and use open -n', async () => {
+  const lifecycleLibPath = path.join(ROOT, 'scripts', 'lib', 'target-app-lifecycle.sh');
+  execFileSync('bash', ['-n', lifecycleLibPath]);
+  const lifecycleSrc = fs.readFileSync(lifecycleLibPath, 'utf8');
+  for (const token of ['find_running_target_pids', 'stop_running_target_app', 'kill -KILL', 'cleanupStaleSingletonLock']) {
+    assert.ok(lifecycleSrc.includes(token), `target-app-lifecycle.sh missing "${token}"`);
+  }
+
   for (const scriptName of ['build-hakimi.sh', 'set-hakimi-icon.sh']) {
     const scriptPath = path.join(ROOT, scriptName);
     execFileSync('bash', ['-n', scriptPath]);
     const content = fs.readFileSync(scriptPath, 'utf8');
-    for (const token of ['stop_running_target_app', 'kill -KILL', 'cleanupStaleSingletonLock', 'open -n "$APP"']) {
+    for (const token of ['scripts/lib/target-app-lifecycle.sh', 'stop_running_target_app', 'open -n "$APP"']) {
       assert.ok(content.includes(token), `${scriptName} missing "${token}"`);
     }
   }
+
+  const buildSrc = fs.readFileSync(path.join(ROOT, 'build-hakimi.sh'), 'utf8');
+  assert.ok(
+    buildSrc.includes('src/renderer/*') && buildSrc.includes('scripts/build-renderer.js'),
+    'build-hakimi.sh must check all src/renderer/* files and scripts/build-renderer.js for renderer rebuilds'
+  );
+
+  // Verify default userDataDir resolution works without ReferenceError: os is not defined
+  const defaultDataDir = modulesConfig.getDefaultUserDataDir();
+  assert.ok(path.isAbsolute(defaultDataDir) && defaultDataDir.endsWith('Antigravity'));
 
   const meterMainSrc = fs.readFileSync(path.join(ROOT, 'payload', 'dist', 'meter-main.js'), 'utf8');
   assert.ok(meterMainSrc.includes('quitFallbackTimer'), 'meter-main.js must arm quitFallbackTimer on before-quit');
@@ -889,16 +924,10 @@ test('build-hakimi.sh and set-hakimi-icon.sh escalate to SIGKILL on stuck proces
     assert.ok(Number.isSafeInteger(stuckPid) && stuckPid > 0);
     assert.doesNotThrow(() => process.kill(stuckPid, 0));
 
-    const buildSrc = fs.readFileSync(path.join(ROOT, 'build-hakimi.sh'), 'utf8');
-    const helperMatch = buildSrc.match(
-      /# --- BEGIN TARGET PROCESS LIFECYCLE HELPERS ---([\s\S]*?)# --- END TARGET PROCESS LIFECYCLE HELPERS ---/
-    );
-    assert.ok(helperMatch, 'Missing lifecycle helper block in build-hakimi.sh');
-
     const helperScript = path.join(tmp, 'run-stop.sh');
     fs.writeFileSync(
       helperScript,
-      `#!/bin/bash\nset -euo pipefail\nSCRIPT_DIR="$1"\n${helperMatch[1]}\nstop_running_target_app "$2"\n`,
+      `#!/bin/bash\nset -euo pipefail\nSCRIPT_DIR="$1"\nsource "$SCRIPT_DIR/scripts/lib/target-app-lifecycle.sh"\nstop_running_target_app "$2"\n`,
       'utf8'
     );
     fs.chmodSync(helperScript, 0o755);
@@ -1291,4 +1320,344 @@ test('i18n engine & zh-CN.json cover v2.34.0 UI, Unicode/case normalization, ter
   cardLabel.setAttribute('title', 'Customize Sidebar');
   observerCb([{ type: 'attributes', target: cardLabel, attributeName: 'title' }]);
   assert.equal(cardLabel.getAttribute('title'), '自定义侧边栏');
+});
+
+test('i18n preload loads dictionary lazily via IPC without inlining 467KB JSON and skips work when language=en', () => {
+  const { generateChinesePreloadCode } = require(path.join(ROOT, 'payload', 'dist', 'modular-installer.js'));
+  const dictPath = path.join(ROOT, 'payload', 'dist', 'i18n', 'zh-CN.json');
+  const runtimePath = path.join(ROOT, 'payload', 'dist', 'i18n', 'i18n-runtime.js');
+  const dictRaw = fs.readFileSync(dictPath, 'utf8');
+  const runtimeRaw = fs.readFileSync(runtimePath, 'utf8');
+
+  const preloadCode = generateChinesePreloadCode(dictRaw, runtimeRaw);
+  assert.ok(
+    Buffer.byteLength(preloadCode, 'utf8') < 80 * 1024,
+    `Expected compact preload (<80KB) without inlined zh-CN.json, got ${Buffer.byteLength(preloadCode, 'utf8')} bytes`
+  );
+  assert.ok(preloadCode.includes('context-meter:get-i18n-dict-sync'));
+
+  // 1. English mode must exit early without requesting dictionary IPC
+  const enIpcCalls = [];
+  const enSandbox = {
+    electron_1: {
+      ipcRenderer: {
+        sendSync(ch) {
+          enIpcCalls.push(ch);
+          if (ch === 'context-meter:get-chinese-config-sync') return { enabled: false, language: 'en' };
+          return dictRaw;
+        },
+      },
+    },
+    console,
+  };
+  enSandbox.window = enSandbox;
+  enSandbox.globalThis = enSandbox;
+  vm.runInNewContext(preloadCode, enSandbox, { filename: 'preload-en.js' });
+  assert.deepEqual(enIpcCalls, ['context-meter:get-chinese-config-sync']);
+  assert.equal(enSandbox.__AGY_I18N_DATA__, undefined);
+
+  // 2. zh-CN mode fetches dictionary lazily via IPC and initializes engine
+  const zhIpcCalls = [];
+  const zhSandbox = {
+    electron_1: {
+      ipcRenderer: {
+        sendSync(ch) {
+          zhIpcCalls.push(ch);
+          if (ch === 'context-meter:get-chinese-config-sync') return { enabled: true, language: 'zh-CN' };
+          if (ch === 'context-meter:get-i18n-dict-sync') return JSON.stringify({ exact: { Settings: '设置' }, patterns: [] });
+          return null;
+        },
+      },
+    },
+    Set,
+    Map,
+    RegExp,
+    Object,
+    String,
+    Array,
+    Date,
+    console,
+  };
+  zhSandbox.window = zhSandbox;
+  zhSandbox.globalThis = zhSandbox;
+  vm.runInNewContext(preloadCode, zhSandbox, { filename: 'preload-zh.js' });
+  assert.deepEqual(zhIpcCalls, ['context-meter:get-chinese-config-sync', 'context-meter:get-i18n-dict-sync']);
+  assert.equal(zhSandbox.__AGY_TRANSLATE_UNIT__('Settings'), '设置');
+});
+
+test('i18n regex bucket prefilter matches naive scan identically and idle scan skips hidden document', () => {
+  const dictPath = path.join(ROOT, 'payload', 'dist', 'i18n', 'zh-CN.json');
+  const runtimePath = path.join(ROOT, 'payload', 'dist', 'i18n', 'i18n-runtime.js');
+  const dict = JSON.parse(fs.readFileSync(dictPath, 'utf8'));
+  const { createI18nEngine } = require(runtimePath);
+  const engine = createI18nEngine(dict);
+
+  const compiled = dict.patterns.map((p) => ({ regex: new RegExp(p.regex), replacement: p.replacement }));
+  const naiveRun = (str) => {
+    for (const p of compiled) {
+      if (p.regex.test(str)) {
+        let res = str.replace(p.regex, p.replacement);
+        for (const p2 of compiled) {
+          if (p2.regex.test(res)) res = res.replace(p2.regex, p2.replacement);
+        }
+        return res;
+      }
+    }
+    return null;
+  };
+
+  const samples = [
+    'Thought for 1h 2m 3.5s',
+    'Thought for 12s',
+    'Plan, 2 of 5 steps done',
+    'Open Subagent: Codebase Researcher',
+    'Show 3 more subagents',
+    'Working directory: /tmp/demo',
+    '12 lines added, 4 lines removed',
+    'Show more (8)',
+    'Jan 12, 2026, 3:45 PM',
+    'Jan 5 - Feb 10',
+    'Retrying transcription (attempt 2)...',
+    'Also includes Global Permissions when working in this project.',
+    'Steps to Reproduce',
+    'Unmatched plain text without digits',
+    'const x = 42; // unmatched code line',
+  ];
+  for (const s of samples) {
+    const expected = naiveRun(s);
+    if (expected !== null && expected !== s && !dict.exact[s]) {
+      assert.equal(engine.translate(s), expected, `Pattern mismatch for "${s}"`);
+    }
+  }
+
+  // Verify idle interval skips full scan while doc.hidden === true
+  const runtimeCode = fs.readFileSync(runtimePath, 'utf8');
+  const rootEl = createMockElement('HTML');
+  const bodyEl = createMockElement('BODY');
+  const btn = createMockElement('BUTTON', {}, '');
+  const txt = createMockTextNode('Initial');
+  btn.appendChild(txt);
+  bodyEl.appendChild(btn);
+  rootEl.appendChild(bodyEl);
+
+  let intervalCb = null;
+  const doc = {
+    documentElement: rootEl,
+    body: bodyEl,
+    readyState: 'complete',
+    hidden: true,
+    addEventListener() {},
+    querySelectorAll() {
+      return [];
+    },
+  };
+  const sb = {
+    document: doc,
+    Document: function () {},
+    MutationObserver: class { observe() {} disconnect() {} },
+    Set,
+    Map,
+    RegExp,
+    Object,
+    String,
+    Array,
+    Date,
+    setInterval(cb) {
+      intervalCb = cb;
+      return 1;
+    },
+    clearInterval() {},
+    setTimeout() { return 1; },
+    clearTimeout() {},
+    requestAnimationFrame(cb) { cb(); return 1; },
+    console,
+    __AGY_I18N_CONFIG__: { enabled: true, language: 'zh-CN' },
+    __AGY_I18N_DATA__: { exact: { Settings: '设置' }, patterns: [] },
+  };
+  sb.window = sb;
+  sb.globalThis = sb;
+  vm.runInNewContext(runtimeCode, sb, { filename: 'i18n-hidden.js' });
+
+  txt.nodeValue = 'Settings';
+  txt._agyOriginal = undefined;
+  assert.equal(typeof intervalCb, 'function');
+  intervalCb();
+  assert.equal(txt.nodeValue, 'Settings', 'Idle scan must skip while document.hidden is true');
+
+  doc.hidden = false;
+  intervalCb();
+  assert.equal(txt.nodeValue, '设置', 'Idle scan resumes once document becomes visible');
+});
+
+test('meter-main caches static bundle and coalesces concurrent ensureMeterInjected calls per WebContents', async () => {
+  const meterMain = require(path.join(ROOT, 'payload', 'dist', 'meter-main.js'));
+  meterMain.clearRuntimeCaches();
+
+  const dictJson = meterMain.getCachedI18nDictJson();
+  assert.ok(typeof dictJson === 'string' && dictJson.length > 1000);
+  assert.equal(meterMain.getCachedI18nDictJson(), dictJson);
+
+  let execCalls = 0;
+  let injectedScripts = 0;
+  const fakeWc = {
+    isDestroyed: () => false,
+    getURL: () => 'https://127.0.0.1:41234/',
+    async executeJavaScript(code) {
+      execCalls++;
+      await new Promise((r) => setTimeout(r, 25));
+      if (String(code).includes('window.__AGContextMeter && document.getElementById')) {
+        return false;
+      }
+      injectedScripts++;
+      return true;
+    },
+  };
+  const fakeWin = {
+    isDestroyed: () => false,
+    webContents: fakeWc,
+  };
+
+  const results = await Promise.all([
+    meterMain.ensureMeterInjected(fakeWin, { force: false }),
+    meterMain.ensureMeterInjected(fakeWin, { force: false }),
+    meterMain.ensureMeterInjected(fakeWin, { force: false }),
+  ]);
+  assert.deepEqual(results, [true, true, true]);
+  assert.equal(injectedScripts, 1, 'Concurrent ensureMeterInjected calls must coalesce into a single script execution');
+  assert.equal(execCalls, 2, 'Expected exactly 1 alive check + 1 script injection for 3 concurrent calls');
+});
+
+test('meter-storage byte verification, collector bounded caches, SSH renderer banners, and doctor SSH hook check', () => {
+  const { safeWriteJsonSync } = require(path.join(ROOT, 'payload', 'dist', 'meter-storage.js'));
+  const collector = require(path.join(ROOT, 'payload', 'dist', 'meter-collector.js'));
+
+  // 1. Bounded map enforces cap while preserving pending entries
+  const m = new Map();
+  collector.setBoundedMap(m, 'k0', { pending: Promise.resolve() }, 3, (v) => Boolean(v && v.pending));
+  collector.setBoundedMap(m, 'k1', { done: true }, 3, (v) => Boolean(v && v.pending));
+  collector.setBoundedMap(m, 'k2', { done: true }, 3, (v) => Boolean(v && v.pending));
+  collector.setBoundedMap(m, 'k3', { done: true }, 3, (v) => Boolean(v && v.pending));
+  assert.equal(m.size, 3);
+  assert.equal(m.has('k0'), true, 'Pending entry must not be evicted');
+  assert.equal(m.has('k1'), false, 'Oldest completed entry should be evicted');
+  assert.equal(m.has('k3'), true);
+
+  // 2. safeWriteJsonSync byte-level pre_verify and post_verify
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hakimi-storage-test-'));
+  try {
+    const outPath = path.join(tmp, 'ledger.json');
+    const okRes = safeWriteJsonSync(outPath, { version: '1.0.0', calls: { c1: { totalTokens: 100 } } }, {
+      validate: (d) => d && typeof d.calls === 'object',
+    });
+    assert.equal(okRes.ok, true);
+    assert.deepEqual(JSON.parse(fs.readFileSync(outPath, 'utf8')).calls.c1, { totalTokens: 100 });
+
+    // Corrupted temp read triggers pre_verify failure without clobbering existing file
+    const badFs = {
+      ...fs,
+      readFileSync(p) {
+        if (String(p).includes('.tmp')) return Buffer.from('{"truncated":');
+        return fs.readFileSync(p);
+      },
+    };
+    const badRes = safeWriteJsonSync(outPath, { version: '1.0.0', calls: {} }, { fs: badFs });
+    assert.equal(badRes.ok, false);
+    assert.equal(badRes.phase, 'pre_verify');
+    assert.equal(JSON.parse(fs.readFileSync(outPath, 'utf8')).calls.c1.totalTokens, 100);
+
+    // 3. Doctor explicitly flags missing SSH hooks when official/target bundle contains dist/remote/bootstrapScript.js
+    const fakeHakimi = path.join(tmp, 'FakeHakimi.app');
+    const srcTree = path.join(tmp, 'src-tree');
+    fs.mkdirSync(path.join(srcTree, 'dist', 'remote'), { recursive: true });
+    fs.writeFileSync(path.join(srcTree, 'package.json'), JSON.stringify({ name: 'antigravity', version: '2.34.0' }));
+    fs.writeFileSync(
+      path.join(srcTree, 'dist', 'utils.js'),
+      [
+        'function setupNodeWrapper(env) { return env; }',
+        'function createWindow(url, storageManager) {',
+        '    const win = {};',
+        '    void loadHubWindowUrl(win, url);',
+        '    return win;',
+        '}',
+        'function showOrCreateWindow(port) {',
+        '    const wins = [];',
+        '    if (wins.length > 0) {',
+        '        wins[0].focus();',
+        '    } else {',
+        '        createWindow(`${constants_1.WINDOW_ORIGIN}:${port}/`);',
+        '    }',
+        '}',
+      ].join('\n'),
+      'utf8'
+    );
+    fs.writeFileSync(path.join(srcTree, 'dist', 'preload.js'), 'const electron_1 = {};\n', 'utf8');
+    fs.writeFileSync(
+      path.join(srcTree, 'dist', 'remote', 'bootstrapScript.js'),
+      'const SCRIPT_BODY = "\\nagy_main; exit $?\\n";\nfunction buildBootstrapScript() {\n    const header = "#!/bin/sh\\n";\n    return header + SCRIPT_BODY;\n}\n',
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(srcTree, 'dist', 'remote', 'remoteManager.js'),
+      'class RemoteManager {\n    onConnected(entry, sshSession) {\n        entry.session = sshSession;\n    }\n    disposeHost(entry) {\n        entry.disposed = true;\n    }\n}\n',
+      'utf8'
+    );
+    const srcAsar = path.join(tmp, 'src.asar');
+    asarEngine.builtinAsar.createPackageWithOptions(srcTree, srcAsar, {});
+
+    // 3a. Uninjected SSH hooks -> doctor flags hakimi_ssh_hooks as WARN
+    const unpatchedHakimi = path.join(tmp, 'UnpatchedHakimi.app');
+    const unpatchedAsar = path.join(unpatchedHakimi, 'Contents', 'Resources', 'app.asar');
+    fs.mkdirSync(path.dirname(unpatchedAsar), { recursive: true });
+    fs.copyFileSync(srcAsar, unpatchedAsar);
+    const srcHash = asarEngine.computeAsarHeaderSha256(unpatchedAsar);
+    fs.writeFileSync(
+      path.join(unpatchedHakimi, 'Contents', 'Info.plist'),
+      `<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleShortVersionString</key><string>2.34.0</string><key>ElectronAsarIntegrity</key><dict><key>Resources/app.asar</key><dict><key>algorithm</key><string>SHA256</string><key>hash</key><string>${srcHash}</string></dict></dict></dict></plist>`,
+      'utf8'
+    );
+    const docWarn = runDoctor({
+      appPath: unpatchedHakimi,
+      officialApp: path.join(tmp, 'MissingOfficial.app'),
+      skipCodesign: true,
+      skipProcess: true,
+      homeDir: tmp,
+      stateDir: tmp,
+    });
+    const sshCheckWarn = docWarn.checks.find((c) => c.id === 'hakimi_ssh_hooks');
+    assert.ok(sshCheckWarn, 'doctor must report hakimi_ssh_hooks when SSH files exist');
+    assert.equal(sshCheckWarn.level, 'WARN');
+
+    // 3b. Packed Hakimi ASAR -> doctor reports hakimi_ssh_hooks as OK
+    const destAsar = path.join(fakeHakimi, 'Contents', 'Resources', 'app.asar');
+    const packed = packHakimiAsar({ srcAsar, destAsar, skipConfig: true });
+    assert.equal(packed.ok, true);
+    fs.writeFileSync(
+      path.join(fakeHakimi, 'Contents', 'Info.plist'),
+      `<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleShortVersionString</key><string>2.34.0</string><key>ElectronAsarIntegrity</key><dict><key>Resources/app.asar</key><dict><key>algorithm</key><string>SHA256</string><key>hash</key><string>${packed.sha256}</string></dict></dict></dict></plist>`,
+      'utf8'
+    );
+    const docOk = runDoctor({
+      appPath: fakeHakimi,
+      officialApp: path.join(tmp, 'MissingOfficial.app'),
+      skipCodesign: true,
+      skipProcess: true,
+      homeDir: tmp,
+      stateDir: tmp,
+    });
+    const sshCheckOk = docOk.checks.find((c) => c.id === 'hakimi_ssh_hooks');
+    assert.ok(sshCheckOk, 'doctor must include hakimi_ssh_hooks check');
+    assert.equal(sshCheckOk.level, 'OK');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // 4. Renderer exposes SSH remote context banners
+  const tpl = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'template.html'), 'utf8');
+  const renderedJs = fs.readFileSync(path.join(ROOT, 'payload', 'dist', 'meter-renderer.js'), 'utf8');
+  for (const marker of ['ctx-ssh-remote-banner', 'enhance-ssh-remote-banner']) {
+    assert.ok(tpl.includes(marker), `Missing ${marker} in template.html`);
+    assert.ok(renderedJs.includes(marker), `Missing ${marker} in meter-renderer.js`);
+  }
+  assert.ok(renderedJs.includes('renderSshRemoteContextBanners'));
+  assert.ok(renderedJs.includes('ssh.remote.contextBanner'));
 });

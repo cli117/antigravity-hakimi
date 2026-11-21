@@ -3,12 +3,19 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const crypto = require('crypto');
 const {
   getStateDir,
   assertNotOfficialAntigravityApp,
   isOfficialAntigravityPath,
 } = require('./asar-engine');
+const {
+  sha256Buffer,
+  encodeAdrpArm64,
+  encodeAddImmArm64,
+  encodeMovz64Arm64,
+  encodeBlArm64,
+  decodeBlArm64Target,
+} = require('./binary-utils');
 const {
   DEFAULT_CHECKPOINT_TOKENS,
   validateContextLimit,
@@ -35,51 +42,6 @@ const FUNC_REGION = 'authclient.ValidateAndOnboardAccount';
 const RET_TRUE_ARM64 = Buffer.from('20008052c0035fd6', 'hex');
 // arm64: nop ; mov x0, xzr ; mov x1, xzr
 const GETENV_STUB_ARM64 = Buffer.from('1f2003d5e0031faae1031faa', 'hex');
-
-function sha256Buffer(buf) {
-  return crypto.createHash('sha256').update(buf).digest('hex');
-}
-
-function encodeAdrpArm64(rd, pcVA, targetVA) {
-  const pcPage = Math.floor(pcVA / 4096);
-  const targetPage = Math.floor(targetVA / 4096);
-  const delta = targetPage - pcPage;
-  if (delta < -(1 << 20) || delta >= (1 << 20)) {
-    throw new Error('adrp target out of +/-4GB range');
-  }
-  const imm21 = delta & 0x1fffff;
-  return (0x90000000 | ((imm21 & 3) << 29) | ((imm21 >>> 2) << 5) | (rd & 0x1f)) >>> 0;
-}
-
-function encodeAddImmArm64(rd, rn, imm12) {
-  if (imm12 < 0 || imm12 > 0xfff) {
-    throw new Error('add immediate out of 12-bit range');
-  }
-  return (0x91000000 | ((imm12 & 0xfff) << 10) | ((rn & 0x1f) << 5) | (rd & 0x1f)) >>> 0;
-}
-
-function encodeMovz64Arm64(rd, imm16) {
-  if (imm16 < 0 || imm16 > 0xffff) {
-    throw new Error('movz immediate out of 16-bit range');
-  }
-  return (0xd2800000 | ((imm16 & 0xffff) << 5) | (rd & 0x1f)) >>> 0;
-}
-
-function encodeBlArm64(pcVA, targetVA) {
-  const delta = targetVA - pcVA;
-  if (delta % 4 !== 0 || delta < -(1 << 27) || delta >= (1 << 27)) {
-    throw new Error('bl target out of +/-128MB range');
-  }
-  const imm26 = Math.trunc(delta / 4) & 0x03ffffff;
-  return (0x94000000 | imm26) >>> 0;
-}
-
-function decodeBlArm64Target(word, pcVA) {
-  if (((word & 0xfc000000) >>> 0) !== 0x94000000) return null;
-  const raw26 = word & 0x03ffffff;
-  const imm26 = (raw26 & 0x02000000) !== 0 ? (raw26 - 0x04000000) : raw26;
-  return pcVA + imm26 * 4;
-}
 
 function isMachOFile(filePath) {
   let fd = null;

@@ -107,7 +107,7 @@ electron_1.contextBridge.exposeInMainWorld("contextMeterAPI", { scan: (id, force
 ${TAGS.METER_PRELOAD_END}\n`;
 }
 
-function generateChinesePreloadCode(dictContent, runtimeContent) {
+function generateChinesePreloadCode(_dictContent, runtimeContent) {
   return `\n${TAGS.CHINESE_START}
 (function() {
   try {
@@ -147,8 +147,32 @@ function generateChinesePreloadCode(dictContent, runtimeContent) {
         } catch(e) {}
       }
     }
+    if (_i18nConfig.enabled === false || _i18nConfig.language === 'en') {
+      return;
+    }
 
-    var _dictData = ${dictContent.trim()};
+    var _dictData = null;
+    try {
+      if (typeof electron_1 !== 'undefined' && electron_1.ipcRenderer && typeof electron_1.ipcRenderer.sendSync === 'function') {
+        var _ipcDict = electron_1.ipcRenderer.sendSync('context-meter:get-i18n-dict-sync');
+        if (_ipcDict && typeof _ipcDict === 'object') {
+          _dictData = _ipcDict;
+        } else if (typeof _ipcDict === 'string' && _ipcDict.length > 2) {
+          _dictData = JSON.parse(_ipcDict);
+        }
+      }
+    } catch(dictIpcErr) {}
+    if (!_dictData && _fs && _path && typeof __dirname === 'string') {
+      try {
+        var _extDictPath = _path.join(__dirname, 'i18n', 'zh-CN.json');
+        if (_fs.existsSync(_extDictPath)) {
+          _dictData = JSON.parse(_fs.readFileSync(_extDictPath, 'utf8'));
+        }
+      } catch(dictFsErr) {}
+    }
+    if (!_dictData || typeof _dictData !== 'object') {
+      return;
+    }
     if (typeof window !== 'undefined') {
       window.__AGY_I18N_CONFIG__ = _i18nConfig;
       window.__AGY_I18N_DATA__ = _dictData;

@@ -55,6 +55,16 @@
 
     // 分页 1: 当前会话与版本同步提示
     'versionSync.mismatch': { 'zh-CN': '⚠️ 检测到官方 Antigravity 已更新至 v{officialVer}（当前哈基米基于 v{hakimiVer}）。如需同步新版底座，请运行：bash ./build-hakimi.sh --force --restart', 'zh-TW': '⚠️ 偵測到官方 Antigravity 已更新至 v{officialVer}（目前哈基米基於 v{hakimiVer}）。如需同步新版底座，請執行：bash ./build-hakimi.sh --force --restart', en: '⚠️ Official Antigravity updated to v{officialVer} (Hakimi is on v{hakimiVer}). Rebuild with: bash ./build-hakimi.sh --force --restart' },
+    'ssh.remote.contextBanner': {
+      'zh-CN': '🌐 SSH 远端窗口（{host}）：修改并应用上下文模式后会同步保存到本机配置，并在下次重连 SSH 时自动应用到远端 language_server；“重启语言服务”仅作用于本机 哈基米.app 后端。',
+      'zh-TW': '🌐 SSH 遠端視窗（{host}）：修改並套用上下文模式後會同步儲存至本機設定，並在下次重連 SSH 時自動套用到遠端 language_server；「重啟語言服務」僅作用於本機 哈基米.app 後端。',
+      en: '🌐 SSH Remote Window ({host}): Context window changes are saved locally and automatically synced to the remote language_server on the next SSH reconnect; "Restart Language Server" only restarts the local 哈基米.app backend.'
+    },
+    'ssh.remote.localRestartLsTitle': {
+      'zh-CN': '仅重启本机 哈基米.app 语言服务（不影响已连接的 SSH 远端主机）',
+      'zh-TW': '僅重啟本機 哈基米.app 語言服務（不影響已連線的 SSH 遠端主機）',
+      en: 'Only restarts local 哈基米.app language_server (does not restart connected SSH remote host)'
+    },
     'session.quick.compactBusy': { 'zh-CN': '⏳ 正在压缩…', 'zh-TW': '⏳ 正在壓縮…', en: '⏳ Compacting…' },
     'session.quick.compactDone': { 'zh-CN': '✔ 已向当前会话发送 /compact 指令，上下文即将更新。', 'zh-TW': '✔ 已向目前工作階段發送 /compact 指令，上下文即將更新。', en: '✔ Sent /compact command to active chat; context will refresh shortly.' },
     'session.quick.compactFail': { 'zh-CN': '✖ 触发压缩失败：{err}', 'zh-TW': '✖ 觸發壓縮失敗：{err}', en: '✖ Failed to trigger compact: {err}' },

@@ -42,6 +42,7 @@ const {
 const PAYLOAD_FILES = [
   'asar-engine.js',
   'attachment_scan.py',
+  'binary-utils.js',
   'local-api.js',
   'meter-cli-unlock.js',
   'meter-collector.js',
@@ -260,6 +261,10 @@ function packHakimiAsar(rawOpts = {}) {
     const rawPreload = fs.readFileSync(preloadPath, 'utf8');
     let preload = cleanPreloadSource(rawPreload);
     const dictContent = fs.readFileSync(path.join(PAYLOAD_DIST, 'i18n', 'zh-CN.json'), 'utf8');
+    const parsedDict = JSON.parse(dictContent);
+    if (!parsedDict || typeof parsedDict !== 'object' || !parsedDict.exact || Object.keys(parsedDict.exact).length === 0) {
+      throw new Error('i18n/zh-CN.json is empty or missing exact dictionary entries');
+    }
     const runtimeContent = fs.readFileSync(path.join(PAYLOAD_DIST, 'i18n', 'i18n-runtime.js'), 'utf8');
     preload += generateMeterPreloadCode() + generateChinesePreloadCode(dictContent, runtimeContent);
 

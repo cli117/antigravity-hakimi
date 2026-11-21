@@ -18,6 +18,25 @@ const {
   assertNotOfficialAntigravityApp,
   isOfficialAntigravityPath,
 } = require('./asar-engine');
+const {
+  NOP_ARM64,
+  PATCH_256K_ARM64,
+  CLAMP_256K_ARM64,
+  DEF_ORIG_ARM64,
+  DEF_GUARD_ARM64,
+  STR_W3_X0_0C_ARM64,
+  CLAMP_256K_X64,
+  PATCH_256K_X64,
+  DEF_ORIG_X64,
+  DEF_PREFIX_X64,
+  sha256Buffer,
+  encodeMovzMovkArm64,
+  decodeMovzMovkArm64,
+  buildClampConstArm64,
+  buildDefConstArm64,
+  buildClampConstX64,
+  buildDefConstX64,
+} = require('./binary-utils');
 
 const PCLNTAB_MAGIC = 0xfffffff1;
 
@@ -29,29 +48,7 @@ const FUNC_EXP_CHECKPOINT = 'config.applyFeatureProviderCheckpointOverrideConfig
 const FUNC_SELECT_EXP_KEY = 'config.selectCheckpointExperimentKey';
 const FUNC_OVERRIDE = 'store.AutoCompactOverride';
 
-// Gate 3A / 3B ARM64 instructions (verified on Antigravity 2.32.1 language_server)
-const NOP_ARM64 = Buffer.from([0x1f, 0x20, 0x03, 0xd5]);
-const PATCH_256K_ARM64 = Buffer.concat([
-  NOP_ARM64,
-  NOP_ARM64,
-  NOP_ARM64,
-  NOP_ARM64,
-  NOP_ARM64,
-  NOP_ARM64,
-]);
-const CLAMP_256K_ARM64 = Buffer.from(
-  '04009dd26400a0f27f00046b04009dd26400a0f26330849a',
-  'hex'
-);
-const DEF_ORIG_ARM64 = Buffer.from('03009dd26300a0f2030c00b9', 'hex');
-const DEF_GUARD_ARM64 = Buffer.from('7f0000718c000054', 'hex');
-const STR_W3_X0_0C_ARM64 = Buffer.from('030c00b9', 'hex');
-
-// x86-64 reference patterns (kept for inspection parity)
-const CLAMP_256K_X64 = Buffer.from('81fa00e80300be00e803000f42f2', 'hex');
-const PATCH_256K_X64 = Buffer.concat([Buffer.from('89d6', 'hex'), Buffer.alloc(12, 0x90)]);
-const DEF_ORIG_X64 = Buffer.from('c7400c00e80300', 'hex');
-const DEF_PREFIX_X64 = Buffer.from('c7400c', 'hex');
+// x86-64 serializer reference patterns (kept for inspection parity)
 const SERIALIZER_STOCK_X64 = Buffer.from('4889442470488b8c24a80100008908b830000000', 'hex');
 const SERIALIZER_HEAD_X64 = Buffer.from('4889442470c700', 'hex');
 const SERIALIZER_TAIL_X64 = Buffer.from('90909090b830000000', 'hex');
@@ -78,61 +75,6 @@ const DEFAULT_LS_ENTITLEMENTS_PLIST =
   '<key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>' +
   '<key>com.apple.security.cs.disable-library-validation</key><true/>' +
   '</dict></plist>\n';
-
-function encodeMovzMovkArm64(reg, limitTokens) {
-  const val = limitTokens >>> 0;
-  const lo = val & 0xffff;
-  const hi = (val >>> 16) & 0xffff;
-  const rd = reg & 0x1f;
-  const movz = (0xd2800000 | (lo << 5) | rd) >>> 0;
-  const movk = (0xf2a00000 | (hi << 5) | rd) >>> 0;
-  const out = Buffer.alloc(8);
-  out.writeUInt32LE(movz, 0);
-  out.writeUInt32LE(movk, 4);
-  return out;
-}
-
-function decodeMovzMovkArm64(buf, offset, reg) {
-  if (!buf || offset < 0 || offset + 8 > buf.length) return null;
-  const rd = reg & 0x1f;
-  const w0 = buf.readUInt32LE(offset);
-  const w1 = buf.readUInt32LE(offset + 4);
-  if (((w0 & 0xffe0001f) >>> 0) !== ((0xd2800000 | rd) >>> 0)) return null;
-  if (((w1 & 0xffe0001f) >>> 0) !== ((0xf2a00000 | rd) >>> 0)) return null;
-  const lo = (w0 >>> 5) & 0xffff;
-  const hi = (w1 >>> 5) & 0xffff;
-  return (((hi << 16) | lo) >>> 0);
-}
-
-function buildClampConstArm64(limitTokens) {
-  const out = Buffer.alloc(24);
-  encodeMovzMovkArm64(3, limitTokens).copy(out, 0);
-  for (let i = 8; i < 24; i += 4) {
-    NOP_ARM64.copy(out, i);
-  }
-  return out;
-}
-
-function buildDefConstArm64(limitTokens) {
-  const out = Buffer.alloc(12);
-  encodeMovzMovkArm64(3, limitTokens).copy(out, 0);
-  STR_W3_X0_0C_ARM64.copy(out, 8);
-  return out;
-}
-
-function buildClampConstX64(limitTokens) {
-  const out = Buffer.alloc(14, 0x90);
-  out[0] = 0xbe;
-  out.writeUInt32LE(limitTokens >>> 0, 1);
-  return out;
-}
-
-function buildDefConstX64(limitTokens) {
-  const out = Buffer.alloc(7);
-  DEF_PREFIX_X64.copy(out, 0);
-  out.writeUInt32LE(limitTokens >>> 0, 3);
-  return out;
-}
 
 function buildSerializerConstX64(limitTokens) {
   const out = Buffer.alloc(20);
@@ -215,12 +157,8 @@ function validateContextLimit(rawInput, options = {}) {
   };
 }
 
-function sha256Buffer(buf) {
-  return crypto.createHash('sha256').update(buf).digest('hex');
-}
-
 function sha256File(filePath) {
-  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+  return sha256Buffer(fs.readFileSync(filePath));
 }
 
 /**

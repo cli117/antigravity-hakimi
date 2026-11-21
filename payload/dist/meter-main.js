@@ -16,6 +16,7 @@ const {
   collectTokenHistory,
   collectTokenHistoryAsync,
   recordModelCalls,
+  flushPricingLedger,
   getPluginSettings,
   savePluginSettings,
   getContextUnlockStatus,
@@ -30,10 +31,52 @@ const {
   createRemoteSessionRequester,
 } = require('./meter-ssh');
 
+let cachedMeterBundle = null;
+let cachedI18nDictJson = null;
+
+function getCachedMeterBundle() {
+  const corePath = path.join(__dirname, 'meter-core.js');
+  const rendererPath = path.join(__dirname, 'meter-renderer.js');
+  try {
+    const coreStat = fs.statSync(corePath);
+    const rendererStat = fs.statSync(rendererPath);
+    const sig = `${coreStat.size}:${coreStat.mtimeMs}|${rendererStat.size}:${rendererStat.mtimeMs}`;
+    if (cachedMeterBundle && cachedMeterBundle.sig === sig) {
+      return cachedMeterBundle;
+    }
+    const coreCode = fs.readFileSync(corePath, 'utf8');
+    const rendererCode = fs.readFileSync(rendererPath, 'utf8');
+    cachedMeterBundle = { sig, combined: `${coreCode}\n${rendererCode}\ntrue;` };
+    return cachedMeterBundle;
+  } catch {
+    const coreCode = fs.readFileSync(corePath, 'utf8');
+    const rendererCode = fs.readFileSync(rendererPath, 'utf8');
+    return { sig: null, combined: `${coreCode}\n${rendererCode}\ntrue;` };
+  }
+}
+
+function getCachedI18nDictJson() {
+  if (cachedI18nDictJson !== null) return cachedI18nDictJson;
+  try {
+    const dictPath = path.join(__dirname, 'i18n', 'zh-CN.json');
+    if (!fs.existsSync(dictPath)) return null;
+    const raw = fs.readFileSync(dictPath, 'utf8');
+    if (raw && raw.length > 2) {
+      cachedI18nDictJson = raw;
+      return cachedI18nDictJson;
+    }
+  } catch {}
+  return null;
+}
+
+function clearRuntimeCaches() {
+  cachedMeterBundle = null;
+  cachedI18nDictJson = null;
+}
+
 function getMeterSource(options = {}) {
   try {
-    const coreCode = fs.readFileSync(path.join(__dirname, 'meter-core.js'), 'utf8');
-    const rendererCode = fs.readFileSync(path.join(__dirname, 'meter-renderer.js'), 'utf8');
+    const bundle = getCachedMeterBundle();
     let bootstrap = '';
     try {
       const settingsSnap = getPluginSettings();
@@ -54,7 +97,7 @@ function getMeterSource(options = {}) {
         : null;
       bootstrap += `window.__AGContextMeterRemote = ${JSON.stringify(remoteMeta)};\n`;
     } catch {}
-    return `${bootstrap}${coreCode}\n${rendererCode}\ntrue;`;
+    return `${bootstrap}${bundle.combined}`;
   } catch (e) {
     return '';
   }
@@ -98,6 +141,7 @@ let isAppQuitting = false;
 const boundWindows = new WeakSet();
 const boundWebContents = new WeakSet();
 const injectionTimers = new WeakMap();
+const inFlightInjections = new WeakMap();
 const wcProbeTimers = new WeakMap();
 
 function setAppQuitting(val = true) {
@@ -426,6 +470,14 @@ function registerIpcOnce() {
     }
   });
 
+  ipcMain.on('context-meter:get-i18n-dict-sync', (event) => {
+    try {
+      event.returnValue = getCachedI18nDictJson();
+    } catch (e) {
+      event.returnValue = null;
+    }
+  });
+
   ipcMain.handle('context-meter:enhance-status', async (event, options) => {
     const url = isLocalMainFrameSender(event);
     if (!url) throw new Error('仅允许本机主聊天窗口');
@@ -563,20 +615,41 @@ async function ensureMeterInjected(win, options = {}) {
     }
     syncWindowOverlayHeight(win);
 
-    if (!options.force) {
-      try {
-        const alive = await wc.executeJavaScript(
-          'Boolean(window.__AGContextMeter && document.getElementById("ag-context-meter") && (window.__AGContextMeter.ensureAlive ? window.__AGContextMeter.ensureAlive() : true))'
-        );
-        if (alive === true) return true;
-      } catch {}
+    const existing = inFlightInjections.get(wc);
+    if (existing) {
+      if (!options.force || existing.force) {
+        return existing.promise;
+      }
+      await existing.promise.catch(() => false);
+      if (!win || win.isDestroyed?.() || !wc || wc.isDestroyed?.()) return false;
     }
 
-    const runtimeSource = getMeterSource({ remote });
-    if (!runtimeSource) return false;
+    const runInjection = (async () => {
+      if (!options.force) {
+        try {
+          const alive = await wc.executeJavaScript(
+            'Boolean(window.__AGContextMeter && document.getElementById("ag-context-meter") && (window.__AGContextMeter.ensureAlive ? window.__AGContextMeter.ensureAlive() : true))'
+          );
+          if (alive === true) return true;
+        } catch {}
+      }
 
-    await wc.executeJavaScript(runtimeSource);
-    return true;
+      const runtimeSource = getMeterSource({ remote });
+      if (!runtimeSource) return false;
+
+      await wc.executeJavaScript(runtimeSource);
+      return true;
+    })();
+
+    const entry = { force: Boolean(options.force), promise: runInjection };
+    inFlightInjections.set(wc, entry);
+    try {
+      return await runInjection;
+    } finally {
+      if (inFlightInjections.get(wc) === entry) {
+        inFlightInjections.delete(wc);
+      }
+    }
   } catch (error) {
     const attempt = Number(options.attempt || 0);
     const delays = [350, 1000, 2500];
@@ -692,6 +765,7 @@ try {
     let quitFallbackTimer = null;
     app.on('before-quit', () => {
       isAppQuitting = true;
+      try { flushPricingLedger(); } catch {}
       setImmediate(() => {
         try {
           if (quitFallbackTimer) return;
@@ -716,6 +790,7 @@ try {
     });
     app.on('will-quit', () => {
       isAppQuitting = true;
+      try { flushPricingLedger(); } catch {}
       if (quitFallbackTimer) {
         clearTimeout(quitFallbackTimer);
         quitFallbackTimer = null;
@@ -826,3 +901,6 @@ exports.getAppQuitting = getAppQuitting;
 exports.shouldInterceptWindowClose = shouldInterceptWindowClose;
 exports.isHostRunInBackgroundEnabled = isHostRunInBackgroundEnabled;
 exports.getWindowWebContents = getWindowWebContents;
+exports.getMeterSource = getMeterSource;
+exports.getCachedI18nDictJson = getCachedI18nDictJson;
+exports.clearRuntimeCaches = clearRuntimeCaches;

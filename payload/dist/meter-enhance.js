@@ -391,7 +391,7 @@ function applyEnhancePatch(payload = {}, options = {}) {
 }
 
 /**
- * Restore Context Window (back to 256K).
+ * Restore Context Window (back to official default policy).
  * NEVER reverts Account Region Unlock (ValidateAndOnboardAccount)!
  */
 function restoreAllEnhance(options = {}) {

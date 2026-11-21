@@ -21,12 +21,188 @@
     var data = dictData || {};
     var exactDict = data.exact || {};
     var allPatterns = (data.patterns || []).concat(data.rules || []);
-    var patterns = allPatterns.map(function (p) {
+
+    function isZeroQuantifier(str, idx) {
+      if (idx >= str.length) return false;
+      var c = str.charAt(idx);
+      if (c === '?' || c === '*') return true;
+      if (c === '{') return /^\{0(?:,|\})/.test(str.slice(idx));
+      return false;
+    }
+
+    function isAnyQuantifier(str, idx) {
+      if (idx >= str.length) return false;
+      var c = str.charAt(idx);
+      return c === '?' || c === '*' || c === '+' || c === '{';
+    }
+
+    function extractPatternGuards(src) {
+      if (!src || typeof src !== 'string') {
+        return { prefix: '', literal: '', requiresDigit: false };
+      }
+      var depth = 0;
+      var inClass = false;
+      for (var i = 0; i < src.length; i++) {
+        var ch = src.charAt(i);
+        if (ch === '\\') { i++; continue; }
+        if (inClass) { if (ch === ']') inClass = false; continue; }
+        if (ch === '[') { inClass = true; continue; }
+        if (ch === '(') { depth++; continue; }
+        if (ch === ')') { depth = depth > 0 ? depth - 1 : 0; continue; }
+        if (ch === '|' && depth === 0) {
+          return { prefix: '', literal: '', requiresDigit: false };
+        }
+      }
+
+      var anchoredStart = src.charAt(0) === '^';
+      var pos = anchoredStart ? 1 : 0;
+      var atPrefix = anchoredStart;
+      var prefix = '';
+      var curLit = '';
+      var literals = [];
+      var requiresDigit = false;
+
+      function flushLit() {
+        if (curLit.length > 0) {
+          literals.push(curLit);
+          curLit = '';
+        }
+        atPrefix = false;
+      }
+
+      while (pos < src.length) {
+        var c = src.charAt(pos);
+        if (c === '\\') {
+          if (pos + 1 >= src.length) { flushLit(); break; }
+          var next = src.charAt(pos + 1);
+          var nextPos = pos + 2;
+          if (next === 'd') {
+            flushLit();
+            if (!isZeroQuantifier(src, nextPos)) requiresDigit = true;
+            pos = nextPos;
+            continue;
+          }
+          if ('DsSwWbBnrtfv0123456789xucpPk'.indexOf(next) !== -1) {
+            flushLit();
+            pos = nextPos;
+            continue;
+          }
+          if (isAnyQuantifier(src, nextPos)) {
+            if (!isZeroQuantifier(src, nextPos)) {
+              curLit += next;
+              if (atPrefix) prefix += next;
+            }
+            flushLit();
+          } else {
+            curLit += next;
+            if (atPrefix) prefix += next;
+          }
+          pos = nextPos;
+          continue;
+        }
+        if (c === '[') {
+          flushLit();
+          pos++;
+          while (pos < src.length) {
+            if (src.charAt(pos) === '\\') { pos += 2; continue; }
+            if (src.charAt(pos) === ']') { pos++; break; }
+            pos++;
+          }
+          continue;
+        }
+        if (c === '(') {
+          flushLit();
+          var startG = pos;
+          var gDepth = 1;
+          var gInClass = false;
+          pos++;
+          while (pos < src.length && gDepth > 0) {
+            if (src.charAt(pos) === '\\') { pos += 2; continue; }
+            if (gInClass) { if (src.charAt(pos) === ']') gInClass = false; pos++; continue; }
+            if (src.charAt(pos) === '[') { gInClass = true; pos++; continue; }
+            if (src.charAt(pos) === '(') gDepth++;
+            else if (src.charAt(pos) === ')') gDepth--;
+            pos++;
+          }
+          var groupBody = src.slice(startG, pos);
+          if (
+            !isZeroQuantifier(src, pos) &&
+            !/^\(\?[!:=<]/.test(groupBody) &&
+            groupBody.indexOf('|') === -1 &&
+            groupBody.indexOf('*') === -1 &&
+            !/\{0(?:,|\})/.test(groupBody)
+          ) {
+            var inner = groupBody.replace(/^\((?:\?:)?/, '').replace(/\)$/, '');
+            if (/^[^(?]*\\d(?:\+|\{[1-9]\d*(?:,\d*)?\})?/.test(inner) && !/\\d\?/.test(inner)) {
+              requiresDigit = true;
+            }
+          }
+          continue;
+        }
+        if (c === '.' || c === '$' || c === '^') {
+          flushLit();
+          pos++;
+          continue;
+        }
+        if (c === '*' || c === '+' || c === '?' || c === '{') {
+          if (c === '{') {
+            var endB = src.indexOf('}', pos);
+            pos = endB >= 0 ? endB + 1 : pos + 1;
+          } else {
+            pos++;
+          }
+          flushLit();
+          continue;
+        }
+        if (isAnyQuantifier(src, pos + 1)) {
+          if (!isZeroQuantifier(src, pos + 1)) {
+            curLit += c;
+            if (atPrefix) prefix += c;
+          }
+          flushLit();
+        } else {
+          curLit += c;
+          if (atPrefix) prefix += c;
+        }
+        pos++;
+      }
+      flushLit();
+
+      var bestLit = '';
+      for (var li = 0; li < literals.length; li++) {
+        if (literals[li].length > bestLit.length) bestLit = literals[li];
+      }
       return {
+        prefix: prefix.length >= 2 ? prefix : '',
+        literal: bestLit.length >= 2 ? bestLit : '',
+        requiresDigit: requiresDigit
+      };
+    }
+
+    var patterns = allPatterns.map(function (p, idx) {
+      var guards = extractPatternGuards(p.regex);
+      return {
+        idx: idx,
         regex: new RegExp(p.regex),
-        replacement: p.replacement
+        replacement: p.replacement,
+        prefix: guards.prefix,
+        literal: guards.literal,
+        requiresDigit: guards.requiresDigit
       };
     });
+
+    var prefixBuckets = Object.create(null);
+    var otherPatterns = [];
+    for (var pbIdx = 0; pbIdx < patterns.length; pbIdx++) {
+      var patItem = patterns[pbIdx];
+      if (patItem.prefix) {
+        var firstCh = patItem.prefix.charAt(0);
+        if (!prefixBuckets[firstCh]) prefixBuckets[firstCh] = [];
+        prefixBuckets[firstCh].push(patItem);
+      } else {
+        otherPatterns.push(patItem);
+      }
+    }
 
     var hasOwn = Object.prototype.hasOwnProperty;
 
@@ -101,22 +277,47 @@
       return value;
     }
 
-    function runPatterns(str) {
-      for (var i = 0; i < patterns.length; i++) {
-        var p = patterns[i];
+    function findNextMatchingPattern(str, minIdx) {
+      var hasDigit = /\d/.test(str);
+      var bucket = str.length > 0 ? prefixBuckets[str.charAt(0)] : null;
+      var bLen = bucket ? bucket.length : 0;
+      var oLen = otherPatterns.length;
+      var bi = 0;
+      var oi = 0;
+      while (bi < bLen || oi < oLen) {
+        var p;
+        if (bi < bLen && (oi >= oLen || bucket[bi].idx < otherPatterns[oi].idx)) {
+          p = bucket[bi++];
+          if (p.idx < minIdx) continue;
+          if (p.requiresDigit && !hasDigit) continue;
+          if (str.indexOf(p.prefix) !== 0) continue;
+          if (p.literal && p.literal !== p.prefix && str.indexOf(p.literal) === -1) continue;
+        } else {
+          p = otherPatterns[oi++];
+          if (p.idx < minIdx) continue;
+          if (p.requiresDigit && !hasDigit) continue;
+          if (p.literal && str.indexOf(p.literal) === -1) continue;
+        }
         if (p.regex.test(str)) {
           p.regex.lastIndex = 0;
-          var result = str.replace(p.regex, p.replacement);
-          for (var pi = 0; pi < patterns.length; pi++) {
-            if (patterns[pi].regex.test(result)) {
-              patterns[pi].regex.lastIndex = 0;
-              result = result.replace(patterns[pi].regex, patterns[pi].replacement);
-            }
-          }
-          return result;
+          return p;
         }
       }
       return null;
+    }
+
+    function runPatterns(str) {
+      var first = findNextMatchingPattern(str, 0);
+      if (!first) return null;
+      var result = str.replace(first.regex, first.replacement);
+      var minIdx = 0;
+      while (minIdx < patterns.length) {
+        var nextHit = findNextMatchingPattern(result, minIdx);
+        if (!nextHit) break;
+        result = result.replace(nextHit.regex, nextHit.replacement);
+        minIdx = nextHit.idx + 1;
+      }
+      return result;
     }
 
     function translateSingleUnit(rawStr) {
@@ -683,14 +884,16 @@
       reconnectObserver();
     }
 
-    // 低频保底扫描：彻底阻断 50~60Hz 无限自旋死循环，改为每 15 秒配合 requestIdleCallback 执行一次低频保底扫描
+    // 低频保底扫描：彻底阻断 50~60Hz 无限自旋死循环，改为每 15 秒配合 requestIdleCallback 执行一次低频保底扫描；后台不可见时自动跳过
     var idleScanScheduled = false;
     function scheduleIdleScan() {
       if (idleScanScheduled) return;
+      if (doc && doc.hidden === true) return;
       if (root.requestIdleCallback) {
         idleScanScheduled = true;
         root.requestIdleCallback(function () {
           idleScanScheduled = false;
+          if (doc && doc.hidden === true) return;
           safeFullScan();
         }, { timeout: 5000 });
       } else {
@@ -698,6 +901,13 @@
       }
     }
     setInterval(scheduleIdleScan, 15000);
+    if (doc && doc.addEventListener) {
+      doc.addEventListener('visibilitychange', function () {
+        if (doc && doc.hidden === false) {
+          scheduleIdleScan();
+        }
+      });
+    }
   }
 
   function isFloatingElement(el) {
@@ -735,29 +945,6 @@
   }
 
   if (doc) {
-    try {
-      var proto = typeof Document !== 'undefined' ? Document.prototype : null;
-      var titleDesc = proto ? Object.getOwnPropertyDescriptor(proto, 'title') : null;
-      if (titleDesc && titleDesc.set && titleDesc.get) {
-        var origSetter = titleDesc.set;
-        var origGetter = titleDesc.get;
-        Object.defineProperty(doc, 'title', {
-          configurable: true,
-          enumerable: true,
-          get: function() {
-            return origGetter.call(this);
-          },
-          set: function(val) {
-            origSetter.call(this, formatBrandDocumentTitle(String(val || '')));
-          }
-        });
-      }
-      if (doc.title) {
-        var formatted = formatBrandDocumentTitle(doc.title);
-        if (formatted !== doc.title) doc.title = formatted;
-      }
-    } catch (e) {}
-
     if (doc.readyState === 'loading') {
       doc.addEventListener('DOMContentLoaded', startObserver);
     } else {
