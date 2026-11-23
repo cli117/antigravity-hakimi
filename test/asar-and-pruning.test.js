@@ -1322,6 +1322,151 @@ test('i18n engine & zh-CN.json cover v2.34.0 UI, Unicode/case normalization, ter
   assert.equal(cardLabel.getAttribute('title'), '自定义侧边栏');
 });
 
+test('i18n-runtime preserves code identifiers inside file-viewer, diff, and deep code containers', () => {
+  const dictPath = path.join(ROOT, 'payload', 'dist', 'i18n', 'zh-CN.json');
+  const runtimePath = path.join(ROOT, 'payload', 'dist', 'i18n', 'i18n-runtime.js');
+  const dict = JSON.parse(fs.readFileSync(dictPath, 'utf8'));
+  const runtimeCode = fs.readFileSync(runtimePath, 'utf8');
+
+  const rootEl = createMockElement('HTML');
+  const bodyEl = createMockElement('BODY');
+
+  // 1. Antigravity file viewer: .code-line > [data-line-tokens] > span.relative > span(Output/Status/Client/Cache)
+  const fileViewerLine = createMockElement('DIV', { 'data-line-number': '42' }, 'code-line group flex font-mono text-sm');
+  const lineTokens = createMockElement('DIV', { 'data-line-tokens': '' }, '');
+  const tokenWrap = createMockElement('SPAN', {}, 'relative');
+  const outputSpan = createMockElement('SPAN', {}, '');
+  const outputText = createMockTextNode('Output');
+  outputSpan.appendChild(outputText);
+  const statusSpan = createMockElement('SPAN', {}, '');
+  const statusText = createMockTextNode('Status');
+  statusSpan.appendChild(statusText);
+  tokenWrap.appendChild(outputSpan);
+  tokenWrap.appendChild(statusSpan);
+  lineTokens.appendChild(tokenWrap);
+  fileViewerLine.appendChild(lineTokens);
+
+  // 2. Diff / CodeLine viewer: .code-line > .line-content > span(Client/Cache)
+  const diffLine = createMockElement('DIV', { 'data-file-uri': 'file:///a.go', 'data-diff-type': '0' }, 'w-1/2 code-line group flex');
+  const lineContent = createMockElement('DIV', {}, 'line-content group/line overflow-y-clip');
+  const clientSpan = createMockElement('SPAN', {}, '');
+  const clientText = createMockTextNode('Client');
+  clientSpan.appendChild(clientText);
+  const cacheSpan = createMockElement('SPAN', {}, '');
+  const cacheText = createMockTextNode('Cache');
+  cacheSpan.appendChild(cacheText);
+  lineContent.appendChild(clientSpan);
+  lineContent.appendChild(cacheSpan);
+  diffLine.appendChild(lineContent);
+
+  // 3. Deeply nested (>3 ancestors) code inside <pre>
+  const preEl = createMockElement('PRE', {}, '');
+  const d1 = createMockElement('DIV', {}, '');
+  const d2 = createMockElement('DIV', {}, '');
+  const d3 = createMockElement('DIV', {}, '');
+  const d4 = createMockElement('DIV', {}, '');
+  const deepSpan = createMockElement('SPAN', {}, '');
+  const deepText = createMockTextNode('Status');
+  deepSpan.appendChild(deepText);
+  d4.appendChild(deepSpan);
+  d3.appendChild(d4);
+  d2.appendChild(d3);
+  d1.appendChild(d2);
+  preEl.appendChild(d1);
+
+  // 4. Non-code UI element with substring-similar class ("inline-content") must still translate
+  const uiInlineBox = createMockElement('DIV', {}, 'inline-content text-sm');
+  const uiStatusText = createMockTextNode('Status');
+  uiInlineBox.appendChild(uiStatusText);
+
+  bodyEl.appendChild(fileViewerLine);
+  bodyEl.appendChild(diffLine);
+  bodyEl.appendChild(preEl);
+  bodyEl.appendChild(uiInlineBox);
+  rootEl.appendChild(bodyEl);
+
+  let observerCb = null;
+  class CapturingMutationObserver {
+    constructor(cb) {
+      observerCb = cb;
+    }
+    observe() {}
+    disconnect() {}
+  }
+
+  const listeners = {};
+  const doc = {
+    documentElement: rootEl,
+    body: bodyEl,
+    readyState: 'complete',
+    title: 'Antigravity',
+    addEventListener(type, fn) {
+      listeners[type] = fn;
+    },
+    querySelectorAll() {
+      return [];
+    },
+  };
+
+  const sandbox = {
+    document: doc,
+    Document: function FakeDocument() {},
+    MutationObserver: CapturingMutationObserver,
+    Set,
+    Map,
+    RegExp,
+    Object,
+    String,
+    Array,
+    Date,
+    setInterval() {
+      return 1;
+    },
+    clearInterval() {},
+    setTimeout() {
+      return 1;
+    },
+    clearTimeout() {},
+    requestAnimationFrame(cb) {
+      cb();
+      return 1;
+    },
+    console,
+    __AGY_I18N_CONFIG__: { enabled: true, language: 'zh-CN' },
+    __AGY_I18N_DATA__: dict,
+  };
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+
+  vm.runInNewContext(runtimeCode, sandbox, { filename: 'i18n-runtime.js' });
+
+  // Full scan assertions
+  assert.equal(outputText.nodeValue, 'Output');
+  assert.equal(statusText.nodeValue, 'Status');
+  assert.equal(clientText.nodeValue, 'Client');
+  assert.equal(cacheText.nodeValue, 'Cache');
+  assert.equal(deepText.nodeValue, 'Status');
+  assert.equal(uiStatusText.nodeValue, '状态');
+
+  // Direct MutationObserver & pointerenter targeting deep nodes must not bypass ignore boundaries
+  observerCb([
+    { type: 'childList', addedNodes: [outputSpan, clientSpan, deepSpan] },
+    { type: 'characterData', target: statusText },
+    { type: 'characterData', target: cacheText },
+    { type: 'characterData', target: deepText },
+  ]);
+  if (listeners.pointerenter) {
+    listeners.pointerenter({ target: outputSpan });
+    listeners.pointerenter({ target: deepSpan });
+  }
+
+  assert.equal(outputText.nodeValue, 'Output');
+  assert.equal(statusText.nodeValue, 'Status');
+  assert.equal(clientText.nodeValue, 'Client');
+  assert.equal(cacheText.nodeValue, 'Cache');
+  assert.equal(deepText.nodeValue, 'Status');
+});
+
 test('i18n preload loads dictionary lazily via IPC without inlining 467KB JSON and skips work when language=en', () => {
   const { generateChinesePreloadCode } = require(path.join(ROOT, 'payload', 'dist', 'modular-installer.js'));
   const dictPath = path.join(ROOT, 'payload', 'dist', 'i18n', 'zh-CN.json');

@@ -458,27 +458,44 @@
 
   var IGNORED_CLASS_SUBSTRINGS = [
     'monaco-editor',
+    'monaco-diff-editor',
     'view-lines',
     'view-line',
     'monaco-mouse-cursor-text',
+    'cm-editor',
+    'cm-content',
+    'cm-line',
+    'prism-code',
     'xterm',
     'hljs',
     'code-block',
     'editor-instance'
   ];
 
-  // 仅精确匹配独立类名 token，避免将 Tailwind 语义类名如 group/terminal-card 或 token-count 误判为代码/终端输出区
+  // 仅精确匹配独立类名 token，避免将 Tailwind 语义类名如 group/terminal-card 或 inline-content 误判为代码/终端输出区
   var IGNORED_EXACT_CLASSES = {
     'terminal': 1,
-    'token': 1
+    'token': 1,
+    'code-line': 1,
+    'line-content': 1,
+    'shiki': 1,
+    'notranslate': 1
   };
+  var IGNORED_EXACT_CLASS_KEYS = Object.keys(IGNORED_EXACT_CLASSES);
 
   function hasIgnoredClass(className) {
     if (!className || typeof className !== 'string') return false;
     for (var i = 0; i < IGNORED_CLASS_SUBSTRINGS.length; i++) {
       if (className.indexOf(IGNORED_CLASS_SUBSTRINGS[i]) !== -1) return true;
     }
-    if (className.indexOf('terminal') !== -1 || className.indexOf('token') !== -1) {
+    var maybeExact = false;
+    for (var k = 0; k < IGNORED_EXACT_CLASS_KEYS.length; k++) {
+      if (className.indexOf(IGNORED_EXACT_CLASS_KEYS[k]) !== -1) {
+        maybeExact = true;
+        break;
+      }
+    }
+    if (maybeExact) {
       var parts = className.split(/\s+/);
       for (var j = 0; j < parts.length; j++) {
         if (IGNORED_EXACT_CLASSES[parts[j]]) return true;
@@ -507,27 +524,30 @@
     return false;
   }
 
-  function shouldIgnoreElement(el) {
+  function isSelfIgnoredElement(el) {
     if (!el || el.nodeType !== 1) return false;
     if (el.id === 'context-meter-root') return true;
     if (IGNORED_TAGS[el.tagName]) return true;
     if (el.isContentEditable) return true;
-    if (el.closest && el.closest('#context-meter-root')) return true;
+    if (el.hasAttribute && el.hasAttribute('data-line-tokens')) return true;
+    if (el.getAttribute) {
+      if (el.getAttribute('translate') === 'no' || el.getAttribute('role') === 'code') return true;
+    }
 
     // 模型选择器相关边界元素及其子元素保持英文原样（纯属性 O(1) 短路）
     if (isModelSelectorBoundary(el)) return true;
 
     var className = typeof el.className === 'string' ? el.className : '';
     if (className && hasIgnoredClass(className)) return true;
+    return false;
+  }
 
-    // 向上检查最近 3 层祖先，防止子文本/图标元素在受保护区域（如 trigger/item 内部）
-    var ancestor = el.parentElement;
-    for (var depth = 0; ancestor && depth < 3; depth++) {
-      if (IGNORED_TAGS[ancestor.tagName]) return true;
-      if (isModelSelectorBoundary(ancestor)) return true;
-      var ancestorClass = typeof ancestor.className === 'string' ? ancestor.className : '';
-      if (ancestorClass && hasIgnoredClass(ancestorClass)) return true;
-      ancestor = ancestor.parentElement;
+  function shouldIgnoreElement(el) {
+    if (!el || el.nodeType !== 1) return false;
+    var cur = el;
+    while (cur && cur.nodeType === 1) {
+      if (isSelfIgnoredElement(cur)) return true;
+      cur = cur.parentElement || cur.parentNode;
     }
     return false;
   }
@@ -540,10 +560,10 @@
   // 扫描轮次 ID，同一轮全量扫描中元素只处理一次
   var currentScanId = 0;
 
-  function translateTextNode(node) {
+  function translateTextNode(node, skipParentIgnoreCheck) {
     if (!node || node.nodeType !== 3) return;
     var parent = node.parentElement || node.parentNode;
-    if (parent && (shouldIgnoreElement(parent) || parent.tagName === 'INPUT' || parent.tagName === 'TEXTAREA')) return;
+    if (parent && (parent.tagName === 'INPUT' || parent.tagName === 'TEXTAREA' || (!skipParentIgnoreCheck && shouldIgnoreElement(parent)))) return;
 
     var original = node.nodeValue;
     if (!original) return;
@@ -602,9 +622,9 @@
     return null;
   }
 
-  function translateElement(el, scanId) {
+  function translateElement(el, scanId, skipAncestorCheck) {
     if (!el || el.nodeType !== 1) return;
-    if (shouldIgnoreElement(el)) return;
+    if (skipAncestorCheck ? isSelfIgnoredElement(el) : shouldIgnoreElement(el)) return;
 
     // 同一轮扫描中，已处理的元素跳过
     if (scanId && el._agyScanId === scanId) return;
@@ -726,9 +746,9 @@
     var child = el.firstChild;
     while (child) {
       if (child.nodeType === 3) {
-        translateTextNode(child);
+        translateTextNode(child, true);
       } else if (child.nodeType === 1) {
-        translateElement(child, scanId);
+        translateElement(child, scanId, true);
       }
       child = child.nextSibling;
     }
