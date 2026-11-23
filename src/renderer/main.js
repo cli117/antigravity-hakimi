@@ -8,6 +8,7 @@
     summarizeSessionCache,
     parseGeneratorCall,
     normalizeModelId,
+    resolveModelQuota,
     resolveStableModelId,
     formatEffortLabel,
     detectModelVendor,
@@ -82,6 +83,7 @@
     route: null, count: 0, latest: null, requestAt: 0, requestError: '',
     requestBusy: false, requestNext: 0, scanBusy: false, scanNext: 0,
     scanError: '', scan: null, generation: 0, controllers: new Set(),
+    modelQuotaConfigs: [],
     disposed: false, layoutMode: 'wide', tooltipOpen: false,
     reportedFinalCallIds: new Set(), reportedFinalCallOutputs: new Map()
   };
@@ -298,6 +300,32 @@
   let restoreRequestSeq = 0;
 
   /* @INSERT_DROPDOWN_MODULE */
+  function renderModelQuota() {
+    const widget = el('model-quota');
+    if (!widget) return;
+
+    const configs = state.modelQuotaConfigs;
+    const selected = configs.length ? extractHostSelectedModel() : null;
+    const quota = selected && (
+      resolveModelQuota(selected.modelId, configs) ||
+      resolveModelQuota(selected.rawText, configs)
+    );
+    const remaining = quota?.remainingFraction;
+    widget.hidden = !(Number.isFinite(remaining) && remaining >= 0 && remaining <= 1);
+    if (widget.hidden) return;
+
+    const used = Math.round((1 - remaining) * 100);
+    const model = selected.productLabel || quota.label;
+    const value = t('quota.used', { percent: used });
+    const progress = el('model-quota-progress');
+    const label = el('model-quota-label');
+    const amount = el('model-quota-amount');
+
+    if (label.textContent !== model) label.textContent = model;
+    if (amount.textContent !== value) amount.textContent = value;
+    if (progress.value !== used) progress.value = used;
+  }
+
   function renderPlanDetail(ps) {
     if (!ps) return;
     const sumTxt = el('plan-summary-text');
@@ -957,6 +985,11 @@
         renderHeaderModelDropdown();
         if (!isContextSettingsView && activeContextTab === 'models') renderModelSettingsTab();
       }
+    }
+
+    if (!payload.loading && Array.isArray(payload.cascadeModelConfigs)) {
+      state.modelQuotaConfigs = payload.cascadeModelConfigs;
+      renderModelQuota();
     }
 
     const hasExistingData = Number(ANTIGRAVITY_TOKEN_DATA.summary?.grandTotalTokens) > 0;
@@ -2385,6 +2418,7 @@
     if (!state.disposed && !host.isConnected) {
       ensureHostDocked();
     }
+    renderModelQuota();
     const id = route();
     if (id !== state.route) {
       for (const controller of state.controllers) controller.abort(); state.controllers.clear(); state.generation++;

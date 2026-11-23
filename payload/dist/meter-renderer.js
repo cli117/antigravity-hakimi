@@ -9,6 +9,7 @@
     summarizeSessionCache,
     parseGeneratorCall,
     normalizeModelId,
+    resolveModelQuota,
     resolveStableModelId,
     formatEffortLabel,
     detectModelVendor,
@@ -142,6 +143,23 @@
       color-scheme:dark;
       color:var(--ag-text-primary);
     }
+
+    #model-quota{
+      position:fixed;left:12px;bottom:12px;
+      box-sizing:border-box;width:180px;max-width:calc(100vw - 24px);
+      padding:7px 9px;border:1px solid var(--ag-float-border);border-radius:8px;
+      background:var(--ag-float-bg);color:var(--ag-text-secondary);
+      font-size:11px;pointer-events:none;
+    }
+    .model-quota-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    #model-quota-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    #model-quota-amount{flex-shrink:0;font-variant-numeric:tabular-nums}
+    #model-quota-progress{
+      display:block;width:100%;height:4px;margin-top:5px;appearance:none;
+      overflow:hidden;border:0;border-radius:999px;background:var(--ag-track-bg);
+    }
+    #model-quota-progress::-webkit-progress-bar{background:var(--ag-track-bg)}
+    #model-quota-progress::-webkit-progress-value{border-radius:999px;background:var(--ag-token-accent-default)}
 
     /* 融入宿主原生布局容器时参与正常 Flexbox 空间分配 */
     :host([data-dock="flow"]){
@@ -1622,7 +1640,16 @@
 
   </style>
 
-    <!-- 顶部基本单元 1: 上下文小圆环 -->
+    <div id="model-quota" hidden>
+    <div class="model-quota-heading">
+      <span id="model-quota-label"></span>
+      <span id="model-quota-amount"></span>
+    </div>
+    <span id="model-quota-description" class="sr-only" data-i18n="quota.label">模型额度用量</span>
+    <progress id="model-quota-progress" max="100" value="0" aria-labelledby="model-quota-label model-quota-description"></progress>
+  </div>
+
+  <!-- 顶部基本单元 1: 上下文小圆环 -->
   <button id="badge" class="ag-unit ag-unit-ring" type="button" aria-label="会话与上下文统计" data-i18n-aria="badge.aria" aria-describedby="context-tooltip" aria-expanded="false">
     <svg id="ring-svg" class="ring-svg" width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
       <circle id="ring-track" class="ring-track" cx="9" cy="9" r="6.5" fill="none" stroke-width="2.1"></circle>
@@ -3398,6 +3425,9 @@
       'models.btn.unsupported': { 'zh-CN': '当前环境不可应用', 'zh-TW': '目前環境無法套用', en: 'Unsupported environment' },
       'header.theme.aria': { 'zh-CN': '切换浅色/深色主题', 'zh-TW': '切換淺色/深色主題', en: 'Toggle light/dark theme' },
       'header.theme.title': { 'zh-CN': '当前：跟随IDE（点击切换：浅色 / 深色 / 自动）', 'zh-TW': '目前：跟隨IDE（點擊切換：淺色 / 深色 / 自動）', en: 'Current: Follow IDE (click to cycle Light / Dark / Auto)' },
+
+      'quota.label': { 'zh-CN': '模型额度用量', 'zh-TW': '模型額度用量', en: 'Model quota used' },
+      'quota.used': { 'zh-CN': '已用 {percent}%', 'zh-TW': '已用 {percent}%', en: '{percent}% used' },
 
       // 订阅与额度详情
       'plan.detail.toggleOpen': { 'zh-CN': '详情 ▼', 'zh-TW': '詳情 ▼', en: 'Details ▼' },
@@ -5861,6 +5891,7 @@
     route: null, count: 0, latest: null, requestAt: 0, requestError: '',
     requestBusy: false, requestNext: 0, scanBusy: false, scanNext: 0,
     scanError: '', scan: null, generation: 0, controllers: new Set(),
+    modelQuotaConfigs: [],
     disposed: false, layoutMode: 'wide', tooltipOpen: false,
     reportedFinalCallIds: new Set(), reportedFinalCallOutputs: new Map()
   };
@@ -8047,6 +8078,32 @@
   el('btn-plan-detail-collapse')?.addEventListener('click', () => {
     setPlanDetailExpanded(false);
   });
+
+  function renderModelQuota() {
+    const widget = el('model-quota');
+    if (!widget) return;
+
+    const configs = state.modelQuotaConfigs;
+    const selected = configs.length ? extractHostSelectedModel() : null;
+    const quota = selected && (
+      resolveModelQuota(selected.modelId, configs) ||
+      resolveModelQuota(selected.rawText, configs)
+    );
+    const remaining = quota?.remainingFraction;
+    widget.hidden = !(Number.isFinite(remaining) && remaining >= 0 && remaining <= 1);
+    if (widget.hidden) return;
+
+    const used = Math.round((1 - remaining) * 100);
+    const model = selected.productLabel || quota.label;
+    const value = t('quota.used', { percent: used });
+    const progress = el('model-quota-progress');
+    const label = el('model-quota-label');
+    const amount = el('model-quota-amount');
+
+    if (label.textContent !== model) label.textContent = model;
+    if (amount.textContent !== value) amount.textContent = value;
+    if (progress.value !== used) progress.value = used;
+  }
 
   function renderPlanDetail(ps) {
     if (!ps) return;
@@ -13279,6 +13336,11 @@
       }
     }
 
+    if (!payload.loading && Array.isArray(payload.cascadeModelConfigs)) {
+      state.modelQuotaConfigs = payload.cascadeModelConfigs;
+      renderModelQuota();
+    }
+
     const hasExistingData = Number(ANTIGRAVITY_TOKEN_DATA.summary?.grandTotalTokens) > 0;
     const incomingKeys = Object.keys(payload.dailyMap || {});
     const incomingTotal = Number(payload.summary?.grandTotalTokens) || incomingKeys.reduce((acc, k) => acc + (Number(payload.dailyMap[k]?.total) || 0), 0);
@@ -15443,6 +15505,7 @@
     if (!state.disposed && !host.isConnected) {
       ensureHostDocked();
     }
+    renderModelQuota();
     const id = route();
     if (id !== state.route) {
       for (const controller of state.controllers) controller.abort(); state.controllers.clear(); state.generation++;

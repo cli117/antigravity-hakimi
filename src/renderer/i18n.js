@@ -642,6 +642,9 @@
       'header.theme.aria': { 'zh-CN': '切换浅色/深色主题', 'zh-TW': '切換淺色/深色主題', en: 'Toggle light/dark theme' },
       'header.theme.title': { 'zh-CN': '当前：跟随IDE（点击切换：浅色 / 深色 / 自动）', 'zh-TW': '目前：跟隨IDE（點擊切換：淺色 / 深色 / 自動）', en: 'Current: Follow IDE (click to cycle Light / Dark / Auto)' },
 
+      'quota.label': { 'zh-CN': '模型额度用量', 'zh-TW': '模型額度用量', en: 'Model quota used' },
+      'quota.used': { 'zh-CN': '已用 {percent}%', 'zh-TW': '已用 {percent}%', en: '{percent}% used' },
+
       // 订阅与额度详情
       'plan.detail.toggleOpen': { 'zh-CN': '详情 ▼', 'zh-TW': '詳情 ▼', en: 'Details ▼' },
       'plan.detail.toggleClose': { 'zh-CN': '详情收回 ▲', 'zh-TW': '詳情收回 ▲', en: 'Hide ▲' },
