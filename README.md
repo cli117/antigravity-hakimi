@@ -13,7 +13,7 @@
 2. **上下文窗口解锁（桌面端 + `agy` CLI 联动）**
    - 桌面端原生支持 `default`（恢复官方默认策略，当前如 512K）、`fixed` (`16384 ~ 2097152`) 与 `dynamic`（默认启用，跟随模型原生上限透传），通过 ARM64 Gate 3A (`CLAMP_256K_ARM64` / `DEF_ORIG_ARM64` 底层 256K 钳位) 与 Gate 3B (`applyFeatureProviderCheckpointOverrideConfig`) 双重修补生效。
    - 渲染层 Hook 在发送 `SendUserCascadeMessage` 请求时按当前配置动态覆写 `checkpointConfig.maxTokenLimit`；设置面板与顶栏快调浮层均提供 `512K`、`1M` 与 `动态跟随` 预设，支持自定义整数与 Apple Silicon (`arm64`) 在 UI 内即时保存应用。
-   - **`agy` CLI 联动解锁**：内置 [`meter-cli-unlock.js`](payload/dist/meter-cli-unlock.js)（与 [`unlock/agy-cli/agy-patch.py`](unlock/agy-cli/agy-patch.py)），支持在构建时加 `--patch-cli`、独立执行 `npm run unlock:cli` 或在面板「配置」页点击按钮，一键修补本机 `agy` CLI 二进制（绕过 `/model` 上下文选择器机型白名单 + 修复 `AGY_CLI_AUTO_COMPACT_OVERRIDE` 读取）并同步 CLI 配置文件。
+   - **`agy` CLI 解锁（macOS ARM64 & Linux `x86-64` / `arm64`）**：内置 [`meter-cli-unlock.js`](payload/dist/meter-cli-unlock.js) 与独立 Python 版 [`unlock/agy-cli/agy-patch.py`](unlock/agy-cli/agy-patch.py)，支持在 macOS 与 Linux 开发机（兼容 PIE `.rela.dyn`）上一键修补本机 `agy` CLI 二进制：解锁账号地区 / Free-tier 限制（`ValidateAndOnboardAccount`）、绕过 `/model` 上下文选择器机型白名单（`offersContextWindow`）、解锁内置检查点上下文窗口（Gate 3A / 3B）、修复 `AGY_CLI_AUTO_COMPACT_OVERRIDE` 读取（ARM64），并同步 CLI 上下文配置文件。
 3. **实时上下文监控、缓存命中率告警与会话快捷操作**
    - 内置右上角悬浮胶囊（Context Meter）：实时展示当前上下文 Token 占用进度、输入/输出速率（tok/s）、**上下文缓存命中率**、附件扫描预算估计（[`attachment_scan.py`](payload/dist/attachment_scan.py)），以及 8 类失败原因自动分类诊断。
    - **上下文缓存命中率与低命中提醒**：一级顶栏紧邻输出速度（`tok/s`）展示实时缓存命中率（`cacheReadTokens / (inputTokens + cacheReadTokens)`），宽屏显示 `缓存 XX%`、窄屏自动收缩至 `XX%` 或收入溢出菜单；智能区分新会话首轮冷启动（不误报）与多轮长上下文缓存失效/低命中（琥珀色 `warn` / 红色 `low` 高亮告警 + 悬停即时构成气泡，提示潜在 Token 重算开销），并在「当前会话」面板提供「上下文缓存命中」四维速览卡片（本轮命中率、缓存复用、未缓存新增、会话累计命中率）与底层输入构成明细。
@@ -65,7 +65,25 @@ npm run doctor
 open "/Applications/哈基米.app"
 ```
 
-### 2. 为已构建的 `哈基米.app` 快速换图标（免重跑完整 Build）
+### 2. 在 Linux 开发机解锁 `agy` CLI（支持 `x86-64` / `arm64`）
+
+Linux 环境无需 macOS `codesign` 或桌面版 `Antigravity.app`，支持直接修补本机 `agy` CLI 二进制（自动探测 `~/.local/bin/agy`、`~/.antigravity/antigravity/bin/agy`、`$PATH` 或通过 `--binary` / `AGY_CLI_BIN` 指定）：
+
+```bash
+# 方式一（推荐，需 Node.js）：自动修补地区解锁 + 上下文窗口（默认 dynamic）并同步配置
+npm run unlock:cli
+# 或显式指定路径 / 固定上限 / 仅检测状态：
+node scripts/cli-unlock.js --analyze
+node scripts/cli-unlock.js --apply --binary ~/.local/bin/agy --mode fixed --limit 524288
+
+# 方式二：通过构建脚本仅执行 CLI 解锁（Linux 下传 --patch-cli 也会自动跳过桌面构建直跑 CLI 解锁）
+bash ./build-hakimi.sh --cli-only
+
+# 方式三（无 Node.js 环境，纯 Python 3）：
+python3 unlock/agy-cli/agy-patch.py --in-place
+```
+
+### 3. 为已构建的 `哈基米.app` 快速换图标（免重跑完整 Build）
 
 如果 `/Applications/哈基米.app` 已经打包好，只想更换图标或恢复默认图标，可直接运行 `set-hakimi-icon.sh`（耗时约 1~2 秒，不重新复制/修改 205MB `language_server`，保留全部解锁与汉化配置）：
 
@@ -80,7 +98,7 @@ bash ./set-hakimi-icon.sh --icon ~/Pictures/logo.png --raw-icon
 bash ./set-hakimi-icon.sh --restore --restart
 ```
 
-### 3. 构建参数说明
+### 4. 构建参数说明
 
 ```text
 ./build-hakimi.sh [选项]
@@ -94,8 +112,9 @@ bash ./set-hakimi-icon.sh --restore --restart
   -r, --restart                   若目标应用当前正在运行，构建完成后自动优雅退出旧进程并重启新版
   --context-mode <mode>           上下文窗口模式: default | fixed | dynamic (默认: dynamic)
   --context-limit <tokens>        当 --context-mode fixed 时指定固定 token 上限 (16384 ~ 2097152)
-  --patch-cli                     构建完成后联动修补本机 agy CLI 二进制并同步 CLI 上下文配置
-  --cli-bin <path>                可选：配合 --patch-cli 指定 agy 二进制路径
+  --patch-cli                     构建完成后联动修补本机 agy CLI 二进制并同步 CLI 上下文配置（Linux 下自动仅执行 CLI 修补）
+  --cli-only                      仅修补本机 agy CLI 二进制并同步 CLI 配置，跳过 macOS 桌面应用构建（支持 Linux 与 macOS）
+  --cli-bin <path>                可选：配合 --patch-cli / --cli-only 指定 agy 二进制路径
   --client-lang <zh-CN|en>        初始化/强制覆盖桌面端界面语言 (默认首次为 zh-CN)
 ```
 

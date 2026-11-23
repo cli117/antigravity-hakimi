@@ -194,10 +194,11 @@ function resolveElfGoTextBase(buf, elf, pclnOff, textStartFromHeader) {
   };
 }
 
-function findElfGoFunctions(buf, elf, targetSuffixes) {
+function findElfGoFunctions(buf, elf, targetSuffixes, options = {}) {
   const minLC = elf.arch === 'arm64' ? 0x04 : 0x01;
   return scanGopclntabBySuffix(buf, targetSuffixes, {
     minLC,
+    maxNfunc: options.maxNfunc ?? 5000000,
     resolveBase: (pclnOff, textStart) => resolveElfGoTextBase(buf, elf, pclnOff, textStart),
   });
 }
@@ -1521,6 +1522,7 @@ module.exports = {
   DEF_GUARD_ARM64,
   NOP_ARM64,
   parseElf64,
+  fileOffToVA,
   findElfGoFunctions,
   analyzeElfRegionUnlock,
   analyzeElfContextUnlock,

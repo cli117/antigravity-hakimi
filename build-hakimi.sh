@@ -32,6 +32,7 @@ RAW_ICON=0
 FORCE_DEFAULT_ICON=0
 AUTO_RESTART=0
 PATCH_CLI=0
+CLI_ONLY=0
 CLI_BIN=""
 
 usage() {
@@ -49,8 +50,9 @@ usage() {
   -r, --restart                   若目标应用当前正在运行，构建完成后自动优雅退出旧进程并重启新版
   --context-mode <mode>           上下文窗口模式: default | fixed | dynamic (默认: dynamic)
   --context-limit <tokens>        当 --context-mode fixed 时指定固定 token 上限 (16384 ~ 2097152)
-  --patch-cli                     构建完成后联动修补本机 agy CLI 二进制并同步 CLI 上下文配置
-  --cli-bin <path>                可选：配合 --patch-cli 指定 agy 二进制路径
+  --patch-cli                     构建完成后联动修补本机 agy CLI 二进制并同步 CLI 上下文配置（Linux 下自动仅执行 CLI 修补）
+  --cli-only                      仅修补本机 agy CLI 二进制并同步 CLI 配置，跳过 macOS 桌面应用构建（支持 Linux x86-64/arm64 与 macOS arm64）
+  --cli-bin <path>                可选：配合 --patch-cli / --cli-only 指定 agy 二进制路径
   --client-lang <zh-CN|en>        桌面端界面语言 (首次写入配置默认为 zh-CN)
   -h, --help                      显示本帮助信息
 EOF
@@ -94,6 +96,11 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --patch-cli)
+      PATCH_CLI=1
+      shift
+      ;;
+    --cli-only)
+      CLI_ONLY=1
       PATCH_CLI=1
       shift
       ;;
@@ -154,6 +161,49 @@ if [[ -n "$CLIENT_LANG" ]]; then
     zh-CN|en) ;;
     *) echo "无效 --client-lang: $CLIENT_LANG (可选: zh-CN | en)" >&2; exit 2 ;;
   esac
+fi
+
+run_cli_unlock() {
+  if command -v node >/dev/null 2>&1; then
+    local cli_args=(--apply --mode "$CONTEXT_MODE")
+    [[ -n "$CONTEXT_LIMIT" ]] && cli_args+=(--limit "$CONTEXT_LIMIT")
+    if [[ -n "$CLI_BIN" ]]; then
+      cli_args+=(--binary "$CLI_BIN" --strict)
+    fi
+    node "$SCRIPT_DIR/scripts/cli-unlock.js" "${cli_args[@]}"
+    return $?
+  elif command -v python3 >/dev/null 2>&1; then
+    local py_args=(--in-place --mode "$CONTEXT_MODE")
+    [[ -n "$CONTEXT_LIMIT" ]] && py_args+=(--limit "$CONTEXT_LIMIT")
+    [[ -n "$CLI_BIN" ]] && py_args+=(--binary "$CLI_BIN")
+    python3 "$SCRIPT_DIR/unlock/agy-cli/agy-patch.py" "${py_args[@]}"
+    return $?
+  else
+    echo "缺少 node 或 python3，无法修补 agy CLI" >&2
+    return 1
+  fi
+}
+
+HOST_OS="$(uname -s)"
+if [[ $CLI_ONLY -eq 1 ]]; then
+  echo "==> [CLI] 修补本机 agy CLI 并同步配置"
+  run_cli_unlock
+  exit $?
+fi
+
+if [[ "$HOST_OS" != "Darwin" ]]; then
+  if [[ $PATCH_CLI -eq 1 ]]; then
+    echo "==> 检测到当前系统为 ${HOST_OS}（非 macOS）：跳过桌面端 哈基米.app 构建，直接修补本机 agy CLI"
+    run_cli_unlock
+    exit $?
+  fi
+  echo "当前系统为 ${HOST_OS}：桌面端 哈基米.app 构建仅支持 macOS。" >&2
+  echo "如需在 Linux 开发机解锁 agy CLI，请运行:" >&2
+  echo "  npm run unlock:cli" >&2
+  echo "  或 bash ./build-hakimi.sh --cli-only" >&2
+  echo "  或 node scripts/cli-unlock.js --apply" >&2
+  echo "  或（无 Node 环境）python3 unlock/agy-cli/agy-patch.py --in-place" >&2
+  exit 1
 fi
 
 # 依赖检查
@@ -443,12 +493,7 @@ fi
 
 if [[ $PATCH_CLI -eq 1 ]]; then
   echo "==> [CLI] 联动修补本机 agy CLI 并同步配置"
-  CLI_ARGS=(--apply --mode "$CONTEXT_MODE")
-  [[ -n "$CONTEXT_LIMIT" ]] && CLI_ARGS+=(--limit "$CONTEXT_LIMIT")
-  if [[ -n "$CLI_BIN" ]]; then
-    CLI_ARGS+=(--binary "$CLI_BIN" --strict)
-  fi
-  node "$SCRIPT_DIR/scripts/cli-unlock.js" "${CLI_ARGS[@]}"
+  run_cli_unlock
 fi
 
 if [[ $AUTO_RESTART -eq 1 && $WAS_RUNNING -eq 1 ]]; then
