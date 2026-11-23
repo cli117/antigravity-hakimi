@@ -643,6 +643,10 @@
       'header.theme.title': { 'zh-CN': '当前：跟随IDE（点击切换：浅色 / 深色 / 自动）', 'zh-TW': '目前：跟隨IDE（點擊切換：淺色 / 深色 / 自動）', en: 'Current: Follow IDE (click to cycle Light / Dark / Auto)' },
 
       'quota.label': { 'zh-CN': '模型额度用量', 'zh-TW': '模型額度用量', en: 'Model quota used' },
+      'quota.unavailable': { 'zh-CN': '暂无额度数据', 'zh-TW': '暫無額度資料', en: 'Quota unavailable' },
+      'quota.windowUsed': { 'zh-CN': '{window}已用 {percent}%', 'zh-TW': '{window}已用 {percent}%', en: '{window} · {percent}% used' },
+      'quota.window.5h': { 'zh-CN': '5 小时', 'zh-TW': '5 小時', en: '5h' },
+      'quota.window.weekly': { 'zh-CN': '本周', 'zh-TW': '本週', en: 'Weekly' },
       'quota.used': { 'zh-CN': '已用 {percent}%', 'zh-TW': '已用 {percent}%', en: '{percent}% used' },
 
       // 订阅与额度详情

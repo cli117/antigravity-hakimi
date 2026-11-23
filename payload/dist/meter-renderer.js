@@ -10,6 +10,7 @@
     parseGeneratorCall,
     normalizeModelId,
     resolveModelQuota,
+    resolveModelQuotaGroup,
     resolveStableModelId,
     formatEffortLabel,
     detectModelVendor,
@@ -145,8 +146,8 @@
     }
 
     #model-quota{
-      position:fixed;left:12px;bottom:12px;
-      box-sizing:border-box;width:180px;max-width:calc(100vw - 24px);
+      position:fixed;left:12px;bottom:44px;
+      box-sizing:border-box;width:220px;max-width:calc(100vw - 24px);
       padding:7px 9px;border:1px solid var(--ag-float-border);border-radius:8px;
       background:var(--ag-float-bg);color:var(--ag-text-secondary);
       font-size:11px;pointer-events:none;
@@ -158,6 +159,7 @@
       display:block;width:100%;height:4px;margin-top:5px;appearance:none;
       overflow:hidden;border:0;border-radius:999px;background:var(--ag-track-bg);
     }
+    #model-quota-progress:indeterminate{background:var(--ag-track-bg)}
     #model-quota-progress::-webkit-progress-bar{background:var(--ag-track-bg)}
     #model-quota-progress::-webkit-progress-value{border-radius:999px;background:var(--ag-token-accent-default)}
 
@@ -1646,7 +1648,7 @@
       <span id="model-quota-amount"></span>
     </div>
     <span id="model-quota-description" class="sr-only" data-i18n="quota.label">模型额度用量</span>
-    <progress id="model-quota-progress" max="100" value="0" aria-labelledby="model-quota-label model-quota-description"></progress>
+    <progress id="model-quota-progress" max="100" aria-labelledby="model-quota-label model-quota-description" aria-describedby="model-quota-amount"></progress>
   </div>
 
   <!-- 顶部基本单元 1: 上下文小圆环 -->
@@ -3427,6 +3429,10 @@
       'header.theme.title': { 'zh-CN': '当前：跟随IDE（点击切换：浅色 / 深色 / 自动）', 'zh-TW': '目前：跟隨IDE（點擊切換：淺色 / 深色 / 自動）', en: 'Current: Follow IDE (click to cycle Light / Dark / Auto)' },
 
       'quota.label': { 'zh-CN': '模型额度用量', 'zh-TW': '模型額度用量', en: 'Model quota used' },
+      'quota.unavailable': { 'zh-CN': '暂无额度数据', 'zh-TW': '暫無額度資料', en: 'Quota unavailable' },
+      'quota.windowUsed': { 'zh-CN': '{window}已用 {percent}%', 'zh-TW': '{window}已用 {percent}%', en: '{window} · {percent}% used' },
+      'quota.window.5h': { 'zh-CN': '5 小时', 'zh-TW': '5 小時', en: '5h' },
+      'quota.window.weekly': { 'zh-CN': '本周', 'zh-TW': '本週', en: 'Weekly' },
       'quota.used': { 'zh-CN': '已用 {percent}%', 'zh-TW': '已用 {percent}%', en: '{percent}% used' },
 
       // 订阅与额度详情
@@ -5891,7 +5897,7 @@
     route: null, count: 0, latest: null, requestAt: 0, requestError: '',
     requestBusy: false, requestNext: 0, scanBusy: false, scanNext: 0,
     scanError: '', scan: null, generation: 0, controllers: new Set(),
-    modelQuotaConfigs: [],
+    modelQuotaConfigs: [], modelQuotaGroups: [],
     disposed: false, layoutMode: 'wide', tooltipOpen: false,
     reportedFinalCallIds: new Set(), reportedFinalCallOutputs: new Map()
   };
@@ -8083,26 +8089,34 @@
     const widget = el('model-quota');
     if (!widget) return;
 
+    const selected = extractHostSelectedModel();
     const configs = state.modelQuotaConfigs;
-    const selected = configs.length ? extractHostSelectedModel() : null;
-    const quota = selected && (
+    const groupQuota = resolveModelQuotaGroup(selected?.rawText, state.modelQuotaGroups);
+    const modelQuota = selected && (
       resolveModelQuota(selected.modelId, configs) ||
       resolveModelQuota(selected.rawText, configs)
     );
-    const remaining = quota?.remainingFraction;
-    widget.hidden = !(Number.isFinite(remaining) && remaining >= 0 && remaining <= 1);
-    if (widget.hidden) return;
-
-    const used = Math.round((1 - remaining) * 100);
-    const model = selected.productLabel || quota.label;
-    const value = t('quota.used', { percent: used });
+    const remaining = (groupQuota || modelQuota)?.remainingFraction;
+    const known = Number.isFinite(remaining) && remaining >= 0 && remaining <= 1;
+    const used = known ? Math.round((1 - remaining) * 100) : null;
+    const model = selected?.productLabel || t('quota.label');
+    const windowKey = { '5h': 'quota.window.5h', weekly: 'quota.window.weekly' }[groupQuota?.window];
+    const period = windowKey ? t(windowKey) : groupQuota?.displayName;
+    const value = !known ? t('quota.unavailable') : period
+      ? t('quota.windowUsed', { window: period, percent: used })
+      : t('quota.used', { percent: used });
     const progress = el('model-quota-progress');
     const label = el('model-quota-label');
     const amount = el('model-quota-amount');
 
+    if (widget.hidden) widget.hidden = false;
     if (label.textContent !== model) label.textContent = model;
     if (amount.textContent !== value) amount.textContent = value;
-    if (progress.value !== used) progress.value = used;
+    if (known) {
+      if (!progress.hasAttribute('value') || progress.value !== used) progress.value = used;
+    } else if (progress.hasAttribute('value')) {
+      progress.removeAttribute('value');
+    }
   }
 
   function renderPlanDetail(ps) {
@@ -13336,8 +13350,9 @@
       }
     }
 
-    if (!payload.loading && Array.isArray(payload.cascadeModelConfigs)) {
-      state.modelQuotaConfigs = payload.cascadeModelConfigs;
+    if (!payload.loading && (payload.rawPlanStatus || Array.isArray(payload.cascadeModelConfigs))) {
+      state.modelQuotaConfigs = payload.cascadeModelConfigs || [];
+      state.modelQuotaGroups = payload.rawPlanStatus?.modelQuotaGroups || [];
       renderModelQuota();
     }
 

@@ -1500,6 +1500,31 @@ let cachedHostUserStatus = null;
 let cachedHostUserStatusAt = 0;
 const remoteHostUserStatusCache = new Map();
 
+async function fetchLiveUserStatus(request) {
+  const [res, availRes, quotaRes] = await Promise.all([
+    request('GetUserStatus', {}),
+    request('GetAvailableModels', { forceRefresh: false }).catch(() => null),
+    request('RetrieveUserQuotaSummary', { forceRefresh: false }).catch(() => null)
+  ]);
+  const parsed = parseUserPlanStatus(res);
+  const configs = res?.userStatus?.cascadeModelConfigData?.clientModelConfigs || [];
+  const availMap = availRes ? parseAvailableModelsResponse(availRes) : {};
+  if (Object.keys(availMap).length) parsed.availableModelDetails = availMap;
+  if (configs.length) parsed.cascadeModelConfigs = mergeModelCapabilitiesIntoConfigs(configs, availMap);
+  if (Array.isArray(quotaRes?.response?.groups)) {
+    parsed.modelQuotaGroups = quotaRes.response.groups.map(group => ({
+      displayName: group.displayName,
+      buckets: (group.buckets || []).map(bucket => ({
+        displayName: bucket.displayName,
+        window: bucket.window,
+        remainingFraction: bucket.remainingFraction ?? bucket.remaining?.remainingFraction,
+        disabled: bucket.disabled === true
+      }))
+    }));
+  }
+  return parsed;
+}
+
 async function fetchUserStatusFromHost(options = {}) {
   if (options && options.userStatus !== undefined) {
     if (!options.userStatus) return null;
@@ -1519,18 +1544,8 @@ async function fetchUserStatusFromHost(options = {}) {
       return cached.data;
     }
     try {
-      const [res, availRes] = await Promise.all([
-        options.requestFn('GetUserStatus', {}),
-        options.requestFn('GetAvailableModels', { forceRefresh: false }).catch(() => null)
-      ]);
-      const parsed = parseUserPlanStatus(res);
-      const configs = res?.userStatus?.cascadeModelConfigData?.clientModelConfigs || [];
-      const availMap = availRes ? parseAvailableModelsResponse(availRes) : {};
-      if (parsed) {
-        if (Object.keys(availMap).length) parsed.availableModelDetails = availMap;
-        if (configs.length) parsed.cascadeModelConfigs = mergeModelCapabilitiesIntoConfigs(configs, availMap);
-        setBoundedMap(remoteHostUserStatusCache, cacheKey, { data: parsed, at: Date.now() }, MAX_REMOTE_HOST_STATUS_CACHE);
-      }
+      const parsed = await fetchLiveUserStatus(options.requestFn);
+      setBoundedMap(remoteHostUserStatusCache, cacheKey, { data: parsed, at: Date.now() }, MAX_REMOTE_HOST_STATUS_CACHE);
       return parsed;
     } catch {
       return cached?.data || null;
@@ -1542,17 +1557,7 @@ async function fetchUserStatusFromHost(options = {}) {
   try {
     const { connect } = require('./local-api');
     const api = await connect();
-    const [res, availRes] = await Promise.all([
-      api.call('GetUserStatus', {}),
-      api.call('GetAvailableModels', { forceRefresh: false }).catch(() => null)
-    ]);
-    const parsed = parseUserPlanStatus(res);
-    const configs = res?.userStatus?.cascadeModelConfigData?.clientModelConfigs || [];
-    const availMap = availRes ? parseAvailableModelsResponse(availRes) : {};
-    if (parsed) {
-      if (Object.keys(availMap).length) parsed.availableModelDetails = availMap;
-      if (configs.length) parsed.cascadeModelConfigs = mergeModelCapabilitiesIntoConfigs(configs, availMap);
-    }
+    const parsed = await fetchLiveUserStatus(api.call);
     if (parsed && !options.agDir) {
       cachedHostUserStatus = parsed;
       cachedHostUserStatusAt = Date.now();

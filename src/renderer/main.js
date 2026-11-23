@@ -9,6 +9,7 @@
     parseGeneratorCall,
     normalizeModelId,
     resolveModelQuota,
+    resolveModelQuotaGroup,
     resolveStableModelId,
     formatEffortLabel,
     detectModelVendor,
@@ -83,7 +84,7 @@
     route: null, count: 0, latest: null, requestAt: 0, requestError: '',
     requestBusy: false, requestNext: 0, scanBusy: false, scanNext: 0,
     scanError: '', scan: null, generation: 0, controllers: new Set(),
-    modelQuotaConfigs: [],
+    modelQuotaConfigs: [], modelQuotaGroups: [],
     disposed: false, layoutMode: 'wide', tooltipOpen: false,
     reportedFinalCallIds: new Set(), reportedFinalCallOutputs: new Map()
   };
@@ -304,26 +305,34 @@
     const widget = el('model-quota');
     if (!widget) return;
 
+    const selected = extractHostSelectedModel();
     const configs = state.modelQuotaConfigs;
-    const selected = configs.length ? extractHostSelectedModel() : null;
-    const quota = selected && (
+    const groupQuota = resolveModelQuotaGroup(selected?.rawText, state.modelQuotaGroups);
+    const modelQuota = selected && (
       resolveModelQuota(selected.modelId, configs) ||
       resolveModelQuota(selected.rawText, configs)
     );
-    const remaining = quota?.remainingFraction;
-    widget.hidden = !(Number.isFinite(remaining) && remaining >= 0 && remaining <= 1);
-    if (widget.hidden) return;
-
-    const used = Math.round((1 - remaining) * 100);
-    const model = selected.productLabel || quota.label;
-    const value = t('quota.used', { percent: used });
+    const remaining = (groupQuota || modelQuota)?.remainingFraction;
+    const known = Number.isFinite(remaining) && remaining >= 0 && remaining <= 1;
+    const used = known ? Math.round((1 - remaining) * 100) : null;
+    const model = selected?.productLabel || t('quota.label');
+    const windowKey = { '5h': 'quota.window.5h', weekly: 'quota.window.weekly' }[groupQuota?.window];
+    const period = windowKey ? t(windowKey) : groupQuota?.displayName;
+    const value = !known ? t('quota.unavailable') : period
+      ? t('quota.windowUsed', { window: period, percent: used })
+      : t('quota.used', { percent: used });
     const progress = el('model-quota-progress');
     const label = el('model-quota-label');
     const amount = el('model-quota-amount');
 
+    if (widget.hidden) widget.hidden = false;
     if (label.textContent !== model) label.textContent = model;
     if (amount.textContent !== value) amount.textContent = value;
-    if (progress.value !== used) progress.value = used;
+    if (known) {
+      if (!progress.hasAttribute('value') || progress.value !== used) progress.value = used;
+    } else if (progress.hasAttribute('value')) {
+      progress.removeAttribute('value');
+    }
   }
 
   function renderPlanDetail(ps) {
@@ -987,8 +996,9 @@
       }
     }
 
-    if (!payload.loading && Array.isArray(payload.cascadeModelConfigs)) {
-      state.modelQuotaConfigs = payload.cascadeModelConfigs;
+    if (!payload.loading && (payload.rawPlanStatus || Array.isArray(payload.cascadeModelConfigs))) {
+      state.modelQuotaConfigs = payload.cascadeModelConfigs || [];
+      state.modelQuotaGroups = payload.rawPlanStatus?.modelQuotaGroups || [];
       renderModelQuota();
     }
 

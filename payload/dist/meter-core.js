@@ -83,6 +83,21 @@
     };
   }
 
+  function resolveModelQuotaGroup(model, groups) {
+    const name = String(model || '').toLowerCase();
+    const pool = name.includes('argon') ? /\bargon\b/i
+      : name.includes('gemini') ? /^gemini\s+models?$/i
+      : /\b(?:claude|gpt|opus|sonnet)\b/i.test(name) ? /claude.*gpt|gpt.*claude/i
+      : null;
+    if (!pool || !Array.isArray(groups)) return null;
+    const group = groups.find(entry => pool.test(String(entry?.displayName || '').trim()));
+    return (group?.buckets || []).reduce((tightest, bucket) => {
+      const remaining = bucket?.remainingFraction;
+      if (bucket?.disabled || !Number.isFinite(remaining) || remaining < 0 || remaining > 1) return tightest;
+      return !tightest || remaining < tightest.remainingFraction ? bucket : tightest;
+    }, null);
+  }
+
   function classifyRequestError(input, options = {}) {
     const error = typeof input === 'string' ? input : String(input?.error || input?.message || '');
     const currentModel = options.currentModel || '';
@@ -1479,6 +1494,7 @@
     summarizeSessionCache,
     classifyRequestError,
     resolveModelQuota,
+    resolveModelQuotaGroup,
     formatResetTimeZh,
     measure,
     add,
