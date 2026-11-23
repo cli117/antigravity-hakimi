@@ -89,24 +89,6 @@
       color:var(--ag-text-primary);
     }
 
-    #model-quota{
-      position:fixed;left:12px;bottom:44px;
-      box-sizing:border-box;width:220px;max-width:calc(100vw - 24px);
-      padding:7px 9px;border:1px solid var(--ag-float-border);border-radius:8px;
-      background:var(--ag-float-bg);color:var(--ag-text-secondary);
-      font-size:11px;pointer-events:none;
-    }
-    .model-quota-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
-    #model-quota-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    #model-quota-amount{flex-shrink:0;font-variant-numeric:tabular-nums}
-    #model-quota-progress{
-      display:block;width:100%;height:4px;margin-top:5px;appearance:none;
-      overflow:hidden;border:0;border-radius:999px;background:var(--ag-track-bg);
-    }
-    #model-quota-progress:indeterminate{background:var(--ag-track-bg)}
-    #model-quota-progress::-webkit-progress-bar{background:var(--ag-track-bg)}
-    #model-quota-progress::-webkit-progress-value{border-radius:999px;background:var(--ag-token-accent-default)}
-
     /* 融入宿主原生布局容器时参与正常 Flexbox 空间分配 */
     :host([data-dock="flow"]){
       position:relative !important;top:auto !important;right:auto !important;left:auto !important;bottom:auto !important;z-index:20;
