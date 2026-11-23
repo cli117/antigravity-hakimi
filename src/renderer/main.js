@@ -8,6 +8,10 @@
     summarizeSessionCache,
     parseGeneratorCall,
     normalizeModelId,
+    resolveModelQuota,
+    resolveModelQuotaGroup,
+    resolveModelQuotaGroupBuckets,
+    formatResetTimeZh,
     resolveStableModelId,
     formatEffortLabel,
     detectModelVendor,
@@ -82,6 +86,7 @@
     route: null, count: 0, latest: null, requestAt: 0, requestError: '',
     requestBusy: false, requestNext: 0, scanBusy: false, scanNext: 0,
     scanError: '', scan: null, generation: 0, controllers: new Set(),
+    modelQuotaConfigs: [], modelQuotaGroups: [], quotaSynced: false,
     disposed: false, layoutMode: 'wide', tooltipOpen: false,
     reportedFinalCallIds: new Set(), reportedFinalCallOutputs: new Map()
   };
@@ -298,6 +303,8 @@
   let restoreRequestSeq = 0;
 
   /* @INSERT_DROPDOWN_MODULE */
+  /* @INSERT_MODEL_QUOTA_MODULE */
+
   function renderPlanDetail(ps) {
     if (!ps) return;
     const sumTxt = el('plan-summary-text');
@@ -959,6 +966,23 @@
       }
     }
 
+    if (!payload.loading) {
+      let quotaUpdated = false;
+      if (Array.isArray(payload.cascadeModelConfigs) && payload.cascadeModelConfigs.length > 0) {
+        state.modelQuotaConfigs = payload.cascadeModelConfigs;
+        quotaUpdated = true;
+      }
+      if (Array.isArray(payload.rawPlanStatus?.modelQuotaGroups)) {
+        state.modelQuotaGroups = payload.rawPlanStatus.modelQuotaGroups;
+        quotaUpdated = true;
+      }
+      if (payload.rawPlanStatus || Array.isArray(payload.cascadeModelConfigs)) {
+        state.quotaSynced = true;
+        quotaUpdated = true;
+      }
+      if (quotaUpdated) renderModelQuota(true);
+    }
+
     const hasExistingData = Number(ANTIGRAVITY_TOKEN_DATA.summary?.grandTotalTokens) > 0;
     const incomingKeys = Object.keys(payload.dailyMap || {});
     const incomingTotal = Number(payload.summary?.grandTotalTokens) || incomingKeys.reduce((acc, k) => acc + (Number(payload.dailyMap[k]?.total) || 0), 0);
@@ -1197,6 +1221,9 @@
         if (savedLang && ['zh-CN', 'zh-TW', 'en'].includes(savedLang) && savedLang !== currentPanelLanguage) {
           await applyPanelLanguage(savedLang, { persist: false });
         }
+        if (hydrateModelQuotaPrefs(settingsRes.uiPreferences)) {
+          renderModelQuota(true);
+        }
       } else {
         try {
           const localLang = localStorage?.getItem('ag_panel_language');
@@ -1209,7 +1236,12 @@
       if (settingsRes?.ok && typeof window !== 'undefined') {
         window.__AGContextMeterSettings = {
           ok: true,
-          contextPreferences: { ...contextPreferencesMap }
+          contextPreferences: { ...contextPreferencesMap },
+          uiPreferences: {
+            ...(settingsRes.uiPreferences || {}),
+            quotaShow5h: show5hQuota,
+            quotaMinimized: userMinimized
+          }
         };
       }
     } catch {}
@@ -1257,6 +1289,10 @@
     } catch {}
     finally {
       historySyncBusy = false;
+      if (!state.disposed && !state.quotaSynced) {
+        state.quotaSynced = true;
+        renderModelQuota(true);
+      }
       if (pendingHistoryForce) {
         pendingHistoryForce = false;
         void syncTokenHistoryFromHost(true);
@@ -2385,6 +2421,9 @@
     if (!state.disposed && !host.isConnected) {
       ensureHostDocked();
     }
+    if (typeof document === 'undefined' || !document.hidden) {
+      renderModelQuota();
+    }
     const id = route();
     if (id !== state.route) {
       for (const controller of state.controllers) controller.abort(); state.controllers.clear(); state.generation++;
@@ -2539,6 +2578,10 @@
     getContextUnifiedPreferenceForTest: () => getContextUnifiedPreference(),
     getPanelLanguage: () => getPanelLanguage(),
     setPanelLanguage: (lang, opts) => applyPanelLanguage(lang, opts),
+    renderModelQuotaForTest: (force = true) => renderModelQuota(force),
+    toggleModelQuota5hForTest: () => toggleModelQuota5hState(),
+    setModelQuotaMinimizedForTest: (val) => setModelQuotaMinimizedState(val),
+    getModelQuotaStateForTest: () => getModelQuotaStateSnapshot(),
     restoreSettingsForTest: () => restoreSettingsFromHost(),
     translateForTest: (key, vars) => t(key, vars),
     applyStaticTranslationsForTest: (rootNode) => applyStaticPanelTranslations(rootNode),
@@ -2577,11 +2620,13 @@
       document.removeEventListener('keydown', escape);
       try { document.getElementById('ag-wco-spacer')?.remove?.(); } catch {}
       try { document.getElementById('ag-topbar-host-fix')?.remove?.(); } catch {}
+      disposeModelQuota();
       host.remove();
     }
   };
   syncPanelLanguageButtons(currentPanelLanguage);
   applyStaticPanelTranslations(shadow);
+  applyStaticPanelTranslations(quotaShadow);
   renderEnhanceSectionUI();
   void restoreSettingsFromHost();
   installRequestInterceptor();

@@ -39,6 +39,7 @@ function buildRenderer() {
   const colors = readUtf8(path.join(SRC_DIR, 'colors.js'));
   const topbarLayout = readUtf8(path.join(SRC_DIR, 'topbar-layout.js'));
   const dropdown = readUtf8(path.join(SRC_DIR, 'dropdown.js'));
+  const modelQuota = readUtf8(path.join(SRC_DIR, 'model-quota.js'));
   const requestInterceptor = readUtf8(path.join(SRC_DIR, 'request-interceptor.js'));
   const contextSettings = readUtf8(path.join(SRC_DIR, 'context-settings.js'));
   const speedPanel = readUtf8(path.join(SRC_DIR, 'speed-panel.js'));
@@ -61,6 +62,7 @@ function buildRenderer() {
   main = replaceOnce(main, '  /* @INSERT_COLORS_MODULE */', colors, 'colors');
   main = replaceOnce(main, '  /* @INSERT_TOPBAR_LAYOUT_MODULE */', topbarLayout, 'topbar-layout');
   main = replaceOnce(main, '  /* @INSERT_DROPDOWN_MODULE */', dropdown, 'dropdown');
+  main = replaceOnce(main, '  /* @INSERT_MODEL_QUOTA_MODULE */', modelQuota, 'model-quota');
   main = replaceOnce(main, '  /* @INSERT_REQUEST_INTERCEPTOR_MODULE */', requestInterceptor, 'request-interceptor');
   main = replaceOnce(main, '  /* @INSERT_CONTEXT_SETTINGS_MODULE */', contextSettings, 'context-settings');
   main = replaceOnce(main, '  /* @INSERT_SPEED_PANEL_MODULE */', speedPanel, 'speed-panel');

@@ -418,6 +418,7 @@
     } else {
       host.removeAttribute('data-panel-tone');
     }
+    if (typeof syncModelQuotaTheme === 'function') syncModelQuotaTheme();
     applyHeatmapPalette();
     syncSwatchAndResetButtons();
     if (activeHeatView === 'weekly') renderHeatmapWeekly();
@@ -469,6 +470,7 @@
     host.setAttribute('data-theme', activeTheme);
     const hostBg = getHostZeroLevelBg(activeTheme === 'light');
     host.style.setProperty('--ag-host-bg', hostBg);
+    if (typeof syncModelQuotaTheme === 'function') syncModelQuotaTheme();
     const btns = [el('theme-toggle'), el('theme-toggle-tokens')].filter(Boolean);
     btns.forEach(btn => {
       if (currentThemeMode === 'auto') {

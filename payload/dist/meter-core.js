@@ -13,6 +13,7 @@
   function getModelPoolKey(raw) {
     if (!raw) return 'unknown';
     const s = String(raw).toLowerCase();
+    if (s.includes('neon') || s.includes('gemini-4-neon')) return 'gemini-4-neon';
     if (s.includes('hydrogen') || s.includes('gemini-4-hydrogen')) return 'gemini-4-hydrogen';
     if (s.includes('carbon') || s.includes('gemini-4-carbon')) return 'gemini-4-carbon';
     if (s.includes('argon') || s.includes('gemini-4-argon')) return 'gemini-4-argon';
@@ -81,6 +82,149 @@
       remainingFraction: typeof qi.remainingFraction === 'number' ? qi.remainingFraction : null,
       resetTime: qi.resetTime || null
     };
+  }
+
+  function normalizeQuotaMatchText(raw) {
+    return String(raw || '')
+      .toLowerCase()
+      .replace(/\((?:extra\s+high|xhigh|high|medium|low|minimal|max)\)/gi, ' ')
+      .replace(/[^a-z0-9.]+/g, ' ')
+      .replace(/(?:^|\s)\.+|\.+(?:\s|$)/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  const QUOTA_GROUP_STOP_WORDS = new Set([
+    'model', 'models', 'quota', 'pool', 'group', 'limit', 'limits',
+    'shared', 'and', 'the', 'all', 'weekly', 'daily', 'preview', 'beta', 'standard'
+  ]);
+  const QUOTA_VENDOR_WORDS = new Set(['gemini', 'claude', 'gpt', 'google', 'anthropic', 'openai']);
+
+  function tokenizeQuotaText(raw) {
+    const norm = normalizeQuotaMatchText(raw);
+    const tokens = norm.split(' ').filter(t => t && !QUOTA_GROUP_STOP_WORDS.has(t));
+    const specific = tokens.filter(t => !QUOTA_VENDOR_WORDS.has(t) && !/^\d+(?:\.\d+)?$/.test(t));
+    return { norm, tokens, specific };
+  }
+
+  function findMatchedQuotaGroup(model, groups) {
+    if (!Array.isArray(groups) || !groups.length) return null;
+    const candidates = (Array.isArray(model) ? model : [model])
+      .map(normalizeQuotaMatchText)
+      .filter(Boolean);
+    if (!candidates.length) return null;
+    const combined = candidates.join(' ');
+    const modelTokens = new Set(combined.split(' ').filter(Boolean));
+    const hasToken = (tok) => modelTokens.has(tok);
+    const isGeminiModel = hasToken('gemini') || combined.includes('gemini');
+    const isFlashModel = hasToken('flash') || hasToken('lite');
+    const isClaudeFamily = hasToken('claude') || hasToken('opus') || hasToken('sonnet') || hasToken('haiku') || hasToken('anthropic');
+    const isGptFamily = hasToken('gpt') || hasToken('openai');
+
+    const validGroups = groups
+      .filter(entry => entry && typeof entry === 'object')
+      .map(entry => {
+        const rawName = String(entry.displayName || '').trim();
+        const { norm: normName, tokens, specific: specificTokens } = tokenizeQuotaText(rawName);
+        const normDesc = normalizeQuotaMatchText(entry.description || '');
+        const clauses = rawName
+          .split(/\s*(?:&|,|\/|\+|\band\b)\s*/i)
+          .map(tokenizeQuotaText)
+          .filter(c => c.tokens.length > 0);
+        return { entry, normName, normDesc, tokens, specificTokens, clauses };
+      });
+
+    // 1. 优先匹配专属独立配额组（如 Pro 的 Gemini 4 Argon / Gemini 3 Pro / Gemini 3 Flash / Gemini 4 Neon & Carbon）
+    // 若服务端对该账号未单独拆分 Argon 组（例如 Ultra 下 Argon 归入共享 Gemini Models），则继续向下回退匹配共享 Gemini 组
+    if (hasToken('argon') || combined.includes('argon')) {
+      const argonGroup = validGroups.find(g => g.tokens.includes('argon') || /\bargon\b/i.test(g.normName));
+      if (argonGroup) return argonGroup.entry;
+    }
+
+    let bestSpecific = null;
+    let bestSpecificScore = 0;
+    for (const g of validGroups) {
+      const isSharedClaudeGpt = (g.tokens.includes('claude') && g.tokens.includes('gpt'));
+      if (isSharedClaudeGpt) continue;
+      const groupVendors = g.tokens.filter(t => QUOTA_VENDOR_WORDS.has(t));
+      const vendorOk = !groupVendors.length || groupVendors.some(v => modelTokens.has(v));
+      if (!vendorOk) continue;
+
+      for (const clause of g.clauses) {
+        if (!clause.specific.length) continue;
+        const clauseVendors = clause.tokens.filter(t => QUOTA_VENDOR_WORDS.has(t));
+        if (clauseVendors.length && !clauseVendors.every(v => modelTokens.has(v))) continue;
+        if (clause.specific.every(tok => modelTokens.has(tok))) {
+          const score = clause.specific.length * 10 + clause.tokens.length;
+          if (score > bestSpecificScore) {
+            bestSpecificScore = score;
+            bestSpecific = g.entry;
+          }
+        }
+      }
+    }
+    if (bestSpecific) {
+      return bestSpecific;
+    }
+
+    // 2. 尝试匹配 group.description 中明确列出的模型名（兼容 Pro/Free 改名分组如 Partner/Frontier Models）
+    const descMatch = validGroups.find(g => {
+      if (!g.normDesc) return false;
+      return candidates.some(cand => cand.length >= 6 && g.normDesc.includes(cand));
+    });
+    if (descMatch) return descMatch.entry;
+
+    // 3. 回退到厂商共享配额组（兼容 Ultra 通用 Gemini Models 与 Pro 拆分 Gemini Pro / Gemini Flash）
+    if (isGeminiModel) {
+      const geminiShared =
+        validGroups.find(g => /^gemini(?:\s+\d+(?:\.\d+)?)?\s+models?$/i.test(g.normName)) ||
+        validGroups.find(g => g.tokens.includes('gemini') && g.specificTokens.length === 0);
+      if (geminiShared) return geminiShared.entry;
+      // 若 Pro 仅拆分为 Gemini Pro + Gemini Flash 而无通用 Gemini Models，则按 Flash vs 非 Flash（Pro/Neon/Hydrogen/Carbon/Argon）兜底
+      if (isFlashModel) {
+        const flashGroup = validGroups.find(g => g.tokens.includes('gemini') && g.specificTokens.includes('flash'));
+        if (flashGroup) return flashGroup.entry;
+      } else {
+        const proGroup = validGroups.find(g =>
+          g.tokens.includes('gemini') &&
+          g.specificTokens.includes('pro') &&
+          !g.specificTokens.includes('flash') &&
+          !g.specificTokens.includes('lite')
+        );
+        if (proGroup) return proGroup.entry;
+      }
+      return null;
+    }
+
+    if (isClaudeFamily || isGptFamily) {
+      const sharedClaudeGpt = validGroups.find(g => /claude.*gpt|gpt.*claude/i.test(g.normName));
+      if (sharedClaudeGpt) return sharedClaudeGpt.entry;
+      const vendorGroup = validGroups.find(g =>
+        (isClaudeFamily && g.tokens.includes('claude') && g.specificTokens.length === 0) ||
+        (isGptFamily && g.tokens.includes('gpt') && g.specificTokens.length === 0)
+      );
+      if (vendorGroup) return vendorGroup.entry;
+      const partnerGroup = validGroups.find(g => /\b(?:third\s*party|partner)\b/i.test(g.normName));
+      return partnerGroup?.entry || null;
+    }
+
+    return null;
+  }
+
+  function resolveModelQuotaGroupBuckets(model, groups) {
+    const group = findMatchedQuotaGroup(model, groups);
+    if (!group || !Array.isArray(group.buckets)) return [];
+    return group.buckets.filter(bucket => {
+      const remaining = bucket?.remainingFraction;
+      return !bucket?.disabled && Number.isFinite(remaining) && remaining >= 0 && remaining <= 1;
+    });
+  }
+
+  function resolveModelQuotaGroup(model, groups) {
+    const activeBuckets = resolveModelQuotaGroupBuckets(model, groups);
+    return activeBuckets.reduce((tightest, bucket) => (
+      !tightest || bucket.remainingFraction < tightest.remainingFraction ? bucket : tightest
+    ), null);
   }
 
   function classifyRequestError(input, options = {}) {
@@ -1479,6 +1623,8 @@
     summarizeSessionCache,
     classifyRequestError,
     resolveModelQuota,
+    resolveModelQuotaGroup,
+    resolveModelQuotaGroupBuckets,
     formatResetTimeZh,
     measure,
     add,

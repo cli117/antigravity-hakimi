@@ -730,7 +730,10 @@
     }
   } catch {}
 
-  const onWindowResize = () => updateResponsiveLayout();
+  const onWindowResize = () => {
+    updateResponsiveLayout();
+    if (typeof renderModelQuota === 'function') renderModelQuota(true);
+  };
   const onWindowFocus = () => host.setAttribute('data-window-active', 'true');
   const onWindowBlur = () => host.setAttribute('data-window-active', 'false');
   try {

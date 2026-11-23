@@ -111,6 +111,14 @@
         applyTokenHistoryPayload(ANTIGRAVITY_TOKEN_DATA);
       }
     } catch {}
+    try {
+      if (typeof quotaShadow !== 'undefined' && quotaShadow) {
+        applyStaticPanelTranslations(quotaShadow);
+      }
+      if (typeof renderModelQuota === 'function') {
+        renderModelQuota(true);
+      }
+    } catch {}
 
     if (persist) {
       userActionSeq++;

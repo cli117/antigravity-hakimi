@@ -1500,15 +1500,99 @@ let cachedHostUserStatus = null;
 let cachedHostUserStatusAt = 0;
 const remoteHostUserStatusCache = new Map();
 
+function pickTrimmedString(...values) {
+  for (const v of values) {
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return '';
+}
+
+function parseQuotaSummaryBucket(bucket) {
+  if (!bucket || typeof bucket !== 'object') return null;
+  const rawRemaining =
+    bucket.remainingFraction ??
+    bucket.remaining_fraction ??
+    bucket.remaining?.remainingFraction ??
+    bucket.remaining?.remaining_fraction;
+  const remainingFraction =
+    rawRemaining !== undefined && rawRemaining !== null && rawRemaining !== '' && Number.isFinite(Number(rawRemaining))
+      ? Number(rawRemaining)
+      : null;
+  return {
+    bucketId: bucket.bucketId || bucket.bucket_id || null,
+    displayName: pickTrimmedString(bucket.displayName, bucket.display_name),
+    description: pickTrimmedString(bucket.description),
+    window: pickTrimmedString(bucket.window, bucket.refreshWindowLabel, bucket.refresh_window_label),
+    remainingFraction,
+    resetTime: bucket.resetTime || bucket.reset_time || null,
+    disabled: bucket.disabled === true
+  };
+}
+
+function parseQuotaSummaryResponse(quotaRes) {
+  const summary = quotaRes?.response || quotaRes;
+  if (!summary || typeof summary !== 'object') return null;
+  if (Array.isArray(summary.groups)) {
+    return summary.groups
+      .filter(group => group && typeof group === 'object')
+      .map(group => ({
+        displayName: pickTrimmedString(group.displayName, group.display_name),
+        description: pickTrimmedString(group.description),
+        buckets: Array.isArray(group.buckets)
+          ? group.buckets.map(parseQuotaSummaryBucket).filter(Boolean)
+          : []
+      }));
+  }
+  if (Array.isArray(summary.buckets)) {
+    const grouped = new Map();
+    for (const rawBucket of summary.buckets) {
+      const bucket = parseQuotaSummaryBucket(rawBucket);
+      if (!bucket) continue;
+      const key = bucket.displayName || bucket.bucketId || 'default';
+      if (!grouped.has(key)) {
+        grouped.set(key, { displayName: bucket.displayName || key, description: bucket.description || '', buckets: [] });
+      }
+      grouped.get(key).buckets.push(bucket);
+    }
+    return Array.from(grouped.values());
+  }
+  return null;
+}
+
+async function fetchLiveUserStatus(request, prevStatus = null) {
+  const [res, availRes, quotaRes] = await Promise.all([
+    request('GetUserStatus', {}),
+    request('GetAvailableModels', { forceRefresh: false }).catch(() => null),
+    request('RetrieveUserQuotaSummary', { request: {}, forceRefresh: false }).catch(() => null)
+  ]);
+  const parsed = parseUserPlanStatus(res);
+  const configs = res?.userStatus?.cascadeModelConfigData?.clientModelConfigs || [];
+  const availMap = availRes ? parseAvailableModelsResponse(availRes) : {};
+  if (Object.keys(availMap).length) parsed.availableModelDetails = availMap;
+  if (configs.length) parsed.cascadeModelConfigs = mergeModelCapabilitiesIntoConfigs(configs, availMap);
+  const quotaGroups = parseQuotaSummaryResponse(quotaRes);
+  if (Array.isArray(quotaGroups)) {
+    parsed.modelQuotaGroups = quotaGroups;
+  } else if (
+    Array.isArray(prevStatus?.modelQuotaGroups) &&
+    (!parsed.email || !prevStatus.email || parsed.email === prevStatus.email)
+  ) {
+    parsed.modelQuotaGroups = prevStatus.modelQuotaGroups;
+  }
+  return parsed;
+}
+
 async function fetchUserStatusFromHost(options = {}) {
   if (options && options.userStatus !== undefined) {
     if (!options.userStatus) return null;
     const parsed = parseUserPlanStatus(options.userStatus);
     const configs = options.userStatus?.userStatus?.cascadeModelConfigData?.clientModelConfigs || options.userStatus?.cascadeModelConfigData?.clientModelConfigs || [];
     const availMap = options.availableModels ? parseAvailableModelsResponse(options.availableModels) : {};
+    const quotaGroups = options.quotaSummary ? parseQuotaSummaryResponse(options.quotaSummary) : null;
     if (parsed) {
       if (Object.keys(availMap).length) parsed.availableModelDetails = availMap;
       if (configs.length) parsed.cascadeModelConfigs = mergeModelCapabilitiesIntoConfigs(configs, availMap);
+      if (Array.isArray(quotaGroups)) parsed.modelQuotaGroups = quotaGroups;
     }
     return parsed;
   }
@@ -1519,18 +1603,8 @@ async function fetchUserStatusFromHost(options = {}) {
       return cached.data;
     }
     try {
-      const [res, availRes] = await Promise.all([
-        options.requestFn('GetUserStatus', {}),
-        options.requestFn('GetAvailableModels', { forceRefresh: false }).catch(() => null)
-      ]);
-      const parsed = parseUserPlanStatus(res);
-      const configs = res?.userStatus?.cascadeModelConfigData?.clientModelConfigs || [];
-      const availMap = availRes ? parseAvailableModelsResponse(availRes) : {};
-      if (parsed) {
-        if (Object.keys(availMap).length) parsed.availableModelDetails = availMap;
-        if (configs.length) parsed.cascadeModelConfigs = mergeModelCapabilitiesIntoConfigs(configs, availMap);
-        setBoundedMap(remoteHostUserStatusCache, cacheKey, { data: parsed, at: Date.now() }, MAX_REMOTE_HOST_STATUS_CACHE);
-      }
+      const parsed = await fetchLiveUserStatus(options.requestFn, cached?.data || null);
+      setBoundedMap(remoteHostUserStatusCache, cacheKey, { data: parsed, at: Date.now() }, MAX_REMOTE_HOST_STATUS_CACHE);
       return parsed;
     } catch {
       return cached?.data || null;
@@ -1542,17 +1616,7 @@ async function fetchUserStatusFromHost(options = {}) {
   try {
     const { connect } = require('./local-api');
     const api = await connect();
-    const [res, availRes] = await Promise.all([
-      api.call('GetUserStatus', {}),
-      api.call('GetAvailableModels', { forceRefresh: false }).catch(() => null)
-    ]);
-    const parsed = parseUserPlanStatus(res);
-    const configs = res?.userStatus?.cascadeModelConfigData?.clientModelConfigs || [];
-    const availMap = availRes ? parseAvailableModelsResponse(availRes) : {};
-    if (parsed) {
-      if (Object.keys(availMap).length) parsed.availableModelDetails = availMap;
-      if (configs.length) parsed.cascadeModelConfigs = mergeModelCapabilitiesIntoConfigs(configs, availMap);
-    }
+    const parsed = await fetchLiveUserStatus(api.call, !options.agDir ? cachedHostUserStatus : null);
     if (parsed && !options.agDir) {
       cachedHostUserStatus = parsed;
       cachedHostUserStatusAt = Date.now();
