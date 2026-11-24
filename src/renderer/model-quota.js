@@ -100,14 +100,16 @@
       min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
       font-size:11.5px;font-weight:600;letter-spacing:-0.015em;color:var(--ag-quota-text);
     }
-    .model-quota-actions{flex-shrink:0;display:inline-flex;align-items:center;gap:2px;opacity:0.55;transition:opacity .15s ease}
-    #model-quota:hover .model-quota-actions,.model-quota-actions:focus-within{opacity:1}
+    .model-quota-actions{flex-shrink:0;display:inline-flex;align-items:center;gap:2px}
+    .model-quota-actions .quota-icon-btn:not(#model-quota-display-mode){opacity:0.55}
+    #model-quota:hover .quota-icon-btn,.model-quota-actions .quota-icon-btn:not(#model-quota-display-mode):focus-visible{opacity:1}
     .quota-icon-btn{
       position:relative;display:inline-flex;align-items:center;justify-content:center;
       width:18px;height:18px;padding:0;border:0;border-radius:5px;
       background:transparent;color:var(--ag-quota-sub);cursor:pointer;
       transition:background-color .14s ease,color .14s ease;
     }
+    #model-quota-display-mode{width:auto;min-width:28px;padding:0 4px;font:inherit;font-size:10px;white-space:nowrap}
     .quota-icon-btn[hidden]{display:none!important}
     .quota-icon-btn:hover{background:var(--ag-quota-btn-hover);color:var(--ag-quota-text)}
     .quota-icon-btn svg{width:13px;height:13px;display:block;transition:transform .16s ease}
@@ -172,6 +174,7 @@
     <div class="model-quota-header">
       <span id="model-quota-label"></span>
       <span class="model-quota-actions">
+        <button id="model-quota-display-mode" class="quota-icon-btn" type="button"></button>
         <button id="model-quota-toggle-5h" class="quota-icon-btn" type="button" hidden aria-pressed="true">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5"></path></svg>
           <span id="model-quota-5h-alert-dot" class="quota-5h-alert-dot" hidden></span>
@@ -212,6 +215,7 @@
     dotInnerTrack: qEl('model-quota-dot-inner-track'),
     dotInnerRing: qEl('model-quota-dot-inner-ring'),
     label: qEl('model-quota-label'),
+    displayModeBtn: qEl('model-quota-display-mode'),
     toggle5hBtn: qEl('model-quota-toggle-5h'),
     alertDot5h: qEl('model-quota-5h-alert-dot'),
     minimizeBtn: qEl('model-quota-minimize'),
@@ -274,6 +278,7 @@
   let quotaNavResizeObserver = null;
   let observedQuotaNav = null;
   let show5hQuota = true;
+  let quotaDisplayMode = 'used';
   // userMinimized 记住「侧边栏展开时」的用户偏好；侧边栏收起时自动缩为左下角小圆环，重新打开侧边栏后恢复至记忆态
   let userMinimized = false;
   let collapsedTempExpanded = false;
@@ -284,6 +289,10 @@
     let changed = false;
     if (typeof uiPrefs.quotaShow5h === 'boolean' && uiPrefs.quotaShow5h !== show5hQuota) {
       show5hQuota = uiPrefs.quotaShow5h;
+      changed = true;
+    }
+    if (['used', 'remaining'].includes(uiPrefs.quotaDisplayMode) && uiPrefs.quotaDisplayMode !== quotaDisplayMode) {
+      quotaDisplayMode = uiPrefs.quotaDisplayMode;
       changed = true;
     }
     if (typeof uiPrefs.quotaMinimized === 'boolean' && uiPrefs.quotaMinimized !== userMinimized) {
@@ -297,6 +306,7 @@
     userActionSeq++;
     try {
       if (typeof patch.quotaShow5h === 'boolean') localStorage?.setItem('ag_quota_show_5h', patch.quotaShow5h ? '1' : '0');
+      if (patch.quotaDisplayMode) localStorage?.setItem('ag_quota_display_mode', patch.quotaDisplayMode);
       if (typeof patch.quotaMinimized === 'boolean') localStorage?.setItem('ag_quota_minimized', patch.quotaMinimized ? '1' : '0');
     } catch {}
     try {
@@ -341,6 +351,9 @@
         if (saved5h === '0' || saved5h === 'false') show5hQuota = false;
         else if (saved5h === '1' || saved5h === 'true') show5hQuota = true;
       }
+      if (bootUi?.quotaDisplayMode !== 'used' && bootUi?.quotaDisplayMode !== 'remaining') {
+        if (localStorage?.getItem('ag_quota_display_mode') === 'remaining') quotaDisplayMode = 'remaining';
+      }
       if (typeof bootUi?.quotaMinimized !== 'boolean') {
         const savedMin = localStorage?.getItem('ag_quota_minimized');
         if (savedMin === '1' || savedMin === 'true') userMinimized = true;
@@ -349,6 +362,12 @@
     } catch {}
   })();
 
+  qDom.displayModeBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    quotaDisplayMode = quotaDisplayMode === 'used' ? 'remaining' : 'used';
+    persistModelQuotaPrefs({ quotaDisplayMode });
+    renderModelQuota(true);
+  });
   qDom.toggle5hBtn?.addEventListener('click', (e) => { e?.stopPropagation?.(); toggleModelQuota5hState(); });
   qDom.minimizeBtn?.addEventListener('click', (e) => { e?.stopPropagation?.(); setModelQuotaMinimizedState(true); });
   qDom.dotBtn?.addEventListener('click', (e) => { e?.stopPropagation?.(); setModelQuotaMinimizedState(false); });
@@ -555,10 +574,13 @@
     return list.reduce((best, b) => (!best || b.remainingFraction < best.remainingFraction ? b : best), null);
   }
 
-  function formatQuotaTooltipEntry(bucket, usedPct) {
+  function formatQuotaTooltipEntry(bucket, percent) {
     const p = resolveQuotaWindowLabel(bucket);
     const pDisp = (p && currentPanelLanguage !== 'en' && /[a-z0-9]$/i.test(p)) ? `${p} ` : p;
-    const base = pDisp ? t('quota.windowUsed', { window: pDisp, percent: usedPct }) : t('quota.used', { percent: usedPct });
+    const remaining = quotaDisplayMode === 'remaining';
+    const base = pDisp
+      ? t(remaining ? 'quota.windowRemaining' : 'quota.windowUsed', { window: pDisp, percent })
+      : t(remaining ? 'quota.remaining' : 'quota.used', { percent });
     if (!bucket?.resetTime) return base;
     return `${base} (${t('quota.resetAt', { time: formatQuotaResetTime(bucket.resetTime) })})`;
   }
@@ -571,17 +593,17 @@
     qSetHidden(refs.reset, !opts.resetText);
     qSetText(refs.reset, opts.resetText);
     qSetText(refs.amount, opts.amountText);
-    qSetAttr(refs.progress, 'aria-valuenow', opts.hasValue ? String(opts.usedPct) : null);
+    qSetAttr(refs.progress, 'aria-valuenow', opts.hasValue ? String(opts.percent) : null);
     if (refs.fill) {
-      const widthStr = opts.hasValue ? `${opts.usedPct}%` : '0%';
+      const widthStr = opts.hasValue ? `${opts.percent}%` : '0%';
       if (refs.fill.style.width !== widthStr) refs.fill.style.width = widthStr;
     }
   }
 
-  function syncQuotaDotRing(ringEl, circ, hasData, usedPct, ringState) {
+  function syncQuotaDotRing(ringEl, circ, hasData, percent, ringState) {
     if (!ringEl) return;
-    const showArc = Boolean(hasData && Number.isFinite(usedPct) && usedPct > 0);
-    const filled = showArc ? Math.max(0, Math.min(circ, (usedPct / 100) * circ)) : 0;
+    const showArc = Boolean(hasData && Number.isFinite(percent) && percent > 0);
+    const filled = showArc ? Math.max(0, Math.min(circ, (percent / 100) * circ)) : 0;
     qSetAttr(ringEl, 'stroke-dasharray', `${filled.toFixed(2)} ${circ.toFixed(2)}`);
     qSetAttr(ringEl, 'stroke-opacity', showArc ? '1' : '0');
     qSetAttr(ringEl, 'data-state', hasData ? ringState : 'unknown');
@@ -625,6 +647,7 @@
       peekText,
       state.quotaSynced ? '1' : '0',
       show5hQuota ? '5h1' : '5h0',
+      quotaDisplayMode,
       effectiveMinimized ? 'min1' : 'min0',
       currentPanelLanguage,
       sidebarOpen ? 'nav1' : 'nav0',
@@ -693,7 +716,16 @@
     const used5h = secondary5hBucket ? calcQuotaUsedPct(secondary5hBucket.remainingFraction) : null;
     const state5h = secondary5hBucket ? calcQuotaRowState(secondary5hBucket.remainingFraction, used5h) : 'unknown';
 
+    const showRemaining = quotaDisplayMode === 'remaining';
+    const primaryPercent = hasPrimary && showRemaining ? 100 - primaryUsed : primaryUsed;
+    const percent5h = secondary5hBucket && showRemaining ? 100 - used5h : used5h;
+    const amountKey = showRemaining ? 'quota.remaining' : 'quota.used';
+    const displayModeTip = t(showRemaining ? 'quota.mode.showUsed' : 'quota.mode.showRemaining');
+
     quotaHost.hidden = false;
+    qSetText(qDom.displayModeBtn, t(showRemaining ? 'quota.mode.remaining' : 'quota.mode.used'));
+    qSetAttr(qDom.displayModeBtn, 'aria-label', displayModeTip);
+    qSetAttr(qDom.displayModeBtn, 'title', displayModeTip);
     qSetAttr(quotaHost, 'data-minimized', effectiveMinimized ? 'true' : 'false');
     qSetHidden(qDom.dotBtn, !effectiveMinimized);
     qSetHidden(qDom.card, effectiveMinimized);
@@ -720,21 +752,21 @@
     renderQuotaRow(qDom.primary, {
       visible: true,
       hasValue: hasPrimary,
-      usedPct: primaryUsed,
+      percent: primaryPercent,
       state: primaryState,
       title: primaryTitle,
       resetText: primaryCountdown ? (primaryTitle ? `· ${primaryCountdown}` : primaryCountdown) : '',
-      amountText: hasPrimary ? t('quota.used', { percent: primaryUsed }) : t('quota.unavailable')
+      amountText: hasPrimary ? t(amountKey, { percent: primaryPercent }) : t('quota.unavailable')
     });
     const countdown5h = (show5h && secondary5hBucket.resetTime) ? formatQuotaResetCountdown(secondary5hBucket.resetTime) : '';
     renderQuotaRow(qDom.fiveHour, {
       visible: show5h,
       hasValue: true,
-      usedPct: used5h,
+      percent: percent5h,
       state: state5h,
       title: show5h ? (resolveQuotaWindowLabel(secondary5hBucket) || t('quota.window.5h')) : '',
       resetText: countdown5h ? `· ${countdown5h}` : '',
-      amountText: show5h ? t('quota.used', { percent: used5h }) : ''
+      amountText: show5h ? t(amountKey, { percent: percent5h }) : ''
     });
 
     // 宿主预警状态与收起态同心环（仅当存在 5h 且未收起 5h 时展示内环，否则单环）
@@ -743,17 +775,17 @@
       : ((show5h && state5h === 'warn') || primaryState === 'warn') ? 'warn' : primaryState;
     qSetAttr(quotaHost, 'data-quota-state', worstState);
 
-    syncQuotaDotRing(qDom.dotOuterRing, QUOTA_DOT_OUTER_CIRC, hasPrimary, primaryUsed, primaryState);
+    syncQuotaDotRing(qDom.dotOuterRing, QUOTA_DOT_OUTER_CIRC, hasPrimary, primaryPercent, primaryState);
     qSetHidden(qDom.dotInnerTrack, !show5h, true);
     qSetHidden(qDom.dotInnerRing, !show5h, true);
-    syncQuotaDotRing(qDom.dotInnerRing, QUOTA_DOT_INNER_CIRC, show5h, show5h ? used5h : null, show5h ? state5h : 'unknown');
+    syncQuotaDotRing(qDom.dotInnerRing, QUOTA_DOT_INNER_CIRC, show5h, show5h ? percent5h : null, show5h ? state5h : 'unknown');
 
     // 悬停完整信息
     const tooltipParts = [
       selected.rawText || model,
-      hasPrimary ? formatQuotaTooltipEntry(primaryBucket, primaryUsed) : t('quota.unavailable')
+      hasPrimary ? formatQuotaTooltipEntry(primaryBucket, primaryPercent) : t('quota.unavailable')
     ];
-    if (secondary5hBucket) tooltipParts.push(formatQuotaTooltipEntry(secondary5hBucket, used5h));
+    if (secondary5hBucket) tooltipParts.push(formatQuotaTooltipEntry(secondary5hBucket, percent5h));
     const tooltip = tooltipParts.filter(Boolean).join(' · ');
     if (qDom.card.title !== tooltip) qDom.card.title = tooltip;
     if (qDom.dotBtn) {

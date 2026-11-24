@@ -1240,7 +1240,8 @@
           uiPreferences: {
             ...(settingsRes.uiPreferences || {}),
             quotaShow5h: show5hQuota,
-            quotaMinimized: userMinimized
+            quotaMinimized: userMinimized,
+            quotaDisplayMode
           }
         };
       }

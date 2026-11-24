@@ -301,6 +301,9 @@ function createMinimalDomHarness() {
       this._listeners.get(type).add(fn);
     }
     removeEventListener(type, fn) { this._listeners.get(type)?.delete(fn); }
+    click() {
+      for (const fn of this._listeners.get('click') || []) fn({ stopPropagation() {} });
+    }
     cloneNode() {
       const c = new FakeElement(this.tagName);
       c._textContent = this.textContent;
@@ -703,11 +706,22 @@ test('model quota display state (weekly-only / minimized single or dual ring) pe
         getSettings: async () => getPluginSettings({ agDir: tmpDir }),
         saveSettings: async (p) => savePluginSettings(p, { agDir: tmpDir })
       }
-    }).api;
+    });
+    const getDisplayModeButton = doc => doc.getElementById('ag-model-quota-host')
+      .shadowRoot.getElementById('model-quota-display-mode');
 
     // Session 1: User hides 5h row and minimizes to single-ring dot, then exits
-    const api1 = bootRendererOnFreshOrigin(getPluginSettings({ agDir: tmpDir }));
+    const { api: api1, doc: doc1 } = bootRendererOnFreshOrigin(getPluginSettings({ agDir: tmpDir }));
     api1.applyTokenHistoryPayload(quotaPayload);
+    const mode1 = getDisplayModeButton(doc1);
+    assert.equal(api1.getModelQuotaStateForTest().progressValue, 38);
+    mode1.click();
+    const remaining = api1.getModelQuotaStateForTest();
+    assert.equal(remaining.progressValue, 62);
+    assert.equal(remaining.progress5hValue, 12);
+    assert.match(remaining.amount, /62%/);
+    assert.match(remaining.title, /(?:剩余|remaining)/);
+    assert.equal(remaining.state5h, 'warn', 'color still reflects the same low quota');
     api1.toggleModelQuota5hForTest(); // false -> weekly-only
     api1.setModelQuotaMinimizedForTest(true); // true -> minimized single ring
     await new Promise(r => setTimeout(r, 20));
@@ -715,10 +729,11 @@ test('model quota display state (weekly-only / minimized single or dual ring) pe
 
     const disk1 = getPluginSettings({ agDir: tmpDir });
     assert.equal(disk1.uiPreferences.quotaShow5h, false);
+    assert.equal(disk1.uiPreferences.quotaDisplayMode, 'remaining');
     assert.equal(disk1.uiPreferences.quotaMinimized, true);
 
     // Session 2 (fresh port, empty localStorage): restarts directly as minimized SINGLE-RING dot!
-    const api2 = bootRendererOnFreshOrigin(disk1);
+    const { api: api2, doc: doc2 } = bootRendererOnFreshOrigin(disk1);
     api2.applyTokenHistoryPayload(quotaPayload);
     let qs = api2.getModelQuotaStateForTest();
     assert.equal(qs.minimized, true);
@@ -732,6 +747,10 @@ test('model quota display state (weekly-only / minimized single or dual ring) pe
     qs = api2.getModelQuotaStateForTest();
     assert.equal(qs.cardVisible, true);
     assert.equal(qs.show5hRow, false, 'weekly-only state must persist across restart');
+    assert.equal(qs.progressValue, 62, 'remaining mode must survive a fresh origin');
+    assert.match(qs.dotTitle, /62%/);
+    getDisplayModeButton(doc2).click();
+    assert.equal(api2.getModelQuotaStateForTest().progressValue, 38);
 
     api2.toggleModelQuota5hForTest(); // true -> weekly + 5h
     api2.setModelQuotaMinimizedForTest(true); // true -> minimized dual ring
@@ -741,9 +760,10 @@ test('model quota display state (weekly-only / minimized single or dual ring) pe
     // Session 3 (fresh port, empty localStorage): restarts directly as minimized DUAL-RING dot!
     const disk2 = getPluginSettings({ agDir: tmpDir });
     assert.equal(disk2.uiPreferences.quotaShow5h, true);
+    assert.equal(disk2.uiPreferences.quotaDisplayMode, 'used');
     assert.equal(disk2.uiPreferences.quotaMinimized, true);
 
-    const api3 = bootRendererOnFreshOrigin(disk2);
+    const { api: api3 } = bootRendererOnFreshOrigin(disk2);
     api3.applyTokenHistoryPayload(quotaPayload);
     qs = api3.getModelQuotaStateForTest();
     assert.equal(qs.minimized, true);
