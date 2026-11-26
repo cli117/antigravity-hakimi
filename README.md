@@ -89,7 +89,15 @@ node scripts/cli-unlock.js --apply --binary ~/.local/bin/agy
 
 # 方式三（无 Node.js 环境，纯 Python 3）：
 python3 unlock/agy-cli/agy-patch.py --in-place
+
+# 方式四（纯 Python 3，同时覆盖 agy CLI 与 hub language_server，带备份/还原/定时自动重打）：
+python3 linux/hakimi-linux.py status     # 只读检查
+python3 linux/hakimi-linux.py patch      # 备份并解锁全部目标
+python3 linux/hakimi-linux.py restore    # 从备份还原
+python3 linux/hakimi-linux.py install-timer   # 更新后自动重打（systemd 用户定时器）
 ```
+
+`linux/hakimi-linux.py` 的详细说明（目标发现规则、备份清单、定时器、运行中进程处理）见 [`linux/README.md`](linux/README.md)。
 
 ### 3. 为已构建的 `哈基米.app` 快速换图标
 
@@ -168,6 +176,7 @@ bash ./build-hakimi.sh --stage-only --local
   - `i18n/i18n-runtime.js` & `i18n/zh-CN.json`：桌面端简体中文 DOM 翻译运行时与词库
 - `src/renderer/`：Context Meter 悬浮胶囊、顶栏升级提示与设置更新卡片、左下角模型额度与 Effort 速切卡片、自定义快捷键浮层、多账号冷切换浮层、速率对比与纯 Token 热力图源码
 - `unlock/agy-cli/agy-patch.py`：独立 Python 版 `agy` CLI 自适应地区解锁工具
+- `linux/`：Linux 专用轻量补丁工具（`hakimi-linux.py` / `hakimi-linux.sh` / `README.md`），同时覆盖 `agy` CLI 与 `~/.antigravity-hub-server/bin/*/language_server`，支持 `status` / `patch` / `restore` 与 systemd 用户定时器自动重打，不触碰桌面端安装目录
 - `test/`：自动化单元测试套件（双源自动升级与原子冷替换、应用内图标替换与还原、冷切账号、ARM64/ELF64 地区解锁、ASAR 打包与符号守卫、模型额度与快捷键、Remote SSH）
 
 ---
