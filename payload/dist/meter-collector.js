@@ -1088,8 +1088,13 @@ async function fetchUserStatusFromHost(options = {}) {
       setBoundedMap(lastQuotaForceRefreshAtByHost, 'local', now, MAX_REMOTE_HOST_STATUS_CACHE);
     }
     if (parsed && !options.agDir) {
-      cachedHostUserStatus = parsed;
-      cachedHostUserStatusAt = now;
+      if (parsed.email || parsed.status === 'identified') {
+        cachedHostUserStatus = parsed;
+        cachedHostUserStatusAt = now;
+      } else {
+        cachedHostUserStatus = null;
+        cachedHostUserStatusAt = 0;
+      }
     }
     return parsed;
   } catch {
@@ -1492,19 +1497,27 @@ async function collectTokenHistoryAsync(options = {}) {
   );
 
   // 8. 自动识别套餐与用户自定义设置合并（实际读取优先于自定义优先于未知）
-  let livePlanStatus = await fetchUserStatusFromHost(options);
+  const fetchedLivePlanStatus = await fetchUserStatusFromHost(options);
+  const liveFetchSucceeded = Boolean(fetchedLivePlanStatus);
+  const usedArchiveFallback = !liveFetchSucceeded && Boolean(archiveV2.planStatus);
+  let livePlanStatus = fetchedLivePlanStatus;
   if (!livePlanStatus) {
     livePlanStatus = archiveV2.planStatus || parseUserPlanStatus(null);
   }
 
   const customSettingsAll = loadCustomPlanSettings(agDir);
-  const currentAccountKey = livePlanStatus?.email || archiveV2.planStatus?.email || null;
+  const currentAccountKey = liveFetchSucceeded
+    ? (livePlanStatus?.email || null)
+    : (livePlanStatus?.email || archiveV2.planStatus?.email || null);
   const currentCustom = resolveAccountCustomPlan(customSettingsAll, currentAccountKey);
 
   const effectivePlanStatus = resolveEffectivePlanStatus(livePlanStatus, currentCustom, {
-    cachedLivePlan: archiveV2.planStatus,
+    cachedLivePlan: liveFetchSucceeded ? null : archiveV2.planStatus,
     currentEmail: currentAccountKey
   });
+  if (usedArchiveFallback && effectivePlanStatus && typeof effectivePlanStatus === 'object') {
+    effectivePlanStatus.isArchiveFallback = true;
+  }
 
   // 结合持久化逐请求账本与本次新解析的调用（仅统计 Token 与测速样本）
   if (newlyParsedCalls.length) {
@@ -1599,16 +1612,22 @@ async function collectTokenHistoryAsync(options = {}) {
 
   // 持久化保存到 v2 与 v1 归档（仅在数据变化或文件不存在时原子写入，减少高频磁盘 I/O）
   try {
-    const archiveSig = `${agDir}|${earliestDate}|${totalConversations}|${grandTotalTokens}|${totalSteps}|${effectivePlanStatus?.tierKey || ''}`;
+    const archiveSig = `${agDir}|${earliestDate}|${totalConversations}|${grandTotalTokens}|${totalSteps}|${effectivePlanStatus?.tierKey || ''}|${effectivePlanStatus?.tierName || ''}|${effectivePlanStatus?.email || ''}`;
     const shouldWriteArchive = options.agDir || archiveSig !== collectTokenHistoryAsync._lastArchiveSig || !fs.existsSync(archivePathV2) || !fs.existsSync(archivePathV1);
     if (shouldWriteArchive) {
       collectTokenHistoryAsync._lastArchiveSig = archiveSig;
+      const persistedPlanStatus = effectivePlanStatus && effectivePlanStatus.isArchiveFallback
+        ? { ...effectivePlanStatus }
+        : effectivePlanStatus;
+      if (persistedPlanStatus && persistedPlanStatus.isArchiveFallback) {
+        delete persistedPlanStatus.isArchiveFallback;
+      }
       const v2Payload = {
         version: '2.0.0',
         firstUseDate: earliestDate,
         updatedAt: out.updatedAt,
         maxConversations: totalConversations,
-        planStatus: effectivePlanStatus,
+        planStatus: persistedPlanStatus,
         dailyMapBySource: out.dailyMapBySource
       };
       safeWriteJsonSync(archivePathV2, v2Payload);

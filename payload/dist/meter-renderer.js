@@ -3203,6 +3203,11 @@
       'accounts.msg.coldFailed': { 'zh-CN': '上次冷切换未完成：{err}', 'zh-TW': '上次冷切換未完成：{err}', en: 'Last cold switch failed: {err}' },
       'accounts.msg.renamed': { 'zh-CN': '备注已更新', 'zh-TW': '備註已更新', en: 'Label updated' },
       'accounts.msg.removed': { 'zh-CN': '已删除该账号快照（不影响当前登录态）', 'zh-TW': '已刪除該帳號快照（不影響目前登入態）', en: 'Removed snapshot (active login unchanged)' },
+      'accounts.msg.identityMismatch': {
+        'zh-CN': '当前会话账号（{live}）与系统钥匙串凭据（{keychain}）不一致，建议先点右上角刷新或重启客户端后再操作。',
+        'zh-TW': '目前工作階段帳號（{live}）與系統鑰匙圈憑證（{keychain}）不一致，建議先點右上角重新整理或重啟用戶端後再操作。',
+        en: 'Active session ({live}) differs from Keychain credential ({keychain}); refresh or restart before saving/switching.'
+      },
       'accounts.toast.switched': { 'zh-CN': '已冷切换账号：{name}', 'zh-TW': '已冷切換帳號：{name}', en: 'Switched account: {name}' },
       'accounts.err.noBridge': { 'zh-CN': '当前宿主版本缺少账号切换桥接，请重新构建 哈基米.app', 'zh-TW': '目前宿主版本缺少帳號切換橋接，請重新建置 哈基米.app', en: 'Account switcher bridge unavailable; rebuild 哈基米.app' },
       'accounts.err.saveFail': { 'zh-CN': '保存当前账号失败', 'zh-TW': '儲存目前帳號失敗', en: 'Failed to save current account' },
@@ -8838,6 +8843,7 @@
   let accountsEditingValue = '';
   let accountsAnchorEl = null;
   let accountsConsumedLastResultAt = '';
+  let accountsShowingMismatchWarn = false;
 
   function isAccountSwitcherAvailable() {
     if (typeof isSshRemoteWindow === 'function' && isSshRemoteWindow()) return false;
@@ -8847,9 +8853,12 @@
 
   function getLiveAccountIdentityHint() {
     const ps = ANTIGRAVITY_TOKEN_DATA?.planStatus || ANTIGRAVITY_TOKEN_DATA?.rawPlanStatus || null;
+    if (!ps || ps.isArchiveFallback === true) {
+      return { currentEmail: '', currentTierName: '' };
+    }
     return {
-      currentEmail: (ps && typeof ps.email === 'string' && ps.email.trim()) ? ps.email.trim() : '',
-      currentTierName: (ps && typeof ps.tierName === 'string' && ps.tierName.trim()) ? ps.tierName.trim() : ''
+      currentEmail: (typeof ps.email === 'string' && ps.email.trim()) ? ps.email.trim() : '',
+      currentTierName: (typeof ps.tierName === 'string' && ps.tierName.trim()) ? ps.tierName.trim() : ''
     };
   }
 
@@ -9102,7 +9111,9 @@
     const profiles = Array.isArray(st?.profiles) ? st.profiles : [];
     const hint = getLiveAccountIdentityHint();
     const activeEmail = st?.activeEmail || hint.currentEmail || '';
-    const activeTier = st?.activeTierName || hint.currentTierName || '';
+    const activeTier = st?.keychainLiveMismatch
+      ? (st?.activeTierName || '')
+      : (st?.activeTierName || hint.currentTierName || '');
     const agyBlocked = Boolean(st?.agyCliRunning);
 
     if (accDom.currentEmail) {
@@ -9404,7 +9415,15 @@
     if (accDom.popover) accDom.popover.hidden = false;
     renderAccountsUI();
     positionAccountsPopover();
-    void refreshAccountsStatus({ silent: true });
+    const hint = getLiveAccountIdentityHint();
+    const shouldRefreshLive = Boolean(
+      !hint.currentEmail ||
+      !accountsState ||
+      accountsState.hasActiveToken === false ||
+      accountsState.keychainLiveMismatch === true ||
+      (typeof lastHistorySync === 'number' && Date.now() - lastHistorySync >= 15000)
+    );
+    void refreshAccountsStatus({ silent: true, refreshLiveIdentity: shouldRefreshLive });
   }
 
   function toggleAccountsPopover(anchorEl = null) {
@@ -9442,6 +9461,9 @@
       return accountsState;
     }
     try {
+      if (opts.refreshLiveIdentity === true && typeof syncTokenHistoryFromHost === 'function') {
+        try { await syncTokenHistoryFromHost(true); } catch {}
+      }
       const res = await invokeAccountsApi('status', {
         consumeLastResult: opts.consumeLastResult === true
       });
@@ -9449,7 +9471,18 @@
       if (res && res.lastColdResult) {
         surfaceLastColdSwitchFeedback(res.lastColdResult);
       }
+      if (res && res.ok && res.keychainLiveMismatch && res.liveSessionEmail && res.activeEmail) {
+        accountsShowingMismatchWarn = true;
+        showAccountsStatus(
+          t('accounts.msg.identityMismatch', { live: res.liveSessionEmail, keychain: res.activeEmail }),
+          'warn'
+        );
+      } else if (accountsShowingMismatchWarn) {
+        accountsShowingMismatchWarn = false;
+        showAccountsStatus('');
+      }
       if (!opts.silent && res && !res.ok && res.error) {
+        accountsShowingMismatchWarn = false;
         showAccountsStatus(res.error, 'danger');
       }
       renderAccountsUI();
@@ -9630,7 +9663,7 @@
   });
   accDom.refreshBtn?.addEventListener('click', (e) => {
     e?.stopPropagation?.();
-    void refreshAccountsStatus();
+    void refreshAccountsStatus({ refreshLiveIdentity: true });
   });
   accDom.saveCurrentBtn?.addEventListener('click', (e) => {
     e?.stopPropagation?.();
@@ -9675,7 +9708,7 @@
     renderAccountsUI();
   });
   el('btn-accounts-settings-refresh')?.addEventListener('click', () => {
-    void refreshAccountsStatus();
+    void refreshAccountsStatus({ refreshLiveIdentity: true });
   });
 
   function getAccountsUiSnapshotForTest() {
@@ -12464,9 +12497,33 @@
     }
 
     if (payload.planStatus) {
+      const prevPlanEmail = ANTIGRAVITY_TOKEN_DATA.planStatus?.email || '';
+      const prevPlanTier = ANTIGRAVITY_TOKEN_DATA.planStatus?.tierName || '';
+      const prevPlanFallback = Boolean(ANTIGRAVITY_TOKEN_DATA.planStatus?.isArchiveFallback);
       ANTIGRAVITY_TOKEN_DATA.planStatus = payload.planStatus;
       ANTIGRAVITY_TOKEN_DATA.rawPlanStatus = payload.rawPlanStatus || payload.planStatus;
       renderPlanDetail(payload.planStatus);
+      const nextPlanEmail = payload.planStatus?.email || '';
+      const nextPlanTier = payload.planStatus?.tierName || '';
+      const nextPlanFallback = Boolean(payload.planStatus?.isArchiveFallback);
+      if (
+        !nextPlanFallback &&
+        (nextPlanEmail !== prevPlanEmail || nextPlanTier !== prevPlanTier || prevPlanFallback) &&
+        typeof refreshAccountsStatus === 'function' &&
+        typeof accountsState !== 'undefined' &&
+        accountsState &&
+        accountsState.supported !== false
+      ) {
+        const activeEmailNorm = String(accountsState.activeEmail || '').trim().toLowerCase();
+        const nextEmailNorm = String(nextPlanEmail || '').trim().toLowerCase();
+        if (
+          (nextEmailNorm && nextEmailNorm !== activeEmailNorm) ||
+          accountsState.keychainLiveMismatch === true ||
+          (typeof accountsPopoverOpen !== 'undefined' && accountsPopoverOpen)
+        ) {
+          void refreshAccountsStatus({ silent: true });
+        }
+      }
     }
 
     // 重新汇总卡片统计与顶栏

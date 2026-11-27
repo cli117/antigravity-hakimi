@@ -480,11 +480,16 @@ function saveProfilesRegistry(registry, options = {}) {
 function findMatchingProfile(profiles, { activeFingerprint, currentEmail }) {
   const normEmail = normalizeEmail(currentEmail);
   if (normEmail) {
-    const byEmail = profiles.find((p) => p.email === normEmail || p.id === normEmail);
+    const byEmail = profiles.find((p) => p.email === normEmail || (!p.email && p.id === normEmail));
     if (byEmail) return byEmail;
   }
   if (activeFingerprint) {
-    const byFp = profiles.find((p) => p.tokenFingerprint && p.tokenFingerprint === activeFingerprint);
+    const byFp = profiles.find(
+      (p) =>
+        p.tokenFingerprint &&
+        p.tokenFingerprint === activeFingerprint &&
+        (!normEmail || !p.email || p.email === normEmail)
+    );
     if (byFp) return byFp;
   }
   return null;
@@ -492,8 +497,13 @@ function findMatchingProfile(profiles, { activeFingerprint, currentEmail }) {
 
 function upsertProfileWithSecret(registry, kc, rawSecret, meta = {}) {
   const fp = computeTokenFingerprint(rawSecret);
-  const email = normalizeEmail(meta.email) || extractEmailHintFromSecret(rawSecret);
-  const tierName = sanitizeTierName(meta.tierName || '') || extractTierHintFromSecret(rawSecret);
+  const secretEmail = extractEmailHintFromSecret(rawSecret);
+  const metaEmail = normalizeEmail(meta.email);
+  const email = secretEmail || metaEmail;
+  const metaMatchesSecret = !secretEmail || !metaEmail || secretEmail === metaEmail;
+  const secretTier = extractTierHintFromSecret(rawSecret);
+  const metaTier = sanitizeTierName(meta.tierName || '');
+  const tierName = (metaMatchesSecret ? (metaTier || secretTier) : secretTier) || '';
   const existing = findMatchingProfile(registry.profiles, {
     activeFingerprint: fp,
     currentEmail: email,
@@ -519,23 +529,29 @@ function upsertProfileWithSecret(registry, kc, rawSecret, meta = {}) {
   }
 
   const now = new Date().toISOString();
-  const rawMetaEmail = typeof meta.email === 'string' ? meta.email.trim() : '';
+  const rawMetaEmail = metaMatchesSecret && typeof meta.email === 'string' ? meta.email.trim() : '';
   const rawSecretEmail = extractRawEmailHintFromSecret(rawSecret);
+  const rawMetaOnboarding =
+    typeof meta.onboardingUsername === 'string' &&
+    meta.onboardingUsername.trim() &&
+    (!email || normalizeEmail(meta.onboardingUsername) === email)
+      ? meta.onboardingUsername.trim()
+      : '';
   const onboardingUsername =
-    (typeof meta.onboardingUsername === 'string' && meta.onboardingUsername.trim()) ||
+    rawMetaOnboarding ||
     existing?.onboardingUsername ||
-    rawMetaEmail ||
     rawSecretEmail ||
+    rawMetaEmail ||
     email ||
     '';
   const onboardingIsGcpTos =
-    normalizeOnboardingIsGcpTos(meta.onboardingIsGcpTos) ||
+    ((rawMetaOnboarding || metaMatchesSecret) ? normalizeOnboardingIsGcpTos(meta.onboardingIsGcpTos) : '') ||
     existing?.onboardingIsGcpTos ||
     extractIsGcpTosHintFromSecret(rawSecret);
   const nextEntry = normalizeRegistryEntry({
     id,
     email: email || existing?.email || '',
-    label: meta.label !== undefined ? meta.label : (existing?.label || ''),
+    label: (metaMatchesSecret && meta.label !== undefined) ? meta.label : (existing?.label || ''),
     tierName: tierName || existing?.tierName || '',
     savedAt: existing?.savedAt || now,
     lastUsedAt: now,
@@ -855,12 +871,28 @@ function cleanupAccountLocalResidue(options = {}) {
     }
   }
 
+  const agDir = options.agDir
+    ? path.resolve(options.agDir)
+    : (options.geminiDir ? path.join(geminiRoot, 'antigravity') : getDefaultAgDir(process.env, homeDir));
+  const archiveV2Path = path.join(agDir, 'token_usage_archive_v2.json');
+  let clearedArchivePlanStatus = false;
+  if (fs.existsSync(archiveV2Path)) {
+    const archRes = readJsonFileSafe(archiveV2Path, null);
+    if (archRes.ok && archRes.data && typeof archRes.data === 'object' && !Array.isArray(archRes.data) && archRes.data.planStatus) {
+      archRes.data.planStatus = null;
+      if (writeJsonFileAtomic(archiveV2Path, archRes.data, 0o600).ok) {
+        clearedArchivePlanStatus = true;
+      }
+    }
+  }
+
   return {
     removedFallbackToken,
     removedKeyringMarker,
     removedCredentialScope,
     clearedAppStorageKeys,
     appliedOnboardingTarget,
+    clearedArchivePlanStatus,
   };
 }
 
@@ -1052,7 +1084,10 @@ function executeColdAccountJob(job, options = {}) {
       if (activeSecret) {
         const activeFp = computeTokenFingerprint(activeSecret);
         if (activeFp !== targetFp) {
-          const hintEmail = normalizeEmail(job.currentEmail) || extractEmailHintFromSecret(activeSecret);
+          const secretEmail = extractEmailHintFromSecret(activeSecret);
+          const jobEmail = normalizeEmail(job.currentEmail);
+          const hintEmail = secretEmail || jobEmail;
+          const jobMatchesSecret = !secretEmail || !jobEmail || secretEmail === jobEmail;
           const matchedPrev = findMatchingProfile(registry.profiles, {
             activeFingerprint: activeFp,
             currentEmail: hintEmail,
@@ -1068,15 +1103,15 @@ function executeColdAccountJob(job, options = {}) {
             : {};
           if (matchedPrev && matchedPrev.id !== targetId) {
             previousProfile = upsertProfileWithSecret(registry, kc, activeSecret, {
-              email: job.currentEmail || hintEmail || matchedPrev.email,
-              tierName: job.currentTierName || matchedPrev.tierName,
+              email: (jobMatchesSecret && job.currentEmail) ? job.currentEmail : (hintEmail || matchedPrev.email),
+              tierName: (jobMatchesSecret && job.currentTierName) ? job.currentTierName : matchedPrev.tierName,
               label: matchedPrev.label,
               ...outgoingMeta,
             });
           } else if (!matchedPrev) {
             previousProfile = upsertProfileWithSecret(registry, kc, activeSecret, {
-              email: job.currentEmail || hintEmail,
-              tierName: job.currentTierName || '',
+              email: (jobMatchesSecret && job.currentEmail) ? job.currentEmail : hintEmail,
+              tierName: jobMatchesSecret ? (job.currentTierName || '') : '',
               ...outgoingMeta,
             });
             autoSavedPrevious = true;
@@ -1144,13 +1179,16 @@ function executeColdAccountJob(job, options = {}) {
       const activeSecret = kc.get(ACTIVE_KEYCHAIN_SERVICE, ACTIVE_KEYCHAIN_ACCOUNT);
       let backedUpProfile = null;
       if (activeSecret) {
-        const hintEmail = normalizeEmail(job.currentEmail) || extractEmailHintFromSecret(activeSecret);
+        const secretEmail = extractEmailHintFromSecret(activeSecret);
+        const jobEmail = normalizeEmail(job.currentEmail);
+        const hintEmail = secretEmail || jobEmail;
+        const jobMatchesSecret = !secretEmail || !jobEmail || secretEmail === jobEmail;
         const outgoingMatchesStorage =
           Boolean(outgoingOnboarding.username) &&
           (!hintEmail || normalizeEmail(outgoingOnboarding.username) === hintEmail);
         backedUpProfile = upsertProfileWithSecret(registry, kc, activeSecret, {
-          email: job.currentEmail || hintEmail,
-          tierName: job.currentTierName || '',
+          email: (jobMatchesSecret && job.currentEmail) ? job.currentEmail : hintEmail,
+          tierName: jobMatchesSecret ? (job.currentTierName || '') : '',
           ...(outgoingMatchesStorage
             ? {
                 onboardingUsername: outgoingOnboarding.username,

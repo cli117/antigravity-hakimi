@@ -1164,9 +1164,33 @@
     }
 
     if (payload.planStatus) {
+      const prevPlanEmail = ANTIGRAVITY_TOKEN_DATA.planStatus?.email || '';
+      const prevPlanTier = ANTIGRAVITY_TOKEN_DATA.planStatus?.tierName || '';
+      const prevPlanFallback = Boolean(ANTIGRAVITY_TOKEN_DATA.planStatus?.isArchiveFallback);
       ANTIGRAVITY_TOKEN_DATA.planStatus = payload.planStatus;
       ANTIGRAVITY_TOKEN_DATA.rawPlanStatus = payload.rawPlanStatus || payload.planStatus;
       renderPlanDetail(payload.planStatus);
+      const nextPlanEmail = payload.planStatus?.email || '';
+      const nextPlanTier = payload.planStatus?.tierName || '';
+      const nextPlanFallback = Boolean(payload.planStatus?.isArchiveFallback);
+      if (
+        !nextPlanFallback &&
+        (nextPlanEmail !== prevPlanEmail || nextPlanTier !== prevPlanTier || prevPlanFallback) &&
+        typeof refreshAccountsStatus === 'function' &&
+        typeof accountsState !== 'undefined' &&
+        accountsState &&
+        accountsState.supported !== false
+      ) {
+        const activeEmailNorm = String(accountsState.activeEmail || '').trim().toLowerCase();
+        const nextEmailNorm = String(nextPlanEmail || '').trim().toLowerCase();
+        if (
+          (nextEmailNorm && nextEmailNorm !== activeEmailNorm) ||
+          accountsState.keychainLiveMismatch === true ||
+          (typeof accountsPopoverOpen !== 'undefined' && accountsPopoverOpen)
+        ) {
+          void refreshAccountsStatus({ silent: true });
+        }
+      }
     }
 
     // 重新汇总卡片统计与顶栏
