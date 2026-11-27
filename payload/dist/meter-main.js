@@ -418,6 +418,8 @@ function registerIpcOnce() {
     }
   });
 
+  ipcMain.handle('context-meter:fork-session', handleForkSession);
+
   ipcMain.handle('context-meter:cli-unlock-status', async (event, options) => {
     const url = isLocalMainFrameSender(event);
     if (!url) throw new Error('仅允许本机主聊天窗口');
@@ -1062,9 +1064,121 @@ function shouldInterceptWindowClose(win, options = {}) {
   }
 }
 
+function buildForkConversationRequest(cascadeId, options = {}) {
+  const opts = options && typeof options === 'object' ? options : {};
+  const rawTarget = Number(opts.targetForkWorkspace);
+  const targetForkWorkspace = [1, 2, 3].includes(rawTarget) ? rawTarget : 1;
+  const rawStep = opts.forkAtStepIndex;
+  const forkAtStepIndex =
+    typeof rawStep === 'number' && Number.isInteger(rawStep) && rawStep >= -1 ? rawStep : -1;
+  return {
+    sourceCascadeId: cascadeId,
+    forkAtStepIndex,
+    targetForkWorkspace,
+  };
+}
+
+function buildForkedConversationTitle(sourceTitle, existingTitles = []) {
+  const raw = typeof sourceTitle === 'string' ? sourceTitle.trim() : '';
+  const prefixRe = /^\[Fork(?:\s+(\d+))?\](?:\s+|$)/i;
+  const base = raw.replace(prefixRe, '').trim();
+  const candidates = [];
+  if (raw) candidates.push(raw);
+  if (Array.isArray(existingTitles)) {
+    for (const item of existingTitles) {
+      if (typeof item === 'string' && item.trim()) candidates.push(item.trim());
+    }
+  }
+  let maxForkNum = 0;
+  for (const title of candidates) {
+    const m = title.match(prefixRe);
+    if (!m) continue;
+    const itemBase = title.slice(m[0].length).trim();
+    if (itemBase !== base) continue;
+    const num = m[1] ? Number(m[1]) : 1;
+    if (Number.isInteger(num) && num > maxForkNum) {
+      maxForkNum = num;
+    }
+  }
+  const nextNum = maxForkNum + 1;
+  const tag = nextNum === 1 ? '[Fork]' : `[Fork ${nextNum}]`;
+  return base ? `${tag} ${base}` : tag;
+}
+
+async function handleForkSession(event, cascadeId, options = {}, deps = {}) {
+  const checkSender = typeof deps.isLocalMainFrameSender === 'function'
+    ? deps.isLocalMainFrameSender
+    : isLocalMainFrameSender;
+  const url = checkSender(event);
+  if (!url) throw new Error('仅允许本机主聊天窗口');
+  if (typeof cascadeId !== 'string' || !/^[a-f\d-]{36}$/i.test(cascadeId)) {
+    return { ok: false, error: '无效会话标识' };
+  }
+  try {
+    let callRpc;
+    if (typeof deps.callRpc === 'function') {
+      callRpc = deps.callRpc;
+    } else {
+      const remote = getRemoteBackendForSender(event?.sender);
+      if (remote) {
+        const sessionInfo = getRemoteSession(remote.hostId);
+        const requester = createRemoteSessionRequester(event.sender, sessionInfo, url.origin);
+        callRpc = requester.call;
+      } else {
+        const { connect } = require('./local-api');
+        const api = await connect();
+        callRpc = api.call;
+      }
+    }
+    const opts = options && typeof options === 'object' ? options : {};
+    const reqBody = buildForkConversationRequest(cascadeId, opts);
+    const res = await callRpc('ForkConversation', reqBody);
+    const newCascadeId = typeof res?.newCascadeId === 'string' ? res.newCascadeId.trim() : '';
+    if (!newCascadeId) {
+      return { ok: false, error: '未返回派生会话标识' };
+    }
+    let sourceTitle = typeof opts.sourceTitle === 'string' ? opts.sourceTitle.trim() : '';
+    const existingTitles = Array.isArray(opts.existingTitles)
+      ? opts.existingTitles.map((t) => String(t || '').trim()).filter(Boolean)
+      : [];
+    if (!sourceTitle) {
+      try {
+        const allTraj = await callRpc('GetAllCascadeTrajectories', {});
+        const summaries = allTraj?.trajectorySummaries || {};
+        const srcSummary = summaries[cascadeId];
+        sourceTitle = String(srcSummary?.annotations?.title || srcSummary?.summary || '').trim();
+        for (const item of Object.values(summaries)) {
+          const t = String(item?.annotations?.title || item?.summary || '').trim();
+          if (t) existingTitles.push(t);
+        }
+      } catch {}
+    }
+    const newTitle = buildForkedConversationTitle(sourceTitle, existingTitles);
+    if (newTitle) {
+      try {
+        await callRpc('UpdateConversationAnnotations', {
+          cascadeIds: [newCascadeId],
+          annotations: { title: newTitle },
+          mergeAnnotations: true,
+        });
+      } catch {}
+    }
+    const newProjectId = typeof res?.newProjectId === 'string' ? res.newProjectId.trim() : '';
+    const warnings = Array.isArray(res?.warnings)
+      ? res.warnings.map((w) => String(w || '').trim()).filter(Boolean)
+      : [];
+    return { ok: true, newCascadeId, newProjectId, newTitle, warnings };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
 exports.handleModulesStatus = handleModulesStatus;
 exports.handleToggleModule = handleToggleModule;
 exports.handleRestartHost = handleRestartHost;
+exports.buildForkConversationRequest = buildForkConversationRequest;
+exports.buildForkedConversationTitle = buildForkedConversationTitle;
+exports.handleForkSession = handleForkSession;
 exports.setAppQuitting = setAppQuitting;
 exports.getAppQuitting = getAppQuitting;
 exports.shouldInterceptWindowClose = shouldInterceptWindowClose;

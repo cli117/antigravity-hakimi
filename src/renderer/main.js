@@ -260,6 +260,7 @@
   /* @INSERT_MODEL_SWITCHER_MODULE */
   /* @INSERT_MODEL_QUOTA_MODULE */
   /* @INSERT_ACCOUNT_SWITCHER_MODULE */
+  /* @INSERT_SIDEBAR_FORK_MODULE */
 
   function renderPlanDetail(ps) {
     if (!ps) return;
@@ -2169,6 +2170,8 @@
       renderHakimiIconState(st);
     },
     triggerSessionCompactForTest: (src) => triggerSessionCompact(src),
+    syncSidebarForkButtonsForTest: () => syncSidebarForkButtons(),
+    triggerSidebarForkForTest: (id, opts) => triggerSidebarFork(id, opts),
     getPanelLanguage: () => getPanelLanguage(),
     setPanelLanguage: (lang, opts) => applyPanelLanguage(lang, opts),
     renderModelQuotaForTest: (force = true) => renderModelQuota(force),
@@ -2218,6 +2221,7 @@
       try { document.getElementById('ag-topbar-host-fix')?.remove?.(); } catch {}
       disposeModelQuota();
       if (typeof disposeAccountSwitcher === 'function') disposeAccountSwitcher();
+      if (typeof disposeSidebarFork === 'function') disposeSidebarFork();
       try { if (typeof unsubscribeHakimiUpgradeChanged === 'function') unsubscribeHakimiUpgradeChanged(); } catch {}
       host.remove();
     }
@@ -2232,6 +2236,7 @@
   void restoreSettingsFromHost();
   if (typeof refreshAccountsStatus === 'function') void refreshAccountsStatus({ silent: true, consumeLastResult: true });
   render();
+  if (typeof initSidebarFork === 'function') initSidebarFork();
   tick();
 })();
 
