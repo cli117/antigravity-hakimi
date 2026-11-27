@@ -1372,3 +1372,151 @@ test('renderer account switcher ignores archive fallback email, refreshes live i
 
   api.dispose();
 });
+
+test('executeColdAccountJob switch aborts with VAULT_IDENTITY_MISMATCH when target Vault snapshot belongs to another account', () => {
+  withTempDir((tmp) => {
+    const homeDir = path.join(tmp, 'home');
+    const geminiDir = path.join(homeDir, '.gemini');
+    const userDataDir = path.join(homeDir, 'Library', 'Application Support', 'Antigravity');
+    const stateDir = path.join(tmp, 'state');
+    fs.mkdirSync(userDataDir, { recursive: true });
+    fs.mkdirSync(geminiDir, { recursive: true });
+
+    const appStoragePath = path.join(userDataDir, 'app_storage.json');
+    fs.writeFileSync(
+      appStoragePath,
+      JSON.stringify({ 'agy.onboarding.lastLoginUsername': 'charlie@gmail.com' })
+    );
+
+    const secretCharlie = encodeGoKeyringSecret({
+      id_token_email: 'charlie@gmail.com',
+      refresh_token: 'rt-charlie-active',
+    });
+    const secretBobPoisoned = encodeGoKeyringSecret({
+      id_token_email: 'bob@gmail.com',
+      refresh_token: 'rt-bob-poisoned',
+    });
+    const secretAliceValid = encodeGoKeyringSecret({
+      id_token_email: 'Alice@Gmail.COM',
+      refresh_token: 'rt-alice-valid',
+    });
+
+    const kc = makeMockKeychain({
+      'gemini::antigravity': secretCharlie,
+      // Poisoned Vault entry: stored under alice@gmail.com, but embedded token belongs to bob@gmail.com
+      'antigravity-hakimi-accounts::alice@gmail.com': secretBobPoisoned,
+      // Poisoned Vault entry with empty profile.email relying on targetId email fallback
+      'antigravity-hakimi-accounts::dave@gmail.com': secretBobPoisoned,
+      // Legitimate Vault entry with different email casing
+      'antigravity-hakimi-accounts::alice-ok@gmail.com': secretAliceValid,
+    });
+    switcher.saveProfilesRegistry(
+      {
+        profiles: [
+          {
+            id: 'alice@gmail.com',
+            email: 'alice@gmail.com',
+            tierName: 'Google AI Ultra 20x',
+            tokenFingerprint: coldHelper.computeTokenFingerprint(secretBobPoisoned),
+          },
+          {
+            id: 'dave@gmail.com',
+            email: '',
+            tierName: 'Pro',
+            tokenFingerprint: coldHelper.computeTokenFingerprint(secretBobPoisoned),
+          },
+          {
+            id: 'alice-ok@gmail.com',
+            email: 'alice@gmail.com',
+            tierName: 'Google AI Ultra 20x',
+            tokenFingerprint: coldHelper.computeTokenFingerprint(secretAliceValid),
+          },
+        ],
+      },
+      { stateDir }
+    );
+
+    const relaunches = [];
+    const res = coldHelper.executeColdAccountJob(
+      {
+        action: 'switch',
+        targetId: 'alice@gmail.com',
+        currentEmail: 'charlie@gmail.com',
+        appBundlePath: '/Applications/哈基米.app',
+        stateDir,
+        userDataDir,
+        geminiDir,
+        homeDir,
+      },
+      {
+        keychain: kc,
+        skipStop: true,
+        sleepImpl: () => {},
+        detectAgyCliImpl: () => [],
+        spawnImpl: (bin, args) => {
+          relaunches.push({ bin, args });
+          return { pid: 9001, unref() {} };
+        },
+      }
+    );
+
+    assert.equal(res.ok, false);
+    assert.equal(res.code, 'VAULT_IDENTITY_MISMATCH');
+    assert.equal(res.targetId, 'alice@gmail.com');
+    assert.equal(res.expectedEmail, 'alice@gmail.com');
+    assert.equal(res.actualEmail, 'bob@gmail.com');
+    assert.match(res.error, /alice@gmail\.com/);
+    assert.match(res.error, /bob@gmail\.com/);
+    // Active slot, Keychain writes, and app_storage must stay completely untouched
+    assert.equal(kc.calls.set.length, 0);
+    assert.equal(kc.get('gemini', 'antigravity'), secretCharlie);
+    assert.deepEqual(JSON.parse(fs.readFileSync(appStoragePath, 'utf8')), {
+      'agy.onboarding.lastLoginUsername': 'charlie@gmail.com',
+    });
+    assert.equal(res.relaunched, true);
+    assert.equal(relaunches.length, 1);
+
+    const lastRes = JSON.parse(fs.readFileSync(coldHelper.getColdResultPath({ stateDir }), 'utf8'));
+    assert.equal(lastRes.ok, false);
+    assert.equal(lastRes.code, 'VAULT_IDENTITY_MISMATCH');
+    assert.equal(lastRes.expectedEmail, 'alice@gmail.com');
+    assert.equal(lastRes.actualEmail, 'bob@gmail.com');
+
+    // Also blocks when profile.email is empty and expected email falls back to targetId
+    const resIdFallback = coldHelper.executeColdAccountJob(
+      {
+        action: 'switch',
+        targetId: 'dave@gmail.com',
+        currentEmail: 'charlie@gmail.com',
+        appBundlePath: '/Applications/哈基米.app',
+        stateDir,
+        userDataDir,
+        geminiDir,
+        homeDir,
+      },
+      { keychain: kc, skipStop: true, relaunch: false, detectAgyCliImpl: () => [] }
+    );
+    assert.equal(resIdFallback.ok, false);
+    assert.equal(resIdFallback.code, 'VAULT_IDENTITY_MISMATCH');
+    assert.equal(resIdFallback.expectedEmail, 'dave@gmail.com');
+    assert.equal(resIdFallback.actualEmail, 'bob@gmail.com');
+    assert.equal(kc.calls.set.length, 0);
+
+    // Case-insensitive match proceeds normally
+    const resOk = coldHelper.executeColdAccountJob(
+      {
+        action: 'switch',
+        targetId: 'alice-ok@gmail.com',
+        currentEmail: 'charlie@gmail.com',
+        appBundlePath: '/Applications/哈基米.app',
+        stateDir,
+        userDataDir,
+        geminiDir,
+        homeDir,
+      },
+      { keychain: kc, skipStop: true, relaunch: false, detectAgyCliImpl: () => [] }
+    );
+    assert.equal(resOk.ok, true);
+    assert.equal(kc.get('gemini', 'antigravity'), secretAliceValid);
+  });
+});

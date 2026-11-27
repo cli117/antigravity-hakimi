@@ -1075,6 +1075,23 @@ function executeColdAccountJob(job, options = {}) {
       if (!targetSecret) {
         return finalize({ ok: false, error: '钥匙串中未找到目标账号的备份凭据，请重新登录后保存' });
       }
+      const targetSecretEmail = extractEmailHintFromSecret(targetSecret);
+      const expectedTargetEmail =
+        normalizeEmail(targetProfile.email) || (targetId.includes('@') ? normalizeEmail(targetId) : '');
+      if (targetSecretEmail && expectedTargetEmail && targetSecretEmail !== expectedTargetEmail) {
+        appendColdLog(
+          stateDir,
+          `switch aborted: vault mismatch target=${targetId} expected=${expectedTargetEmail} actual=${targetSecretEmail}`
+        );
+        return finalize({
+          ok: false,
+          code: 'VAULT_IDENTITY_MISMATCH',
+          targetId,
+          expectedEmail: expectedTargetEmail,
+          actualEmail: targetSecretEmail,
+          error: `目标账号快照 (${expectedTargetEmail}) 对应的钥匙串凭据实际属于 ${targetSecretEmail}，已中止切换以防串号。请删除该异常快照后重新登录并保存`,
+        });
+      }
       const targetFp = computeTokenFingerprint(targetSecret);
 
       // Backup current active slot first so refreshed tokens are never lost
