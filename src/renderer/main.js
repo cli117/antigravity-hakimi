@@ -260,6 +260,7 @@
   /* @INSERT_MODEL_SWITCHER_MODULE */
   /* @INSERT_MODEL_QUOTA_MODULE */
   /* @INSERT_ACCOUNT_SWITCHER_MODULE */
+  /* @INSERT_MESSAGE_FORK_MODULE */
 
   function renderPlanDetail(ps) {
     if (!ps) return;
@@ -1164,9 +1165,33 @@
     }
 
     if (payload.planStatus) {
+      const prevPlanEmail = ANTIGRAVITY_TOKEN_DATA.planStatus?.email || '';
+      const prevPlanTier = ANTIGRAVITY_TOKEN_DATA.planStatus?.tierName || '';
+      const prevPlanFallback = Boolean(ANTIGRAVITY_TOKEN_DATA.planStatus?.isArchiveFallback);
       ANTIGRAVITY_TOKEN_DATA.planStatus = payload.planStatus;
       ANTIGRAVITY_TOKEN_DATA.rawPlanStatus = payload.rawPlanStatus || payload.planStatus;
       renderPlanDetail(payload.planStatus);
+      const nextPlanEmail = payload.planStatus?.email || '';
+      const nextPlanTier = payload.planStatus?.tierName || '';
+      const nextPlanFallback = Boolean(payload.planStatus?.isArchiveFallback);
+      if (
+        !nextPlanFallback &&
+        (nextPlanEmail !== prevPlanEmail || nextPlanTier !== prevPlanTier || prevPlanFallback) &&
+        typeof refreshAccountsStatus === 'function' &&
+        typeof accountsState !== 'undefined' &&
+        accountsState &&
+        accountsState.supported !== false
+      ) {
+        const activeEmailNorm = String(accountsState.activeEmail || '').trim().toLowerCase();
+        const nextEmailNorm = String(nextPlanEmail || '').trim().toLowerCase();
+        if (
+          (nextEmailNorm && nextEmailNorm !== activeEmailNorm) ||
+          accountsState.keychainLiveMismatch === true ||
+          (typeof accountsPopoverOpen !== 'undefined' && accountsPopoverOpen)
+        ) {
+          void refreshAccountsStatus({ silent: true });
+        }
+      }
     }
 
     // 重新汇总卡片统计与顶栏
@@ -2039,6 +2064,7 @@
         reportedFinalCallOutputs: state.reportedFinalCallOutputs || new Map()
       });
       toggle(false); hideContextTooltip(); hideTopbarActionTooltip(true); render();
+      if (typeof onMessageForkRouteChange === 'function') onMessageForkRouteChange(id);
       if (!state.quotaSynced || Date.now() - lastHistorySync >= HISTORY_RESUME_STALE_MS) {
         void syncTokenHistoryFromHost(false);
       }
@@ -2145,6 +2171,10 @@
       renderHakimiIconState(st);
     },
     triggerSessionCompactForTest: (src) => triggerSessionCompact(src),
+    syncMessageForkButtonsForTest: () => syncMessageForkButtons(),
+    triggerMessageForkForTest: (id, opts) => triggerMessageFork(id, opts),
+    openMessageForkMenuForTest: (btn) => openMessageForkMenu(btn),
+    closeMessageForkMenuForTest: () => closeMessageForkMenu(),
     getPanelLanguage: () => getPanelLanguage(),
     setPanelLanguage: (lang, opts) => applyPanelLanguage(lang, opts),
     renderModelQuotaForTest: (force = true) => renderModelQuota(force),
@@ -2194,6 +2224,7 @@
       try { document.getElementById('ag-topbar-host-fix')?.remove?.(); } catch {}
       disposeModelQuota();
       if (typeof disposeAccountSwitcher === 'function') disposeAccountSwitcher();
+      if (typeof disposeMessageFork === 'function') disposeMessageFork();
       try { if (typeof unsubscribeHakimiUpgradeChanged === 'function') unsubscribeHakimiUpgradeChanged(); } catch {}
       host.remove();
     }
@@ -2208,6 +2239,7 @@
   void restoreSettingsFromHost();
   if (typeof refreshAccountsStatus === 'function') void refreshAccountsStatus({ silent: true, consumeLastResult: true });
   render();
+  if (typeof initMessageFork === 'function') initMessageFork();
   tick();
 })();
 

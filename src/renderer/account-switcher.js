@@ -298,6 +298,7 @@
   let accountsEditingValue = '';
   let accountsAnchorEl = null;
   let accountsConsumedLastResultAt = '';
+  let accountsShowingMismatchWarn = false;
 
   function isAccountSwitcherAvailable() {
     if (typeof isSshRemoteWindow === 'function' && isSshRemoteWindow()) return false;
@@ -307,9 +308,12 @@
 
   function getLiveAccountIdentityHint() {
     const ps = ANTIGRAVITY_TOKEN_DATA?.planStatus || ANTIGRAVITY_TOKEN_DATA?.rawPlanStatus || null;
+    if (!ps || ps.isArchiveFallback === true) {
+      return { currentEmail: '', currentTierName: '' };
+    }
     return {
-      currentEmail: (ps && typeof ps.email === 'string' && ps.email.trim()) ? ps.email.trim() : '',
-      currentTierName: (ps && typeof ps.tierName === 'string' && ps.tierName.trim()) ? ps.tierName.trim() : ''
+      currentEmail: (typeof ps.email === 'string' && ps.email.trim()) ? ps.email.trim() : '',
+      currentTierName: (typeof ps.tierName === 'string' && ps.tierName.trim()) ? ps.tierName.trim() : ''
     };
   }
 
@@ -562,7 +566,9 @@
     const profiles = Array.isArray(st?.profiles) ? st.profiles : [];
     const hint = getLiveAccountIdentityHint();
     const activeEmail = st?.activeEmail || hint.currentEmail || '';
-    const activeTier = st?.activeTierName || hint.currentTierName || '';
+    const activeTier = st?.keychainLiveMismatch
+      ? (st?.activeTierName || '')
+      : (st?.activeTierName || hint.currentTierName || '');
     const agyBlocked = Boolean(st?.agyCliRunning);
 
     if (accDom.currentEmail) {
@@ -864,7 +870,15 @@
     if (accDom.popover) accDom.popover.hidden = false;
     renderAccountsUI();
     positionAccountsPopover();
-    void refreshAccountsStatus({ silent: true });
+    const hint = getLiveAccountIdentityHint();
+    const shouldRefreshLive = Boolean(
+      !hint.currentEmail ||
+      !accountsState ||
+      accountsState.hasActiveToken === false ||
+      accountsState.keychainLiveMismatch === true ||
+      (typeof lastHistorySync === 'number' && Date.now() - lastHistorySync >= 15000)
+    );
+    void refreshAccountsStatus({ silent: true, refreshLiveIdentity: shouldRefreshLive });
   }
 
   function toggleAccountsPopover(anchorEl = null) {
@@ -902,6 +916,9 @@
       return accountsState;
     }
     try {
+      if (opts.refreshLiveIdentity === true && typeof syncTokenHistoryFromHost === 'function') {
+        try { await syncTokenHistoryFromHost(true); } catch {}
+      }
       const res = await invokeAccountsApi('status', {
         consumeLastResult: opts.consumeLastResult === true
       });
@@ -909,7 +926,18 @@
       if (res && res.lastColdResult) {
         surfaceLastColdSwitchFeedback(res.lastColdResult);
       }
+      if (res && res.ok && res.keychainLiveMismatch && res.liveSessionEmail && res.activeEmail) {
+        accountsShowingMismatchWarn = true;
+        showAccountsStatus(
+          t('accounts.msg.identityMismatch', { live: res.liveSessionEmail, keychain: res.activeEmail }),
+          'warn'
+        );
+      } else if (accountsShowingMismatchWarn) {
+        accountsShowingMismatchWarn = false;
+        showAccountsStatus('');
+      }
       if (!opts.silent && res && !res.ok && res.error) {
+        accountsShowingMismatchWarn = false;
         showAccountsStatus(res.error, 'danger');
       }
       renderAccountsUI();
@@ -1090,7 +1118,7 @@
   });
   accDom.refreshBtn?.addEventListener('click', (e) => {
     e?.stopPropagation?.();
-    void refreshAccountsStatus();
+    void refreshAccountsStatus({ refreshLiveIdentity: true });
   });
   accDom.saveCurrentBtn?.addEventListener('click', (e) => {
     e?.stopPropagation?.();
@@ -1135,7 +1163,7 @@
     renderAccountsUI();
   });
   el('btn-accounts-settings-refresh')?.addEventListener('click', () => {
-    void refreshAccountsStatus();
+    void refreshAccountsStatus({ refreshLiveIdentity: true });
   });
 
   function getAccountsUiSnapshotForTest() {

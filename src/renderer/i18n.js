@@ -72,6 +72,31 @@
     'topbar.quick.compactTitle': { 'zh-CN': 'Compact 压缩上下文', 'zh-TW': 'Compact 壓縮上下文', en: 'Compact Context' },
     'topbar.quick.compactDesc': { 'zh-CN': '向当前会话发送 /compact，清理历史冗余释放空间', 'zh-TW': '向目前對話發送 /compact，清理歷史冗餘釋放空間', en: 'Send /compact to summarize chat history and free space' },
     'topbar.quick.compactBusyDesc': { 'zh-CN': '正在向当前会话发送 /compact 指令…', 'zh-TW': '正在向目前對話發送 /compact 指令…', en: 'Sending /compact command to active chat…' },
+    'msg.fork.tipHistorical': {
+      'zh-CN': '从此处派生分支（Shift+点击 / 右键：新 Worktree）',
+      'zh-TW': '從此處派生分支（Shift+點擊 / 右鍵：新 Worktree）',
+      en: 'Fork from here (Shift+click / Right-click: New Worktree)'
+    },
+    'msg.fork.tipLatest': {
+      'zh-CN': '派生会话分支（Shift+点击 / 右键：新 Worktree）',
+      'zh-TW': '派生工作階段分支（Shift+點擊 / 右鍵：新 Worktree）',
+      en: 'Fork conversation (Shift+click / Right-click: New Worktree)'
+    },
+    'msg.fork.busy': { 'zh-CN': '正在从此处派生分支…', 'zh-TW': '正在從此處派生分支…', en: 'Forking from here…' },
+    'msg.fork.busyWorktree': { 'zh-CN': '正在新建 Worktree 并派生分支…', 'zh-TW': '正在新建 Worktree 並派生分支…', en: 'Creating Worktree for forked conversation…' },
+    'msg.fork.runningDisabled': { 'zh-CN': '会话运行中，请等待本轮结束后再 Fork', 'zh-TW': '工作階段執行中，請等待本輪結束後再 Fork', en: 'Conversation is running; wait for the turn to finish' },
+    'msg.fork.done': { 'zh-CN': '✔ 已派生分支，正在切换…', 'zh-TW': '✔ 已派生分支，正在切換…', en: '✔ Forked conversation, switching…' },
+    'msg.fork.doneHistorical': { 'zh-CN': '✔ 已从该轮派生分支，正在切换…', 'zh-TW': '✔ 已從該輪派生分支，正在切換…', en: '✔ Forked from this turn, switching…' },
+    'msg.fork.doneWorktree': { 'zh-CN': '✔ 已在新 Worktree 派生分支，正在切换…', 'zh-TW': '✔ 已在新 Worktree 派生分支，正在切換…', en: '✔ Forked in new Worktree, switching…' },
+    'msg.fork.doneWithWarn': { 'zh-CN': '✔ 已派生分支（{warn}）', 'zh-TW': '✔ 已派生分支（{warn}）', en: '✔ Forked conversation ({warn})' },
+    'msg.fork.fail': { 'zh-CN': '✖ Fork 失败：{err}', 'zh-TW': '✖ Fork 失敗：{err}', en: '✖ Fork failed: {err}' },
+    'msg.fork.clearedDisabled': { 'zh-CN': '该轮已为节省空间被清理，无法从此节点派生', 'zh-TW': '該輪已為節省空間被清理，無法從此節點派生', en: 'This turn was cleared to save space and cannot be forked' },
+    'msg.fork.noStepIndex': { 'zh-CN': '暂未解析到该历史轮次的步骤索引', 'zh-TW': '暫未解析到該歷史輪次的步驟索引', en: 'Could not resolve step index for this historical turn' },
+    'msg.fork.menuCurrentTitle': { 'zh-CN': '当前工作区派生', 'zh-TW': '目前工作區派生', en: 'Fork in Current Workspace' },
+    'msg.fork.menuCurrentDescHist': { 'zh-CN': '仅回溯对话上下文，工作区文件保持现状', 'zh-TW': '僅回溯對話上下文，工作區檔案維持現狀', en: 'Rewinds conversation only; workspace files stay as they are' },
+    'msg.fork.menuCurrentDescLatest': { 'zh-CN': '沿用当前工作区继续分支，不复制文件', 'zh-TW': '沿用目前工作區繼續分支，不複製檔案', en: 'Keeps working in this workspace without copying files' },
+    'msg.fork.menuWorktreeTitle': { 'zh-CN': '新建 Worktree 派生', 'zh-TW': '新建 Worktree 派生', en: 'Fork in New Worktree' },
+    'msg.fork.menuWorktreeDesc': { 'zh-CN': '基于 Git Worktree 创建独立副本（未提交改动留在原处）', 'zh-TW': '基於 Git Worktree 建立獨立副本（未提交改動留在原處）', en: 'Creates an isolated Git worktree (uncommitted changes stay behind)' },
     'twp.aria': { 'zh-CN': '调整上下文窗口上限', 'zh-TW': '調整上下文視窗上限', en: 'Adjust context window limit' },
     'twp.tipTitle': { 'zh-CN': '上下文窗口（{cur}）', 'zh-TW': '上下文視窗（{cur}）', en: 'Context Window ({cur})' },
     'twp.tipDescUnified': { 'zh-CN': '全局统一 · 点击切换 512K / 1M / 动态', 'zh-TW': '全域統一 · 點擊切換 512K / 1M / 動態', en: 'All models · Click to switch 512K / 1M / Dynamic' },
@@ -687,6 +712,11 @@
       'accounts.msg.coldFailed': { 'zh-CN': '上次冷切换未完成：{err}', 'zh-TW': '上次冷切換未完成：{err}', en: 'Last cold switch failed: {err}' },
       'accounts.msg.renamed': { 'zh-CN': '备注已更新', 'zh-TW': '備註已更新', en: 'Label updated' },
       'accounts.msg.removed': { 'zh-CN': '已删除该账号快照（不影响当前登录态）', 'zh-TW': '已刪除該帳號快照（不影響目前登入態）', en: 'Removed snapshot (active login unchanged)' },
+      'accounts.msg.identityMismatch': {
+        'zh-CN': '当前会话账号（{live}）与系统钥匙串凭据（{keychain}）不一致，建议先点右上角刷新或重启客户端后再操作。',
+        'zh-TW': '目前工作階段帳號（{live}）與系統鑰匙圈憑證（{keychain}）不一致，建議先點右上角重新整理或重啟用戶端後再操作。',
+        en: 'Active session ({live}) differs from Keychain credential ({keychain}); refresh or restart before saving/switching.'
+      },
       'accounts.toast.switched': { 'zh-CN': '已冷切换账号：{name}', 'zh-TW': '已冷切換帳號：{name}', en: 'Switched account: {name}' },
       'accounts.err.noBridge': { 'zh-CN': '当前宿主版本缺少账号切换桥接，请重新构建 哈基米.app', 'zh-TW': '目前宿主版本缺少帳號切換橋接，請重新建置 哈基米.app', en: 'Account switcher bridge unavailable; rebuild 哈基米.app' },
       'accounts.err.saveFail': { 'zh-CN': '保存当前账号失败', 'zh-TW': '儲存目前帳號失敗', en: 'Failed to save current account' },

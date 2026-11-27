@@ -186,9 +186,11 @@ function getAccountsStatus(options = {}) {
     };
   }
 
-  let hintEmail = normalizeEmail(options.currentEmail);
+  const liveHintEmail = normalizeEmail(options.currentEmail);
+  let hintEmail = liveHintEmail;
   let hintTier = sanitizeTierName(options.currentTierName || '');
   let activeFingerprint = null;
+  let keychainLiveMismatch = false;
   let activeProfile = hasActiveToken && hintEmail
     ? findMatchingProfile(registry.profiles, { currentEmail: hintEmail })
     : null;
@@ -201,8 +203,14 @@ function getAccountsStatus(options = {}) {
         hasActiveToken = false;
       } else {
         activeFingerprint = computeTokenFingerprint(activeSecret);
-        if (!hintEmail) hintEmail = extractEmailHintFromSecret(activeSecret);
-        if (!hintTier) hintTier = extractTierHintFromSecret(activeSecret);
+        const secretEmail = extractEmailHintFromSecret(activeSecret);
+        const secretTier = extractTierHintFromSecret(activeSecret);
+        const emailMatchesHint = !secretEmail || !liveHintEmail || secretEmail === liveHintEmail;
+        if (!emailMatchesHint) {
+          keychainLiveMismatch = true;
+        }
+        hintEmail = secretEmail || liveHintEmail;
+        hintTier = emailMatchesHint ? (hintTier || secretTier) : secretTier;
         activeProfile = findMatchingProfile(registry.profiles, {
           activeFingerprint,
           currentEmail: hintEmail,
@@ -220,7 +228,12 @@ function getAccountsStatus(options = {}) {
 
   // Sync upgraded/more-specific live tier display name (e.g. Ultra 5x/20x) onto active saved profile
   const isMeaningfulTier = (v) => Boolean(v && v !== '未知' && v !== '未知套餐');
-  if (activeProfile && isMeaningfulTier(hintTier) && activeProfile.tierName !== hintTier) {
+  const tierSyncEmailMatched = Boolean(
+    activeProfile &&
+    !keychainLiveMismatch &&
+    (!activeProfile.email || !hintEmail || activeProfile.email === hintEmail)
+  );
+  if (tierSyncEmailMatched && isMeaningfulTier(hintTier) && activeProfile.tierName !== hintTier) {
     const idx = registry.profiles.findIndex((p) => p.id === activeProfile.id);
     if (idx >= 0) {
       registry.profiles[idx] = { ...registry.profiles[idx], tierName: hintTier };
@@ -267,6 +280,8 @@ function getAccountsStatus(options = {}) {
     activeTierName: sanitizeTierName(hintTier || activeProfile?.tierName || ''),
     activeProfileId: activeProfile ? activeProfile.id : null,
     currentUnsaved: Boolean(hasActiveToken && !activeProfile),
+    keychainLiveMismatch,
+    liveSessionEmail: keychainLiveMismatch ? liveHintEmail : null,
     agyCliRunning: agyCliPids.length > 0,
     agyCliPids,
     lastColdResult,
@@ -294,7 +309,10 @@ function saveCurrentAccount(payload = {}, options = {}) {
 
   try {
     const rawEmail = payload.email || payload.currentEmail || options.currentEmail || '';
-    const normEmail = normalizeEmail(rawEmail) || extractEmailHintFromSecret(activeSecret);
+    const secretEmail = extractEmailHintFromSecret(activeSecret);
+    const normMetaEmail = normalizeEmail(rawEmail);
+    const normEmail = secretEmail || normMetaEmail;
+    const metaMatchesSecret = !secretEmail || !normMetaEmail || secretEmail === normMetaEmail;
     const userDataDir = options.userDataDir
       ? path.resolve(options.userDataDir)
       : getDefaultUserDataDir(process.platform, process.env, options.homeDir || os.homedir());
@@ -303,9 +321,9 @@ function saveCurrentAccount(payload = {}, options = {}) {
       Boolean(currentOnboarding.username) &&
       (!normEmail || normalizeEmail(currentOnboarding.username) === normEmail);
     const entry = upsertProfileWithSecret(registry, kc, activeSecret, {
-      email: rawEmail,
+      email: metaMatchesSecret ? rawEmail : secretEmail,
       label: payload.label,
-      tierName: payload.tierName || payload.currentTierName || options.currentTierName || '',
+      tierName: metaMatchesSecret ? (payload.tierName || payload.currentTierName || options.currentTierName || '') : '',
       ...(onboardingMatches
         ? {
             onboardingUsername: currentOnboarding.username,
@@ -431,7 +449,7 @@ function startColdSwitchAccount(payload = {}, options = {}) {
   // Prevent no-op cold restart if already on target email
   const rawCurrentEmail = String(payload.currentEmail || options.currentEmail || '').trim();
   const currentEmail = normalizeEmail(rawCurrentEmail);
-  if (currentEmail && (targetProfile.email === currentEmail || targetProfile.id === currentEmail)) {
+  if (currentEmail && (targetProfile.email === currentEmail || (!targetProfile.email && targetProfile.id === currentEmail))) {
     return { ok: false, supported: true, error: '当前已经登录该账号' };
   }
 
@@ -560,7 +578,12 @@ function renameAccount(payload = {}, options = {}) {
     ok: true,
     supported: true,
     profile: registry.profiles[idx],
-    status: getAccountsStatus({ ...options, stateDir }),
+    status: getAccountsStatus({
+      ...options,
+      stateDir,
+      currentEmail: options.currentEmail ?? payload.currentEmail,
+      currentTierName: options.currentTierName ?? payload.currentTierName,
+    }),
   };
 }
 
@@ -596,7 +619,12 @@ function removeAccount(payload = {}, options = {}) {
     ok: true,
     supported: true,
     removedId: targetId,
-    status: getAccountsStatus({ ...options, stateDir }),
+    status: getAccountsStatus({
+      ...options,
+      stateDir,
+      currentEmail: options.currentEmail ?? payload.currentEmail,
+      currentTierName: options.currentTierName ?? payload.currentTierName,
+    }),
   };
 }
 

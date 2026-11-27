@@ -138,6 +138,7 @@ let registered = false;
 let isAppQuitting = false;
 let coldAccountSwitchInFlight = false;
 const boundWindows = new WeakSet();
+const hiddenOnClose = new WeakSet();
 const boundWebContents = new WeakSet();
 const injectionTimers = new WeakMap();
 const inFlightInjections = new WeakMap();
@@ -417,6 +418,8 @@ function registerIpcOnce() {
       return { ok: false, error: e.message };
     }
   });
+
+  ipcMain.handle('context-meter:fork-session', handleForkSession);
 
   ipcMain.handle('context-meter:cli-unlock-status', async (event, options) => {
     const url = isLocalMainFrameSender(event);
@@ -864,14 +867,60 @@ exports.installContextMeter = function (win) {
     win.on?.('restore', onWinVisibleOrActive);
     win.on?.('focus', onWinVisibleOrActive);
 
-    // 托盘常驻与会话保持：点击窗口右上角关闭时，若满足后台常驻与主会话条件，隐藏至托盘而非销毁，避免重新打开丢失会话
+    const isMac = process.platform === 'darwin';
+    let cancelFullScreenClose = null;
+    if (isMac) {
+      win.on?.('show', () => hiddenOnClose.delete(win));
+      win.once?.('closed', () => {
+        hiddenOnClose.delete(win);
+        cancelFullScreenClose?.();
+      });
+    }
+
+    const hideOnClose = () => {
+      if (typeof win.hide !== 'function') return;
+      win.hide();
+      if (isMac && !win.isDestroyed?.() && !win.isVisible()) hiddenOnClose.add(win);
+    };
+
+    // 后台常驻时隐藏最后一个符合条件的主窗口，保留会话。
     try {
       win.on?.('close', (event) => {
-        if (shouldInterceptWindowClose(win)) {
-          if (typeof event?.preventDefault === 'function') {
-            event.preventDefault();
-            if (typeof win.hide === 'function') win.hide();
+        if (isAppQuitting || typeof event?.preventDefault !== 'function') return;
+        if (cancelFullScreenClose) {
+          event.preventDefault();
+          return;
+        }
+        if (!shouldInterceptWindowClose(win)) return;
+        if (isMac && (!win.isVisible?.() || typeof win.hide !== 'function')) return;
+        event.preventDefault();
+        if (!isMac || !win.isFullScreen?.()) {
+          hideOnClose();
+          return;
+        }
+
+        // 先等 macOS 退出原生全屏空间，避免隐藏窗口后停留在黑屏空间。
+        let timeout;
+        const onLeaveFullScreen = () => {
+          if (!cancelFullScreenClose) return;
+          cancelFullScreenClose();
+          if (!win.isDestroyed?.() && !win.isFullScreen() && win.isVisible() && shouldInterceptWindowClose(win)) {
+            hideOnClose();
           }
+        };
+        cancelFullScreenClose = () => {
+          cancelFullScreenClose = null;
+          clearTimeout(timeout);
+          win.removeListener('leave-full-screen', onLeaveFullScreen);
+        };
+        try {
+          win.once('leave-full-screen', onLeaveFullScreen);
+          // 超时只取消等待，不隐藏窗口；用户可以重试。
+          timeout = setTimeout(cancelFullScreenClose, 5000);
+          timeout.unref?.();
+          win.setFullScreen(false);
+        } catch {
+          cancelFullScreenClose?.();
         }
       });
     } catch {}
@@ -976,6 +1025,9 @@ try {
     app.on('activate', () => {
       try {
         const utils = require('./utils');
+        if (process.platform === 'darwin' && !isAppQuitting) {
+          try { reopenHiddenLocalHubWindow(utils); } catch {}
+        }
         const wins = typeof utils.getHubWindows === 'function' ? utils.getHubWindows() : [];
         for (const w of wins) {
           exports.installContextMeter(w);
@@ -999,6 +1051,19 @@ try {
     });
   }
 } catch {}
+
+function reopenHiddenLocalHubWindow(utils) {
+  const localWindows = (utils.getLocalHubWindows?.() || []).filter(
+    win => !win.isDestroyed?.() && !getRemoteBackendForWindow(win)
+  );
+  if (localWindows.some(win => win.isVisible?.())) return;
+
+  // 只恢复本钩子隐藏的原窗口；没有窗口时仍由宿主负责新建。
+  const win = localWindows.find(win => hiddenOnClose.has(win));
+  if (!win) return;
+  win.show();
+  if (!win.isDestroyed?.()) win.focus();
+}
 
 function isHostRunInBackgroundEnabled() {
   try {
@@ -1043,6 +1108,7 @@ function shouldInterceptWindowClose(win, options = {}) {
     } else {
       try {
         const utils = require('./utils');
+        if (process.platform === 'darwin' && !utils.getLocalHubWindows?.()?.includes(win)) return false;
         if (typeof utils.getHubWindows === 'function') wins = utils.getHubWindows();
       } catch {}
     }
@@ -1062,9 +1128,121 @@ function shouldInterceptWindowClose(win, options = {}) {
   }
 }
 
+function buildForkConversationRequest(cascadeId, options = {}) {
+  const opts = options && typeof options === 'object' ? options : {};
+  const rawTarget = Number(opts.targetForkWorkspace);
+  const targetForkWorkspace = [1, 2, 3].includes(rawTarget) ? rawTarget : 1;
+  const rawStep = opts.forkAtStepIndex;
+  const forkAtStepIndex =
+    typeof rawStep === 'number' && Number.isInteger(rawStep) && rawStep >= -1 ? rawStep : -1;
+  return {
+    sourceCascadeId: cascadeId,
+    forkAtStepIndex,
+    targetForkWorkspace,
+  };
+}
+
+function buildForkedConversationTitle(sourceTitle, existingTitles = []) {
+  const raw = typeof sourceTitle === 'string' ? sourceTitle.trim() : '';
+  const prefixRe = /^\[Fork(?:\s+(\d+))?\](?:\s+|$)/i;
+  const base = raw.replace(prefixRe, '').trim();
+  const candidates = [];
+  if (raw) candidates.push(raw);
+  if (Array.isArray(existingTitles)) {
+    for (const item of existingTitles) {
+      if (typeof item === 'string' && item.trim()) candidates.push(item.trim());
+    }
+  }
+  let maxForkNum = 0;
+  for (const title of candidates) {
+    const m = title.match(prefixRe);
+    if (!m) continue;
+    const itemBase = title.slice(m[0].length).trim();
+    if (itemBase !== base) continue;
+    const num = m[1] ? Number(m[1]) : 1;
+    if (Number.isInteger(num) && num > maxForkNum) {
+      maxForkNum = num;
+    }
+  }
+  const nextNum = maxForkNum + 1;
+  const tag = nextNum === 1 ? '[Fork]' : `[Fork ${nextNum}]`;
+  return base ? `${tag} ${base}` : tag;
+}
+
+async function handleForkSession(event, cascadeId, options = {}, deps = {}) {
+  const checkSender = typeof deps.isLocalMainFrameSender === 'function'
+    ? deps.isLocalMainFrameSender
+    : isLocalMainFrameSender;
+  const url = checkSender(event);
+  if (!url) throw new Error('仅允许本机主聊天窗口');
+  if (typeof cascadeId !== 'string' || !/^[a-f\d-]{36}$/i.test(cascadeId)) {
+    return { ok: false, error: '无效会话标识' };
+  }
+  try {
+    let callRpc;
+    if (typeof deps.callRpc === 'function') {
+      callRpc = deps.callRpc;
+    } else {
+      const remote = getRemoteBackendForSender(event?.sender);
+      if (remote) {
+        const sessionInfo = getRemoteSession(remote.hostId);
+        const requester = createRemoteSessionRequester(event.sender, sessionInfo, url.origin);
+        callRpc = requester.call;
+      } else {
+        const { connect } = require('./local-api');
+        const api = await connect();
+        callRpc = api.call;
+      }
+    }
+    const opts = options && typeof options === 'object' ? options : {};
+    const reqBody = buildForkConversationRequest(cascadeId, opts);
+    const res = await callRpc('ForkConversation', reqBody);
+    const newCascadeId = typeof res?.newCascadeId === 'string' ? res.newCascadeId.trim() : '';
+    if (!newCascadeId) {
+      return { ok: false, error: '未返回派生会话标识' };
+    }
+    let sourceTitle = typeof opts.sourceTitle === 'string' ? opts.sourceTitle.trim() : '';
+    const existingTitles = Array.isArray(opts.existingTitles)
+      ? opts.existingTitles.map((t) => String(t || '').trim()).filter(Boolean)
+      : [];
+    if (!sourceTitle) {
+      try {
+        const allTraj = await callRpc('GetAllCascadeTrajectories', {});
+        const summaries = allTraj?.trajectorySummaries || {};
+        const srcSummary = summaries[cascadeId];
+        sourceTitle = String(srcSummary?.annotations?.title || srcSummary?.summary || '').trim();
+        for (const item of Object.values(summaries)) {
+          const t = String(item?.annotations?.title || item?.summary || '').trim();
+          if (t) existingTitles.push(t);
+        }
+      } catch {}
+    }
+    const newTitle = buildForkedConversationTitle(sourceTitle, existingTitles);
+    if (newTitle) {
+      try {
+        await callRpc('UpdateConversationAnnotations', {
+          cascadeIds: [newCascadeId],
+          annotations: { title: newTitle },
+          mergeAnnotations: true,
+        });
+      } catch {}
+    }
+    const newProjectId = typeof res?.newProjectId === 'string' ? res.newProjectId.trim() : '';
+    const warnings = Array.isArray(res?.warnings)
+      ? res.warnings.map((w) => String(w || '').trim()).filter(Boolean)
+      : [];
+    return { ok: true, newCascadeId, newProjectId, newTitle, warnings };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
 exports.handleModulesStatus = handleModulesStatus;
 exports.handleToggleModule = handleToggleModule;
 exports.handleRestartHost = handleRestartHost;
+exports.buildForkConversationRequest = buildForkConversationRequest;
+exports.buildForkedConversationTitle = buildForkedConversationTitle;
+exports.handleForkSession = handleForkSession;
 exports.setAppQuitting = setAppQuitting;
 exports.getAppQuitting = getAppQuitting;
 exports.shouldInterceptWindowClose = shouldInterceptWindowClose;

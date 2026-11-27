@@ -41,6 +41,7 @@ function buildRenderer() {
   const modelSwitcher = readUtf8(path.join(SRC_DIR, 'model-switcher.js'));
   const modelQuota = readUtf8(path.join(SRC_DIR, 'model-quota.js'));
   const accountSwitcher = readUtf8(path.join(SRC_DIR, 'account-switcher.js'));
+  const messageFork = readUtf8(path.join(SRC_DIR, 'message-fork.js'));
   const speedPanel = readUtf8(path.join(SRC_DIR, 'speed-panel.js'));
   const settingsPanel = readUtf8(path.join(SRC_DIR, 'settings-panel.js'));
   const heatmap = readUtf8(path.join(SRC_DIR, 'heatmap.js'));
@@ -63,6 +64,7 @@ function buildRenderer() {
   main = replaceOnce(main, '  /* @INSERT_MODEL_SWITCHER_MODULE */', modelSwitcher, 'model-switcher');
   main = replaceOnce(main, '  /* @INSERT_MODEL_QUOTA_MODULE */', modelQuota, 'model-quota');
   main = replaceOnce(main, '  /* @INSERT_ACCOUNT_SWITCHER_MODULE */', accountSwitcher, 'account-switcher');
+  main = replaceOnce(main, '  /* @INSERT_MESSAGE_FORK_MODULE */', messageFork, 'message-fork');
   main = replaceOnce(main, '  /* @INSERT_SPEED_PANEL_MODULE */', speedPanel, 'speed-panel');
   main = replaceOnce(main, '  /* @INSERT_SETTINGS_PANEL_MODULE */', settingsPanel, 'settings-panel');
   main = replaceOnce(main, '  /* @INSERT_HEATMAP_MODULE */', heatmap, 'heatmap');

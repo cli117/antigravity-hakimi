@@ -865,3 +865,658 @@ test('cold switch captures exact onboarding casing/isGcpTos and restores target 
     });
   });
 });
+
+test('findMatchingProfile refuses fingerprint or id fallback when currentEmail conflicts with profile email', () => {
+  const profiles = [
+    {
+      id: 'solaris1998llc@gmail.com',
+      email: 'solaris1998llc@gmail.com',
+      label: '主力Ultra',
+      tokenFingerprint: 'deadbeef1234',
+    },
+    {
+      id: 'legacy-no-email',
+      email: '',
+      label: 'Legacy',
+      tokenFingerprint: 'cafebabe5678',
+    },
+    {
+      id: 'cherishlv1998@gmail.com',
+      email: 'other@gmail.com',
+      label: 'MismatchedId',
+      tokenFingerprint: '112233445566',
+    },
+  ];
+
+  assert.equal(
+    coldHelper.findMatchingProfile(profiles, {
+      activeFingerprint: 'deadbeef1234',
+      currentEmail: 'cherishlv1998@gmail.com',
+    }),
+    null,
+    'must not match solaris by fingerprint when currentEmail is cherish'
+  );
+
+  assert.equal(
+    coldHelper.findMatchingProfile(profiles, {
+      activeFingerprint: 'deadbeef1234',
+      currentEmail: '',
+    })?.id,
+    'solaris1998llc@gmail.com',
+    'fingerprint fallback still works when currentEmail is unknown'
+  );
+
+  assert.equal(
+    coldHelper.findMatchingProfile(profiles, {
+      activeFingerprint: 'cafebabe5678',
+      currentEmail: 'new-email@gmail.com',
+    })?.id,
+    'legacy-no-email',
+    'fingerprint fallback still matches email-less legacy entries'
+  );
+});
+
+test('getAccountsStatus never pairs mismatched live hint with saved profile or corrupts its tierName', () => {
+  withTempDir((tmp) => {
+    const secretUltra = encodeGoKeyringSecret({
+      id_token_email: 'solaris1998llc@gmail.com',
+      user_tier: 'g1-ultra-tier',
+      tier_display_name: 'Google AI Ultra',
+      refresh_token: 'rt-ultra',
+    });
+    const secretPro = encodeGoKeyringSecret({
+      id_token_email: 'cherishlv1998@gmail.com',
+      tier_display_name: 'Google AI Pro',
+      refresh_token: 'rt-pro',
+    });
+
+    // Case 1: Keychain holds solaris (Ultra 20x) while renderer passes stale cherish (Pro)
+    const kc1 = makeMockKeychain({
+      'gemini::antigravity': secretUltra,
+      'antigravity-hakimi-accounts::solaris1998llc@gmail.com': secretUltra,
+    });
+    switcher.saveProfilesRegistry(
+      {
+        profiles: [
+          {
+            id: 'solaris1998llc@gmail.com',
+            email: 'solaris1998llc@gmail.com',
+            label: '主力Ultra',
+            tierName: 'Google AI Ultra 20x',
+            tokenFingerprint: switcher.computeTokenFingerprint(secretUltra),
+          },
+        ],
+      },
+      { stateDir: tmp }
+    );
+
+    const st1 = switcher.getAccountsStatus({
+      platform: 'darwin',
+      stateDir: tmp,
+      keychain: kc1,
+      currentEmail: 'cherishlv1998@gmail.com',
+      currentTierName: 'Google AI Pro',
+      detectAgyCliImpl: () => [],
+    });
+    assert.equal(st1.ok, true);
+    assert.equal(st1.activeEmail, 'solaris1998llc@gmail.com');
+    assert.equal(st1.activeTierName, 'Google AI Ultra 20x');
+    assert.equal(st1.activeProfileId, 'solaris1998llc@gmail.com');
+    assert.equal(st1.keychainLiveMismatch, true);
+    assert.equal(st1.liveSessionEmail, 'cherishlv1998@gmail.com');
+    assert.equal(st1.profiles[0].isActive, true);
+    assert.equal(st1.profiles[0].tierName, 'Google AI Ultra 20x');
+    const reloaded = switcher.loadProfilesRegistry({ stateDir: tmp });
+    assert.equal(reloaded.profiles[0].tierName, 'Google AI Ultra 20x', 'must not overwrite Ultra tier with stale Pro hint');
+
+    // Case 2: Already-corrupted fingerprint collision (saved solaris has cherish fp; active is cherish)
+    switcher.saveProfilesRegistry(
+      {
+        profiles: [
+          {
+            id: 'solaris1998llc@gmail.com',
+            email: 'solaris1998llc@gmail.com',
+            label: '主力Ultra',
+            tierName: 'Google AI Ultra 20x',
+            tokenFingerprint: switcher.computeTokenFingerprint(secretPro),
+          },
+        ],
+      },
+      { stateDir: tmp }
+    );
+    const kc2 = makeMockKeychain({
+      'gemini::antigravity': secretPro,
+      'antigravity-hakimi-accounts::solaris1998llc@gmail.com': secretPro,
+    });
+    const st2 = switcher.getAccountsStatus({
+      platform: 'darwin',
+      stateDir: tmp,
+      keychain: kc2,
+      currentEmail: 'cherishlv1998@gmail.com',
+      currentTierName: 'Google AI Pro',
+      detectAgyCliImpl: () => [],
+    });
+    assert.equal(st2.ok, true);
+    assert.equal(st2.activeEmail, 'cherishlv1998@gmail.com');
+    assert.equal(st2.activeProfileId, null);
+    assert.equal(st2.currentUnsaved, true);
+    assert.equal(st2.profiles[0].isActive, false);
+    assert.equal(st2.profiles[0].tierName, 'Google AI Ultra 20x');
+  });
+});
+
+test('saveCurrentAccount and executeColdAccountJob trust token id_token_email over stale hint to prevent Vault overwrite', () => {
+  withTempDir((tmp) => {
+    const stateDir = path.join(tmp, 'state');
+    const homeDir = path.join(tmp, 'home');
+    const geminiDir = path.join(homeDir, '.gemini');
+    const agDir = path.join(geminiDir, 'antigravity');
+    const userDataDir = path.join(homeDir, 'Library', 'Application Support', 'Antigravity');
+    fs.mkdirSync(agDir, { recursive: true });
+    fs.mkdirSync(userDataDir, { recursive: true });
+
+    const secretUltra = encodeGoKeyringSecret({
+      id_token_email: 'solaris1998llc@gmail.com',
+      user_tier: 'g1-ultra-tier',
+      tier_display_name: 'Google AI Ultra',
+      refresh_token: 'rt-ultra-keep-intact',
+    });
+    const secretPro = encodeGoKeyringSecret({
+      id_token_email: 'cherishlv1998@gmail.com',
+      tier_display_name: 'Google AI Pro',
+      refresh_token: 'rt-pro-new-login',
+    });
+    const kc = makeMockKeychain({
+      'gemini::antigravity': secretPro,
+      'antigravity-hakimi-accounts::solaris1998llc@gmail.com': secretUltra,
+    });
+    switcher.saveProfilesRegistry(
+      {
+        profiles: [
+          {
+            id: 'solaris1998llc@gmail.com',
+            email: 'solaris1998llc@gmail.com',
+            label: '主力Ultra',
+            tierName: 'Google AI Ultra 20x',
+            tokenFingerprint: switcher.computeTokenFingerprint(secretUltra),
+          },
+        ],
+      },
+      { stateDir }
+    );
+
+    // User just signed into cherish (Pro) while renderer hint is still stale solaris (Ultra 20x) and clicks save/update
+    const saveRes = switcher.saveCurrentAccount(
+      { email: 'solaris1998llc@gmail.com', tierName: 'Google AI Ultra 20x' },
+      { platform: 'darwin', stateDir, homeDir, userDataDir, keychain: kc, detectAgyCliImpl: () => [] }
+    );
+    assert.equal(saveRes.ok, true);
+    assert.equal(saveRes.profile.id, 'cherishlv1998@gmail.com');
+    assert.equal(saveRes.profile.email, 'cherishlv1998@gmail.com');
+    assert.equal(saveRes.profile.tierName, 'Google AI Pro');
+    // Crucial: solaris Vault entry & metadata remain completely untouched!
+    assert.equal(kc.get('antigravity-hakimi-accounts', 'solaris1998llc@gmail.com'), secretUltra);
+    assert.equal(kc.get('antigravity-hakimi-accounts', 'cherishlv1998@gmail.com'), secretPro);
+    assert.equal(saveRes.status.profiles.length, 2);
+    const solarisAfter = saveRes.status.profiles.find((p) => p.id === 'solaris1998llc@gmail.com');
+    const cherishAfter = saveRes.status.profiles.find((p) => p.id === 'cherishlv1998@gmail.com');
+    assert.equal(solarisAfter.label, '主力Ultra');
+    assert.equal(solarisAfter.tierName, 'Google AI Ultra 20x');
+    assert.equal(solarisAfter.isActive, false);
+    assert.equal(cherishAfter.isActive, true);
+
+    // Also verify cold prepare-add with stale job.currentEmail does not clobber solaris
+    const archivePath = path.join(agDir, 'token_usage_archive_v2.json');
+    fs.writeFileSync(
+      archivePath,
+      JSON.stringify({
+        version: '2.0.0',
+        firstUseDate: '2026-11-01',
+        planStatus: { status: 'identified', tierKey: 'pro', tierName: 'Google AI Pro', email: 'cherishlv1998@gmail.com' },
+        dailyMapBySource: { desktop: { '2026-11-01': { total: 1234 } }, cli: {}, legacyUnallocated: {} },
+      })
+    );
+    const prepRes = coldHelper.executeColdAccountJob(
+      {
+        action: 'prepare-add',
+        currentEmail: 'solaris1998llc@gmail.com',
+        currentTierName: 'Google AI Ultra 20x',
+        appBundlePath: '/Applications/哈基米.app',
+        stateDir,
+        userDataDir,
+        geminiDir,
+        homeDir,
+      },
+      { keychain: kc, skipStop: true, relaunch: false, detectAgyCliImpl: () => [] }
+    );
+    assert.equal(prepRes.ok, true);
+    assert.equal(prepRes.backedUpProfile.id, 'cherishlv1998@gmail.com');
+    assert.equal(kc.get('antigravity-hakimi-accounts', 'solaris1998llc@gmail.com'), secretUltra);
+    assert.equal(prepRes.residueCleaned.clearedArchivePlanStatus, true);
+    const archiveAfter = JSON.parse(fs.readFileSync(archivePath, 'utf8'));
+    assert.equal(archiveAfter.planStatus, null, 'prepare-add must clear stale archive planStatus');
+    assert.deepEqual(archiveAfter.dailyMapBySource.desktop['2026-11-01'], { total: 1234 }, 'token history must be preserved');
+  });
+});
+
+test('meter-collector flags archive fallback and does not resurrect stale archive email when signed out', async () => {
+  const collector = require(path.join(ROOT, 'payload', 'dist', 'meter-collector.js'));
+  const tmpAg = fs.mkdtempSync(path.join(os.tmpdir(), 'hakimi-acc-collector-'));
+  const emptyCliDir = path.join(tmpAg, 'empty-cli');
+  try {
+    const archivePath = path.join(tmpAg, 'token_usage_archive_v2.json');
+    fs.writeFileSync(
+      archivePath,
+      JSON.stringify({
+        version: '2.0.0',
+        firstUseDate: '2026-11-01',
+        planStatus: {
+          status: 'identified',
+          tierKey: 'ultra',
+          tierName: 'Google AI Ultra 20x',
+          email: 'solaris1998llc@gmail.com',
+        },
+        dailyMapBySource: { desktop: {}, cli: {}, legacyUnallocated: {} },
+      })
+    );
+
+    // 1. Offline/booting (userStatus: null): falls back to archiveV2 for display, flagged with isArchiveFallback=true
+    const offline = await collector.collectTokenHistoryAsync({ agDir: tmpAg, agCliDir: emptyCliDir, userStatus: null });
+    assert.equal(offline.planStatus.email, 'solaris1998llc@gmail.com');
+    assert.equal(offline.planStatus.isArchiveFallback, true);
+
+    // 2. Signed-out live RPC (empty userStatus object): must NOT resurrect stale solaris email from archiveV2
+    const signedOut = await collector.collectTokenHistoryAsync({ agDir: tmpAg, agCliDir: emptyCliDir, userStatus: { userStatus: {} } });
+    assert.equal(signedOut.planStatus.email, null);
+    assert.equal(signedOut.planStatus.status, 'unidentified');
+    assert.equal(signedOut.planStatus.isArchiveFallback, undefined);
+
+    // 3. New account signed in (same or different tier): updates archiveV2 email cleanly
+    const proA = await collector.collectTokenHistoryAsync({
+      agDir: tmpAg,
+      agCliDir: emptyCliDir,
+      userStatus: { userStatus: { email: 'pro-a@gmail.com', userTier: { id: 'pro', name: 'Google AI Pro' } } },
+    });
+    assert.equal(proA.planStatus.email, 'pro-a@gmail.com');
+    assert.equal(proA.planStatus.isArchiveFallback, undefined);
+
+    const proB = await collector.collectTokenHistoryAsync({
+      agDir: tmpAg,
+      agCliDir: emptyCliDir,
+      userStatus: { userStatus: { email: 'pro-b@gmail.com', userTier: { id: 'pro', name: 'Google AI Pro' } } },
+    });
+    assert.equal(proB.planStatus.email, 'pro-b@gmail.com');
+    const savedArch = JSON.parse(fs.readFileSync(archivePath, 'utf8'));
+    assert.equal(savedArch.planStatus.email, 'pro-b@gmail.com');
+  } finally {
+    fs.rmSync(tmpAg, { recursive: true, force: true });
+  }
+});
+
+test('renderer account switcher ignores archive fallback email, refreshes live identity on open, and surfaces mismatch warning', async () => {
+  const vm = require('vm');
+  const byId = new Map();
+  const makeNode = (tag, id = '') => {
+    const attrs = new Map();
+    const listeners = new Map();
+    const children = [];
+    const node = {
+      nodeType: 1,
+      tagName: String(tag || 'DIV').toUpperCase(),
+      id,
+      hidden: id === 'panel' || id === 'panel-tokens' || id === 'overflow-menu' || id === 'color-picker-popover' || id === 'accounts-popover' || id === 'acc-status',
+      disabled: false,
+      textContent: '',
+      value: '',
+      className: '',
+      style: {
+        setProperty(k, v) { this[k] = v; },
+        removeProperty(k) { delete this[k]; },
+        getPropertyValue(k) { return this[k] || ''; },
+      },
+      children,
+      childNodes: children,
+      parentElement: null,
+      get isConnected() { return true; },
+      classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+      getAttribute(k) { return attrs.has(k) ? attrs.get(k) : null; },
+      setAttribute(k, v) { attrs.set(k, String(v)); },
+      removeAttribute(k) { attrs.delete(k); },
+      hasAttribute(k) { return attrs.has(k); },
+      addEventListener(type, fn) {
+        if (!listeners.has(type)) listeners.set(type, []);
+        listeners.get(type).push(fn);
+      },
+      removeEventListener() {},
+      dispatch(type, ev = {}) {
+        for (const fn of listeners.get(type) || []) fn(ev);
+      },
+      appendChild(child) {
+        child.parentElement = node;
+        children.push(child);
+        return child;
+      },
+      replaceChildren(...items) {
+        children.length = 0;
+        for (const it of items) {
+          if (it && typeof it === 'object') {
+            it.parentElement = node;
+            children.push(it);
+          }
+        }
+      },
+      querySelector() { return null; },
+      querySelectorAll() { return []; },
+      closest() { return null; },
+      contains(target) { return target === node || children.includes(target); },
+      getBoundingClientRect() { return { left: 0, top: 0, right: 200, bottom: 40, width: 200, height: 40 }; },
+      remove() {},
+      attachShadow() {
+        let html = '';
+        return {
+          get innerHTML() { return html; },
+          set innerHTML(val) {
+            html = String(val || '');
+            for (const m of html.matchAll(/\bid="([^"]+)"/g)) {
+              if (!byId.has(m[1])) byId.set(m[1], makeNode('DIV', m[1]));
+            }
+          },
+          getElementById(k) { return byId.get(k) || null; },
+          querySelector() { return null; },
+          querySelectorAll() { return []; },
+        };
+      },
+    };
+    return node;
+  };
+
+  const body = makeNode('BODY', 'body');
+  const fakeDoc = {
+    hidden: false,
+    body,
+    documentElement: body,
+    head: makeNode('HEAD', 'head'),
+    createElement: (tag) => makeNode(tag),
+    createElementNS: (_ns, tag) => makeNode(tag),
+    getElementById: (id) => byId.get(id) || null,
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    addEventListener() {},
+    removeEventListener() {},
+  };
+
+  let historyForceCalls = 0;
+  let livePlanStatus = {
+    status: 'identified',
+    email: 'stale-archive@gmail.com',
+    tierName: 'Google AI Ultra 20x',
+    isArchiveFallback: true,
+  };
+  const statusRequests = [];
+  let nextAccountsReply = {
+    ok: true,
+    supported: true,
+    hasActiveToken: true,
+    activeEmail: 'solaris1998llc@gmail.com',
+    activeTierName: 'Google AI Ultra 20x',
+    activeProfileId: 'solaris1998llc@gmail.com',
+    currentUnsaved: false,
+    keychainLiveMismatch: false,
+    liveSessionEmail: null,
+    profiles: [
+      { id: 'solaris1998llc@gmail.com', email: 'solaris1998llc@gmail.com', label: '主力Ultra', tierName: 'Google AI Ultra 20x', isActive: true, vaultPresent: true },
+    ],
+  };
+
+  const sandbox = {
+    location: { protocol: 'https:', hostname: '127.0.0.1', pathname: '/' },
+    document: fakeDoc,
+    navigator: { platform: 'MacIntel' },
+    localStorage: { getItem: () => null, setItem: () => {} },
+    innerWidth: 1280,
+    innerHeight: 800,
+    outerWidth: 1280,
+    addEventListener() {},
+    removeEventListener() {},
+    setInterval() { return 1; },
+    clearInterval() {},
+    setTimeout() { return 1; },
+    clearTimeout() {},
+    requestAnimationFrame() { return 1; },
+    cancelAnimationFrame() {},
+    AbortController,
+    Date,
+    Math,
+    Map,
+    Set,
+    Array,
+    Object,
+    String,
+    Number,
+    Boolean,
+    RegExp,
+    Promise,
+    JSON,
+    console,
+    contextMeterAPI: {
+      getSettings: async () => ({ ok: true, uiPreferences: {} }),
+      getTokenHistory: async (force) => {
+        if (force) historyForceCalls++;
+        return {
+          ok: true,
+          data: {
+            updatedAt: '2026-11-27 15:00:00',
+            firstUseDate: '2026-11-20',
+            summary: { grandTotalTokens: 1000, todayTokens: 1000, monthTokens: 1000, yearTokens: 1000, totalConversations: 1, activeDaysCount: 1 },
+            dailyMap: { '2026-11-27': { total: 1000, input: 600, output: 200, cache: 200, steps: 1 } },
+            dailyMapBySource: { all: { '2026-11-27': { total: 1000, input: 600, output: 200, cache: 200, steps: 1 } }, desktop: {}, cli: {} },
+            planStatus: livePlanStatus,
+            rawPlanStatus: livePlanStatus,
+            cascadeModelConfigs: [],
+            speedRecords: [],
+          },
+        };
+      },
+      getAccountsStatus: async (opts) => {
+        statusRequests.push(opts);
+        return nextAccountsReply;
+      },
+    },
+  };
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+
+  const coreSrc = fs.readFileSync(path.join(ROOT, 'payload', 'dist', 'meter-core.js'), 'utf8');
+  const rendererSrc = fs.readFileSync(path.join(ROOT, 'payload', 'dist', 'meter-renderer.js'), 'utf8');
+  vm.runInNewContext(`${coreSrc}\n${rendererSrc}`, sandbox, { filename: 'meter-renderer-accounts-test.js' });
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+
+  const api = sandbox.__AGContextMeter;
+  // Archive fallback email must NOT be forwarded as currentEmail
+  assert.equal(statusRequests[0].currentEmail, '');
+
+  // Opening popover when current hint is empty/fallback forces a live token-history sync
+  livePlanStatus = {
+    status: 'identified',
+    email: 'cherishlv1998@gmail.com',
+    tierName: 'Google AI Pro',
+  };
+  nextAccountsReply = {
+    ok: true,
+    supported: true,
+    hasActiveToken: true,
+    activeEmail: 'solaris1998llc@gmail.com',
+    activeTierName: '',
+    activeProfileId: 'solaris1998llc@gmail.com',
+    currentUnsaved: false,
+    keychainLiveMismatch: true,
+    liveSessionEmail: 'cherishlv1998@gmail.com',
+    profiles: [
+      { id: 'solaris1998llc@gmail.com', email: 'solaris1998llc@gmail.com', label: '主力Ultra', tierName: 'Google AI Ultra 20x', isActive: true, vaultPresent: true },
+    ],
+  };
+
+  api.openAccountsPopoverForTest();
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+
+  assert.ok(historyForceCalls >= 1, 'opening popover with fallback/empty hint should force live history sync');
+  const snap = api.getAccountsUiSnapshotForTest();
+  assert.equal(snap.currentEmailText, 'solaris1998llc@gmail.com');
+  assert.equal(snap.statusHidden, false, 'keychain/session mismatch warning should be surfaced');
+  assert.match(snap.statusText, /cherishlv1998@gmail\.com/);
+  assert.match(snap.statusText, /solaris1998llc@gmail\.com/);
+  // Must not leak cherish's Pro tier onto solaris's badge when mismatched
+  assert.equal(byId.get('acc-current-tier').hidden, true);
+
+  api.dispose();
+});
+
+test('executeColdAccountJob switch aborts with VAULT_IDENTITY_MISMATCH when target Vault snapshot belongs to another account', () => {
+  withTempDir((tmp) => {
+    const homeDir = path.join(tmp, 'home');
+    const geminiDir = path.join(homeDir, '.gemini');
+    const userDataDir = path.join(homeDir, 'Library', 'Application Support', 'Antigravity');
+    const stateDir = path.join(tmp, 'state');
+    fs.mkdirSync(userDataDir, { recursive: true });
+    fs.mkdirSync(geminiDir, { recursive: true });
+
+    const appStoragePath = path.join(userDataDir, 'app_storage.json');
+    fs.writeFileSync(
+      appStoragePath,
+      JSON.stringify({ 'agy.onboarding.lastLoginUsername': 'charlie@gmail.com' })
+    );
+
+    const secretCharlie = encodeGoKeyringSecret({
+      id_token_email: 'charlie@gmail.com',
+      refresh_token: 'rt-charlie-active',
+    });
+    const secretBobPoisoned = encodeGoKeyringSecret({
+      id_token_email: 'bob@gmail.com',
+      refresh_token: 'rt-bob-poisoned',
+    });
+    const secretAliceValid = encodeGoKeyringSecret({
+      id_token_email: 'Alice@Gmail.COM',
+      refresh_token: 'rt-alice-valid',
+    });
+
+    const kc = makeMockKeychain({
+      'gemini::antigravity': secretCharlie,
+      // Poisoned Vault entry: stored under alice@gmail.com, but embedded token belongs to bob@gmail.com
+      'antigravity-hakimi-accounts::alice@gmail.com': secretBobPoisoned,
+      // Poisoned Vault entry with empty profile.email relying on targetId email fallback
+      'antigravity-hakimi-accounts::dave@gmail.com': secretBobPoisoned,
+      // Legitimate Vault entry with different email casing
+      'antigravity-hakimi-accounts::alice-ok@gmail.com': secretAliceValid,
+    });
+    switcher.saveProfilesRegistry(
+      {
+        profiles: [
+          {
+            id: 'alice@gmail.com',
+            email: 'alice@gmail.com',
+            tierName: 'Google AI Ultra 20x',
+            tokenFingerprint: coldHelper.computeTokenFingerprint(secretBobPoisoned),
+          },
+          {
+            id: 'dave@gmail.com',
+            email: '',
+            tierName: 'Pro',
+            tokenFingerprint: coldHelper.computeTokenFingerprint(secretBobPoisoned),
+          },
+          {
+            id: 'alice-ok@gmail.com',
+            email: 'alice@gmail.com',
+            tierName: 'Google AI Ultra 20x',
+            tokenFingerprint: coldHelper.computeTokenFingerprint(secretAliceValid),
+          },
+        ],
+      },
+      { stateDir }
+    );
+
+    const relaunches = [];
+    const res = coldHelper.executeColdAccountJob(
+      {
+        action: 'switch',
+        targetId: 'alice@gmail.com',
+        currentEmail: 'charlie@gmail.com',
+        appBundlePath: '/Applications/哈基米.app',
+        stateDir,
+        userDataDir,
+        geminiDir,
+        homeDir,
+      },
+      {
+        keychain: kc,
+        skipStop: true,
+        sleepImpl: () => {},
+        detectAgyCliImpl: () => [],
+        spawnImpl: (bin, args) => {
+          relaunches.push({ bin, args });
+          return { pid: 9001, unref() {} };
+        },
+      }
+    );
+
+    assert.equal(res.ok, false);
+    assert.equal(res.code, 'VAULT_IDENTITY_MISMATCH');
+    assert.equal(res.targetId, 'alice@gmail.com');
+    assert.equal(res.expectedEmail, 'alice@gmail.com');
+    assert.equal(res.actualEmail, 'bob@gmail.com');
+    assert.match(res.error, /alice@gmail\.com/);
+    assert.match(res.error, /bob@gmail\.com/);
+    // Active slot, Keychain writes, and app_storage must stay completely untouched
+    assert.equal(kc.calls.set.length, 0);
+    assert.equal(kc.get('gemini', 'antigravity'), secretCharlie);
+    assert.deepEqual(JSON.parse(fs.readFileSync(appStoragePath, 'utf8')), {
+      'agy.onboarding.lastLoginUsername': 'charlie@gmail.com',
+    });
+    assert.equal(res.relaunched, true);
+    assert.equal(relaunches.length, 1);
+
+    const lastRes = JSON.parse(fs.readFileSync(coldHelper.getColdResultPath({ stateDir }), 'utf8'));
+    assert.equal(lastRes.ok, false);
+    assert.equal(lastRes.code, 'VAULT_IDENTITY_MISMATCH');
+    assert.equal(lastRes.expectedEmail, 'alice@gmail.com');
+    assert.equal(lastRes.actualEmail, 'bob@gmail.com');
+
+    // Also blocks when profile.email is empty and expected email falls back to targetId
+    const resIdFallback = coldHelper.executeColdAccountJob(
+      {
+        action: 'switch',
+        targetId: 'dave@gmail.com',
+        currentEmail: 'charlie@gmail.com',
+        appBundlePath: '/Applications/哈基米.app',
+        stateDir,
+        userDataDir,
+        geminiDir,
+        homeDir,
+      },
+      { keychain: kc, skipStop: true, relaunch: false, detectAgyCliImpl: () => [] }
+    );
+    assert.equal(resIdFallback.ok, false);
+    assert.equal(resIdFallback.code, 'VAULT_IDENTITY_MISMATCH');
+    assert.equal(resIdFallback.expectedEmail, 'dave@gmail.com');
+    assert.equal(resIdFallback.actualEmail, 'bob@gmail.com');
+    assert.equal(kc.calls.set.length, 0);
+
+    // Case-insensitive match proceeds normally
+    const resOk = coldHelper.executeColdAccountJob(
+      {
+        action: 'switch',
+        targetId: 'alice-ok@gmail.com',
+        currentEmail: 'charlie@gmail.com',
+        appBundlePath: '/Applications/哈基米.app',
+        stateDir,
+        userDataDir,
+        geminiDir,
+        homeDir,
+      },
+      { keychain: kc, skipStop: true, relaunch: false, detectAgyCliImpl: () => [] }
+    );
+    assert.equal(resOk.ok, true);
+    assert.equal(kc.get('gemini', 'antigravity'), secretAliceValid);
+  });
+});

@@ -12,15 +12,15 @@
    - **语义化版本同步检测**：比对只读官方 `/Applications/Antigravity.app` 与 `/Applications/哈基米.app` 的 `CFBundleShortVersionString`，仅当官方版本**高于**哈基米版本时弹出同步提示；当哈基米通过内置升级超前于本地只读官方版时自动放行。
 
 2. **双源静默自动升级与一键原子冷替换**
-   - **官方反重力 + 哈基米本体双源追新**：直接读取 `app-update.yml` 拉取官方最新 `latest-arm64-mac.yml` 与 `Antigravity.zip`（校验 `SHA-512` 与 Google LLC Developer ID 代码签名），同时追踪 `cli117/antigravity-hakimi` 的 `main` 最新提交（基于包内 `hakimi-build-meta.json` 与 GitHub `compare` 仅在 `ahead` 时触发，避免误降级本地开发版）。后台通过 Electron 内置 Node（`ELECTRON_RUN_AS_NODE=1`）完成构建，不依赖本地仓库路径、`git` 或系统 `node`。
+   - **官方反重力 + 哈基米本体双源追新**：直接读取 `app-update.yml` 拉取官方最新 `latest-arm64-mac.yml`（兼容仅含 `version` 的极简清单，仅哈基米升级需要底包时自动去 `x-app-version` 重拉完整清单）与 `Antigravity.zip`（校验 `SHA-512` 与 Google LLC Developer ID 代码签名）；同时通过公开 `github.com` Web 端点（`commits/main.atom` + Git Smart HTTP `info/refs` 兜底与轻量 `compare/*.patch` 祖先探测，零 `api.github.com` 调用，避免共享出口 IP 限流）追踪 `cli117/antigravity-hakimi` 的 `main` 提交，基于包内 `hakimi-build-meta.json` 仅在 `ahead` 时触发，避免误降级本地开发版。后台通过 Electron 内置 Node（`ELECTRON_RUN_AS_NODE=1`）完成构建，不依赖本地仓库路径、`git` 或系统 `node`。
    - **仅验证成功才提示**：检测到上游更新后在独立沙盒静默执行全套构建与校验（`region-unlock` + `pack-hakimi-asar` + `ElectronAsarIntegrity` SHA-256 + 自定义图标沿用 + `codesign --verify --strict`）。**只有全部通过**，顶栏才会亮起「重启更新」提示；点击后由零外部依赖的脱离式冷替换进程 [`hakimi-upgrade-helper.js`](payload/dist/hakimi-upgrade-helper.js) 完成零存活退出屏障、`SingletonLock` 清理、同盘 APFS 原子替换（失败通过 `.prev` 自动回滚）与干净环境重启。
    - **失败静默隔离与原生更新器接管**：若官方新版本导致补丁不兼容，顶栏保持安静且不影响当前版本，仅在「设置」面板更新卡片记录具体失败阶段诊断，并跳过该不兼容版本直到哈基米 `main` 有新提交再重试（期间若 `main` 领先仍可回退执行仅哈基米升级）。同时在模块边界包装接管原生 `dist/updater.js`，禁用必然验签失败的 Squirrel.Mac，消除原版更新按钮闪现消失问题。
    - **严格磁盘防囤积**：官方干净 `Antigravity.zip` 仅维护单槽位缓存（对应当前已安装版本，并避免与 `~/Library/Caches/com.google.antigravity/` 重复留存），哈基米源码 tarball 与失败沙盒用完即删，`.prev` 替换成功后立刻清理，启动时自动执行 Orphan GC 清扫异常中断残留。仅限 macOS 本机窗口，Remote SSH 窗口自动隐藏。
 
 3. **macOS 钥匙串多账号冷切换**
-   - 入口位于左下角模型额度卡片标题栏人像图标（停留在未登录页且已有备份账号时，左下角自动浮现快捷切回胶囊；「配置」页同步提供管理卡片），支持保存/更新账号快照、行内编辑备注名、添加新账号（不吊销原号 Refresh Token）与两步删除 Vault 备份。
+   - 入口位于左下角模型额度卡片标题栏人像图标（停留在未登录页且已有备份账号时，左下角自动浮现快捷切回胶囊；「配置」页同步提供管理卡片），支持保存/更新账号快照、自动同步活动账号最新订阅档位（含 `Google AI Ultra 5x` / `20x` 区分）、行内编辑备注名、添加新账号（不吊销原号 Refresh Token）与两步删除 Vault 备份。
    - **外部接力全冷停换盘**：切换时由零外部依赖的脱离式子进程 [`meter-account-cold-helper.js`](payload/dist/meter-account-cold-helper.js) 等待 `哈基米.app`、`language_server` 与 sidecars 全部归零并清理残留 `SingletonLock`，再执行原子换盘与干净环境变量重启（`open -n`），避免运行中热切导致的内存旧状态残留。
-   - **防串号与零明文落盘**：凭据严格存放于 macOS 系统钥匙串（活动槽位 `("gemini", "antigravity")` ↔ Vault `antigravity-hakimi-accounts`），写入走 `/usr/bin/security -i` stdin 管道，状态刷新仅用不带 `-w` 的元数据探测；切换时拦截运行中的 `agy` CLI，清理 `credential-user-scope`、降级 Token 文件与缓存 Mendel 开关，并按账号还原 `agy.onboarding.lastLoginUsername` / `lastLoginIsGcpTos` 以免重复弹出引导确认窗，同时保留 `installation_id` 与共享历史对话。
+   - **防串号、防误覆盖与零明文落盘**：凭据严格存放于 macOS 系统钥匙串（活动槽位 `("gemini", "antigravity")` ↔ Vault `antigravity-hakimi-accounts`），写入走 `/usr/bin/security -i` stdin 管道，状态刷新仅用不带 `-w` 的元数据探测；写入与匹配以钥匙串凭据内嵌身份为准，检测到当前会话与钥匙串凭据不一致时主动告警并阻止误覆盖他人 Vault 或档位。切换时拦截运行中的 `agy` CLI，清理 `credential-user-scope`、降级 Token 文件与缓存 Mendel 开关，并按账号还原 `agy.onboarding.lastLoginUsername` / `lastLoginIsGcpTos` 以免重复弹出引导确认窗，同时保留 `installation_id` 与共享历史对话。
    - 仅限 macOS 本机窗口生效，Remote SSH 窗口自动隐藏并拦截。
 
 4. **左下角模型额度卡片、Effort 速切与自定义快捷键**
@@ -30,10 +30,12 @@
 5. **实时上下文监控、缓存命中率告警与纯 Token 历史看板**
    - 顶栏悬浮胶囊（Context Meter）实时展示当前会话上下文 Token 占用进度、输入/输出速率（`tok/s`）、上下文缓存命中率，以及 8 类失败原因自动分类诊断。
    - 顶栏内置纯图标 `/compact` 快捷压缩按钮；缓存命中率智能区分新会话首轮冷启动与多轮缓存失效（琥珀色/红色告警与悬停构成气泡），并在会话详情提供四维缓存速览卡片。
-   - 历史看板统计桌面端与 CLI 的纯 Token 消耗（输入 / 输出 / 缓存读取），提供日/周/月/年/累计热力图、按模型与档位分组的输出速率中位数对比，以及订阅套餐与 Prompt / Flow 额度池详情。
+   - 历史看板统计桌面端与 CLI 的纯 Token 消耗（输入 / 输出 / 缓存读取），提供按需惰性渲染的日/周/月/年/累计热力图、按模型与档位分组的输出速率中位数对比，以及订阅套餐（按 `userTier.id` 区分 `Google AI Ultra 5x` 与 `20x`）与 Prompt / Flow 额度池详情；支持归档元数据缓存（60s TTL）与隐藏标签页自动暂停空闲轮询。
 
-6. **桌面端简体中文界面**
-   - 通过 `app.asar` 预加载注入全量简体中文词库（`zh-CN.json`）与 DOM 翻译引擎（`i18n-runtime.js`），严格限定于本地 Electron DOM 界面渲染，不触碰聊天正文、代码块或外发请求，支持在面板中随时切回英文界面。
+6. **消息级 Time-Travel Fork、简体中文界面与 Markdown 单波浪线修复**
+   - **消息级 Time-Travel Fork（方案 A）**：在聊天区每轮回复底部操作栏（`[data-testid="cascade-system-message-toolbar"]`）的「复制 / 点赞 / 点踩」按钮组中紧邻「复制」挂载原生风格分叉按钮（自动避让官方原生 Fork 按钮，并过滤 `/btw` 旁路提问、Battle 模式、运行中会话及已被超限清理的早期轮次）。直接读取宿主 React Fiber 获取该轮精确 `stepIndex`（历史轮次未解析出步号时绝不误退回末尾），通过官方本地 `ForkConversation` 派生（兼容本机与 Remote SSH 窗口），自动按 `[Fork]` / `[Fork 2]` 递增命名并切换至新会话：**单击**立即在当前工作区从该轮末尾派生分支（未触发物理清理时可无损回到压缩前快照），**`Shift + 点击`** 立即在新建 Git Worktree 中派生独立副本，**右键点击**弹出极简双项菜单按需选择。
+   - **全量简体中文界面**：通过 `app.asar` 预加载注入全量简体中文词库（`zh-CN.json`）与 DOM 翻译引擎（`i18n-runtime.js`），严格限定于本地 Electron DOM 界面渲染，不触碰聊天正文、代码块或外发请求，支持在面板中随时切回英文界面。
+   - **Markdown `remark-gfm` 单波浪线修复**：在 `dist/preload.js` 注入本地回环主框架作用域的预加载钩子，将 `remark-gfm` 默认配置设为 `singleTilde: false`，防止数值范围或路径中的单 `~` 被误渲染为删除线，同时保留标准 `~~删除线~~`。
 
 7. **Remote SSH 远端无缝适配（Linux `x86-64` & `arm64`）**
    - [`meter-ssh.js`](payload/dist/meter-ssh.js) 注入 `dist/remote/bootstrapScript.js` 与 `dist/remote/remoteManager.js`：通过 Remote SSH 连接 Linux 主机时，自动对远端 `~/.antigravity-hub-server/bin/<ver>-<arch>/language_server`（64 位 ELF `x86-64` / `arm64`，兼容 PIE `.rela.dyn`）执行自适应地区解锁并接管重启未修补服务（日志写远端 `hakimi-patch.log`，异常自动 fail-open，不污染引导 stdout）。
@@ -163,21 +165,21 @@ bash ./build-hakimi.sh --stage-only --local
 - `set-hakimi-icon.sh`：针对已构建 `哈基米.app` 原位秒级替换/还原图标的轻量脚本
 - `scripts/`：
   - `build-renderer.js`：将 `src/renderer/*` 编译拼装为 `payload/dist/meter-renderer.js`
-  - `pack-hakimi-asar.js` / `replace-asar-icon.js`：调用自包含打包器重打包官方 `app.asar`、注入主进程/预加载/Remote SSH/`dist/updater.js` 钩子、替换内置 `icon.png` 并计算头摘要 SHA-256
+  - `pack-hakimi-asar.js` / `replace-asar-icon.js`：调用自包含打包器重打包官方 `app.asar`、注入主进程/预加载（含 Markdown `singleTilde: false` 修复）/Remote SSH/`dist/updater.js` 钩子、替换内置 `icon.png` 并计算头摘要 SHA-256
   - `build-macos-icon.js`：本地图片转 `.icns` 与 `512x512` Dock PNG
   - `region-unlock.js` / `cli-unlock.js` / `doctor.js`：地区解锁 CLI、`agy` CLI 解锁 CLI、只读健康诊断工具
   - `lib/target-app-lifecycle.sh`：目标 `.app` 进程探测与零存活退出屏障公共库
 - `payload/dist/`：
-  - `asar-engine.js` / `hakimi-asar-packer.js` / `modular-installer.js` / `modules-config.js` / `binary-utils.js`：ASAR 读写与自包含打包、官方路径守卫、钩子注入、状态持久化（含语义化版本同步）与 Mach-O/ELF Go 符号解析公共工具
-  - `hakimi-builder.js` / `hakimi-updater.js` / `hakimi-upgrade-helper.js` / `hakimi-icon-manager.js`：官方源拉取与 Google 验签、GitHub `main` 提交对比与沙盒试构建、双源静默升级状态机与 `dist/updater.js` 接管桥接、应用内图标实时预览与沙盒替换/还原、零依赖脱离式 APFS 原子冷替换与 Orphan GC
+  - `asar-engine.js` / `hakimi-asar-packer.js` / `modular-installer.js` / `modules-config.js` / `binary-utils.js`：ASAR 读写与自包含打包、官方路径守卫、钩子注入（含 Markdown `singleTilde` 修复）、状态持久化（含语义化版本同步与 `markdownFixReady` 校验）与 Mach-O/ELF Go 符号解析公共工具
+  - `hakimi-builder.js` / `hakimi-updater.js` / `hakimi-upgrade-helper.js` / `hakimi-icon-manager.js`：官方源极简/完整清单拉取与 Google 验签、基于公开 GitHub Web 端点（`commits/main.atom` / `info/refs` / `compare/*.patch`，零 `api.github.com`）的 `main` 提交对比与沙盒试构建、双源静默升级状态机与 `dist/updater.js` 接管桥接、应用内图标实时预览与沙盒替换/还原、零依赖脱离式 APFS 原子冷替换与 Orphan GC
   - `meter-region-unlock.js` / `meter-cli-unlock.js` / `meter-ssh.js` / `meter-enhance.js`：桌面端与 `agy` CLI 地区解锁、Remote SSH 远端 ELF64 自动解锁与会话通道、后台语言服务检测与重启
-  - `meter-account-cold-helper.js` / `meter-account-switcher.js`：macOS 钥匙串多账号冷切换独立工作进程与编排引擎
-  - `meter-main.js` / `local-api.js` / `meter-collector.js` / `meter-core.js` / `meter-storage.js`：主进程 IPC、本地 API、Token 历史与额度采集及纯 Token 统计分析
+  - `meter-account-cold-helper.js` / `meter-account-switcher.js`：macOS 钥匙串多账号冷切换独立工作进程与编排引擎（含钥匙串身份防错配与活动账号档位同步）
+  - `meter-main.js` / `local-api.js` / `meter-collector.js` / `meter-core.js` / `meter-storage.js`：主进程 IPC（含会话 Fork 路由）、本地 API、Token 历史与额度采集、Ultra `5x`/`20x` 套餐识别及纯 Token 统计分析
   - `i18n/i18n-runtime.js` & `i18n/zh-CN.json`：桌面端简体中文 DOM 翻译运行时与词库
-- `src/renderer/`：Context Meter 悬浮胶囊、顶栏升级提示与设置更新卡片、左下角模型额度与 Effort 速切卡片、自定义快捷键浮层、多账号冷切换浮层、速率对比与纯 Token 热力图源码
+- `src/renderer/`：Context Meter 悬浮胶囊、消息级 Time-Travel Fork 按钮与右键双项菜单（`message-fork.js`）、顶栏升级提示与设置面板、左下角模型额度与 Effort 速切卡片、自定义快捷键浮层、多账号冷切换浮层、速率对比与纯 Token 热力图源码
 - `unlock/agy-cli/agy-patch.py`：独立 Python 版 `agy` CLI 自适应地区解锁工具
 - `linux/`：Linux 专用轻量补丁工具（`hakimi-linux.py` / `hakimi-linux.sh` / `README.md`），同时覆盖 `agy` CLI 与 `~/.antigravity-hub-server/bin/*/language_server`，支持 `status` / `patch` / `restore` 与 systemd 用户定时器自动重打，不触碰桌面端安装目录
-- `test/`：自动化单元测试套件（双源自动升级与原子冷替换、应用内图标替换与还原、冷切账号、ARM64/ELF64 地区解锁、ASAR 打包与符号守卫、模型额度与快捷键、Remote SSH）
+- `test/`：自动化单元测试套件（双源自动升级与原子冷替换、应用内图标替换与还原、冷切账号与防错配、消息级 Time-Travel Fork、ARM64/ELF64 地区解锁与 Linux 独立工具、ASAR 打包与符号守卫、模型额度与快捷键、Remote SSH）
 
 ---
 
