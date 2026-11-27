@@ -138,6 +138,7 @@ let registered = false;
 let isAppQuitting = false;
 let coldAccountSwitchInFlight = false;
 const boundWindows = new WeakSet();
+const hiddenOnClose = new WeakSet();
 const boundWebContents = new WeakSet();
 const injectionTimers = new WeakMap();
 const inFlightInjections = new WeakMap();
@@ -866,14 +867,60 @@ exports.installContextMeter = function (win) {
     win.on?.('restore', onWinVisibleOrActive);
     win.on?.('focus', onWinVisibleOrActive);
 
-    // 托盘常驻与会话保持：点击窗口右上角关闭时，若满足后台常驻与主会话条件，隐藏至托盘而非销毁，避免重新打开丢失会话
+    const isMac = process.platform === 'darwin';
+    let cancelFullScreenClose = null;
+    if (isMac) {
+      win.on?.('show', () => hiddenOnClose.delete(win));
+      win.once?.('closed', () => {
+        hiddenOnClose.delete(win);
+        cancelFullScreenClose?.();
+      });
+    }
+
+    const hideOnClose = () => {
+      if (typeof win.hide !== 'function') return;
+      win.hide();
+      if (isMac && !win.isDestroyed?.() && !win.isVisible()) hiddenOnClose.add(win);
+    };
+
+    // 后台常驻时隐藏最后一个符合条件的主窗口，保留会话。
     try {
       win.on?.('close', (event) => {
-        if (shouldInterceptWindowClose(win)) {
-          if (typeof event?.preventDefault === 'function') {
-            event.preventDefault();
-            if (typeof win.hide === 'function') win.hide();
+        if (isAppQuitting || typeof event?.preventDefault !== 'function') return;
+        if (cancelFullScreenClose) {
+          event.preventDefault();
+          return;
+        }
+        if (!shouldInterceptWindowClose(win)) return;
+        if (isMac && (!win.isVisible?.() || typeof win.hide !== 'function')) return;
+        event.preventDefault();
+        if (!isMac || !win.isFullScreen?.()) {
+          hideOnClose();
+          return;
+        }
+
+        // 先等 macOS 退出原生全屏空间，避免隐藏窗口后停留在黑屏空间。
+        let timeout;
+        const onLeaveFullScreen = () => {
+          if (!cancelFullScreenClose) return;
+          cancelFullScreenClose();
+          if (!win.isDestroyed?.() && !win.isFullScreen() && win.isVisible() && shouldInterceptWindowClose(win)) {
+            hideOnClose();
           }
+        };
+        cancelFullScreenClose = () => {
+          cancelFullScreenClose = null;
+          clearTimeout(timeout);
+          win.removeListener('leave-full-screen', onLeaveFullScreen);
+        };
+        try {
+          win.once('leave-full-screen', onLeaveFullScreen);
+          // 超时只取消等待，不隐藏窗口；用户可以重试。
+          timeout = setTimeout(cancelFullScreenClose, 5000);
+          timeout.unref?.();
+          win.setFullScreen(false);
+        } catch {
+          cancelFullScreenClose?.();
         }
       });
     } catch {}
@@ -978,6 +1025,9 @@ try {
     app.on('activate', () => {
       try {
         const utils = require('./utils');
+        if (process.platform === 'darwin' && !isAppQuitting) {
+          try { reopenHiddenLocalHubWindow(utils); } catch {}
+        }
         const wins = typeof utils.getHubWindows === 'function' ? utils.getHubWindows() : [];
         for (const w of wins) {
           exports.installContextMeter(w);
@@ -1001,6 +1051,19 @@ try {
     });
   }
 } catch {}
+
+function reopenHiddenLocalHubWindow(utils) {
+  const localWindows = (utils.getLocalHubWindows?.() || []).filter(
+    win => !win.isDestroyed?.() && !getRemoteBackendForWindow(win)
+  );
+  if (localWindows.some(win => win.isVisible?.())) return;
+
+  // 只恢复本钩子隐藏的原窗口；没有窗口时仍由宿主负责新建。
+  const win = localWindows.find(win => hiddenOnClose.has(win));
+  if (!win) return;
+  win.show();
+  if (!win.isDestroyed?.()) win.focus();
+}
 
 function isHostRunInBackgroundEnabled() {
   try {
@@ -1045,6 +1108,7 @@ function shouldInterceptWindowClose(win, options = {}) {
     } else {
       try {
         const utils = require('./utils');
+        if (process.platform === 'darwin' && !utils.getLocalHubWindows?.()?.includes(win)) return false;
         if (typeof utils.getHubWindows === 'function') wins = utils.getHubWindows();
       } catch {}
     }
