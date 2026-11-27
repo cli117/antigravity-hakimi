@@ -13,6 +13,7 @@
   const MSG_FORK_TOOLTIP_ID = 'ag-message-fork-tooltip';
   const MSG_FORK_MENU_ID = 'ag-message-fork-menu';
   const MSG_FORK_BTN_ATTR = 'data-hakimi-msg-fork';
+  const MSG_FORK_UUID_RE = /^[a-f\d-]{36}$/i;
   const MSG_FORK_FALLBACK_CLASS =
     'agy-button agy-button-icon inline-flex items-center justify-center font-medium transition-colors select-none outline-none cursor-pointer disabled:opacity-50 bg-transparent text-secondary-foreground hover:text-foreground hover:bg-secondary h-7 w-7 rounded-md';
   const MSG_FORK_TOOLTIP_CLASS =
@@ -41,6 +42,9 @@
   const MSG_FORK_COMPOSER_STOP_SELECTOR =
     'button[aria-label="Stop execution"], button[aria-label="停止执行"], [data-testid="stop-button"]';
 
+  const forkingCascadeIds = new Set();
+  const pendingForkNavTimers = new Set();
+  let pendingForkNavTarget = null;
   let msgForkObserver = null;
   let msgForkScanTimer = null;
   let msgForkTooltipEl = null;
@@ -106,6 +110,119 @@
         '}';
       document.head.appendChild(styleEl);
     } catch {}
+  }
+
+  function findSidebarRowByCascadeId(cascadeId) {
+    if (!cascadeId || typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') return null;
+    const rows = document.querySelectorAll('[data-testid="conversation-row-sidebar"][data-cascade-id]');
+    for (const row of rows) {
+      if (row.getAttribute?.('data-cascade-id') === cascadeId) return row;
+    }
+    return null;
+  }
+
+  function extractSidebarRowTitle(row) {
+    if (!row) return '';
+    const link = row.querySelector?.('a[href]') || row.querySelector?.('a');
+    const aria = link?.getAttribute?.('aria-label');
+    if (typeof aria === 'string' && aria.trim()) return aria.trim();
+    const titleSpan = row.querySelector?.('span.truncate');
+    if (titleSpan && typeof titleSpan.textContent === 'string' && titleSpan.textContent.trim()) {
+      return titleSpan.textContent.trim();
+    }
+    return '';
+  }
+
+  function collectSidebarTitles() {
+    if (typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') return [];
+    const out = [];
+    const rows = document.querySelectorAll('[data-testid="conversation-row-sidebar"][data-cascade-id]');
+    for (const row of rows) {
+      const title = extractSidebarRowTitle(row);
+      if (title) out.push(title);
+    }
+    return out;
+  }
+
+  function formatForkedConversationTitle(sourceTitle, existingTitles = []) {
+    const raw = typeof sourceTitle === 'string' ? sourceTitle.trim() : '';
+    const prefixRe = /^\[Fork(?:\s+(\d+))?\](?:\s+|$)/i;
+    const base = raw.replace(prefixRe, '').trim();
+    const candidates = [];
+    if (raw) candidates.push(raw);
+    if (Array.isArray(existingTitles)) {
+      for (const item of existingTitles) {
+        if (typeof item === 'string' && item.trim()) candidates.push(item.trim());
+      }
+    }
+    let maxForkNum = 0;
+    for (const title of candidates) {
+      const m = title.match(prefixRe);
+      if (!m) continue;
+      const itemBase = title.slice(m[0].length).trim();
+      if (itemBase !== base) continue;
+      const num = m[1] ? Number(m[1]) : 1;
+      if (Number.isInteger(num) && num > maxForkNum) maxForkNum = num;
+    }
+    const nextNum = maxForkNum + 1;
+    const tag = nextNum === 1 ? '[Fork]' : `[Fork ${nextNum}]`;
+    return base ? `${tag} ${base}` : tag;
+  }
+
+  function tryActivateForkedRowInDom(cascadeId) {
+    if (!cascadeId || state.disposed) return false;
+    if (route() === cascadeId) return true;
+    const row = findSidebarRowByCascadeId(cascadeId);
+    if (!row) return false;
+    const link = row.querySelector?.('a[href]') || row.querySelector?.('a');
+    if (link && typeof link.click === 'function') {
+      link.click();
+      return true;
+    }
+    if (typeof row.click === 'function') {
+      row.click();
+      return true;
+    }
+    return false;
+  }
+
+  function navigateToForkedConversation(newCascadeId, newProjectId) {
+    if (!newCascadeId || state.disposed) return;
+    if (tryActivateForkedRowInDom(newCascadeId)) {
+      pendingForkNavTarget = null;
+      return;
+    }
+    pendingForkNavTarget = { cascadeId: newCascadeId, projectId: newProjectId || '', expiresAt: Date.now() + 1800 };
+    let attempts = 0;
+    const maxAttempts = 20;
+    const intervalId = setInterval(() => {
+      if (state.disposed || !pendingForkNavTarget || pendingForkNavTarget.cascadeId !== newCascadeId) {
+        clearInterval(intervalId);
+        pendingForkNavTimers.delete(intervalId);
+        return;
+      }
+      attempts += 1;
+      if (tryActivateForkedRowInDom(newCascadeId)) {
+        pendingForkNavTarget = null;
+        clearInterval(intervalId);
+        pendingForkNavTimers.delete(intervalId);
+        return;
+      }
+      if (attempts >= maxAttempts || Date.now() >= pendingForkNavTarget.expiresAt) {
+        const proj = pendingForkNavTarget.projectId;
+        pendingForkNavTarget = null;
+        clearInterval(intervalId);
+        pendingForkNavTimers.delete(intervalId);
+        try {
+          const qs = proj ? `?project=${encodeURIComponent(proj)}` : '';
+          const targetPath = `/c/${encodeURIComponent(newCascadeId)}${qs}`;
+          if (typeof location !== 'undefined' && typeof location.assign === 'function') {
+            location.assign(targetPath);
+          }
+        } catch {}
+      }
+    }, 90);
+    pendingForkNavTimers.add(intervalId);
   }
 
   function positionFloatingAnchorBox(anchor, box, fallbackW, fallbackH) {
@@ -403,16 +520,16 @@
 
   function isActiveConversationBattle(cascadeId) {
     if (!cascadeId) return false;
-    const row = typeof findSidebarRowByCascadeId === 'function' ? findSidebarRowByCascadeId(cascadeId) : null;
+    const row = findSidebarRowByCascadeId(cascadeId);
     if (row && row.getAttribute?.('data-battle-arms')) return true;
     return false;
   }
 
   function isActiveConversationRunning(cascadeId) {
-    if (cascadeId && typeof findSidebarRowByCascadeId === 'function') {
+    if (cascadeId) {
       const row = findSidebarRowByCascadeId(cascadeId);
-      const actions = row && typeof findRowActionsContainer === 'function' ? findRowActionsContainer(row) : null;
-      if (actions && typeof isSidebarRowRunning === 'function' && isSidebarRowRunning(actions)) {
+      const actions = row?.querySelector?.('.agy-row-actions') || null;
+      if (actions && actions.querySelector?.('[aria-label="Stop execution"], [aria-label="停止执行"]')) {
         return true;
       }
     }
@@ -465,7 +582,7 @@
   }
 
   function requestFallbackTrajectoryTurns(cascadeId, toolbarCount) {
-    if (state.disposed || !cascadeId || !SIDEBAR_FORK_UUID_RE.test(cascadeId)) return;
+    if (state.disposed || !cascadeId || !MSG_FORK_UUID_RE.test(cascadeId)) return;
     if (typeof window === 'undefined' || typeof window.contextMeterAPI?.getTrajectoryTurns !== 'function') return;
     const now = Date.now();
     if (
@@ -551,7 +668,7 @@
     } else if (cleared) {
       label = t('msg.fork.clearedDisabled');
     } else if (running) {
-      label = t('sidebar.fork.runningDisabled');
+      label = t('msg.fork.runningDisabled');
     } else {
       label = isHistorical ? t('msg.fork.tipHistorical') : t('msg.fork.tipLatest');
     }
@@ -580,8 +697,11 @@
   async function triggerMessageFork(cascadeId, opts = {}) {
     if (state.disposed) return { ok: false, error: 'disposed' };
     const id = typeof cascadeId === 'string' ? cascadeId.trim() : '';
-    if (!SIDEBAR_FORK_UUID_RE.test(id)) {
+    if (!MSG_FORK_UUID_RE.test(id)) {
       return { ok: false, error: t('msg.unknownErr') };
+    }
+    if (forkingCascadeIds.has(id)) {
+      return { ok: false, busy: true };
     }
     if (opts.cleared) {
       const msg = t('msg.fork.clearedDisabled');
@@ -589,7 +709,7 @@
       return { ok: false, error: msg };
     }
     if (isActiveConversationRunning(id)) {
-      const msg = t('sidebar.fork.runningDisabled');
+      const msg = t('msg.fork.runningDisabled');
       if (typeof showModelSwitchToast === 'function') showModelSwitchToast(msg);
       return { ok: false, error: msg };
     }
@@ -607,27 +727,121 @@
       return { ok: false, error: msg };
     }
 
+    const hasIpcFork = typeof window !== 'undefined' && typeof window.contextMeterAPI?.forkSession === 'function';
+    const csrf = typeof getHostCsrfToken === 'function' ? getHostCsrfToken() : null;
+    if (!hasIpcFork && !csrf) {
+      const msg = t('msg.fork.fail', { err: t('msg.unknownErr') });
+      if (typeof showModelSwitchToast === 'function') showModelSwitchToast(msg);
+      return { ok: false, error: msg };
+    }
+
+    const row = findSidebarRowByCascadeId(id);
+    const sourceTitle = typeof opts.sourceTitle === 'string' && opts.sourceTitle.trim()
+      ? opts.sourceTitle.trim()
+      : extractSidebarRowTitle(row);
+    const existingTitles = Array.isArray(opts.existingTitles)
+      ? opts.existingTitles
+      : collectSidebarTitles();
+
+    const reqOpts = {
+      forkAtStepIndex,
+      targetForkWorkspace,
+      sourceTitle,
+      existingTitles
+    };
+
+    forkingCascadeIds.add(id);
     activeMessageForkState = {
       cascadeId: id,
       stepIndex: forkAtStepIndex,
       targetWorkspace: targetForkWorkspace
     };
+    syncMessageForkButtons();
     if (targetForkWorkspace === 2 && typeof showModelSwitchToast === 'function') {
       showModelSwitchToast(t('msg.fork.busyWorktree'));
     }
+
     try {
-      return await triggerSidebarFork(id, {
-        forkAtStepIndex,
-        targetForkWorkspace,
-        sourceTitle: opts.sourceTitle,
-        existingTitles: opts.existingTitles,
-        navigate: opts.navigate,
-        doneMessage: targetForkWorkspace === 2
-          ? t('msg.fork.doneWorktree')
-          : (isHistorical ? t('msg.fork.doneHistorical') : t('sidebar.fork.done')),
-        doneWithWarnMessage: (warn) => t('sidebar.fork.doneWithWarn', { warn })
-      });
+      let data = null;
+      if (hasIpcFork) {
+        const ipcRes = await window.contextMeterAPI.forkSession(id, reqOpts);
+        if (!ipcRes || !ipcRes.ok || !ipcRes.newCascadeId) {
+          throw new Error(ipcRes?.error || t('msg.unknownErr'));
+        }
+        data = ipcRes;
+      } else {
+        const res = await fetch('/exa.language_server_pb.LanguageServerService/ForkConversation', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Connect-Protocol-Version': '1',
+            'x-codeium-csrf-token': csrf
+          },
+          body: JSON.stringify({
+            sourceCascadeId: id,
+            forkAtStepIndex: reqOpts.forkAtStepIndex,
+            targetForkWorkspace: reqOpts.targetForkWorkspace
+          })
+        });
+        if (!res.ok) {
+          const errTxt = await res.text().catch(() => '');
+          throw new Error(errTxt || `HTTP ${res.status}`);
+        }
+        const json = await res.json().catch(() => null);
+        if (!json?.newCascadeId) {
+          throw new Error(t('msg.unknownErr'));
+        }
+        const newCascadeId = String(json.newCascadeId);
+        const newTitle = formatForkedConversationTitle(sourceTitle, existingTitles);
+        if (newTitle) {
+          try {
+            await fetch('/exa.language_server_pb.LanguageServerService/UpdateConversationAnnotations', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Connect-Protocol-Version': '1',
+                'x-codeium-csrf-token': csrf
+              },
+              body: JSON.stringify({
+                cascadeIds: [newCascadeId],
+                annotations: { title: newTitle },
+                mergeAnnotations: true
+              })
+            });
+          } catch {}
+        }
+        data = {
+          ok: true,
+          newCascadeId,
+          newProjectId: typeof json.newProjectId === 'string' ? json.newProjectId : '',
+          newTitle,
+          warnings: Array.isArray(json.warnings) ? json.warnings.filter(Boolean).map(String) : []
+        };
+      }
+
+      const warnText = Array.isArray(data.warnings) && data.warnings.length > 0 ? data.warnings.join('; ') : '';
+      const doneMsg = warnText
+        ? t('msg.fork.doneWithWarn', { warn: warnText })
+        : (targetForkWorkspace === 2
+            ? t('msg.fork.doneWorktree')
+            : (isHistorical ? t('msg.fork.doneHistorical') : t('msg.fork.done')));
+      if (typeof showModelSwitchToast === 'function') showModelSwitchToast(doneMsg);
+      if (opts.navigate !== false) {
+        navigateToForkedConversation(data.newCascadeId, data.newProjectId);
+      }
+      return {
+        ok: true,
+        newCascadeId: data.newCascadeId,
+        newProjectId: data.newProjectId || '',
+        warnings: data.warnings || []
+      };
+    } catch (err) {
+      const rawErr = translateBackendText(err?.message) || err?.message || t('msg.unknownErr');
+      const msg = t('msg.fork.fail', { err: rawErr });
+      if (typeof showModelSwitchToast === 'function') showModelSwitchToast(msg);
+      return { ok: false, error: msg };
     } finally {
+      forkingCascadeIds.delete(id);
       activeMessageForkState = null;
       syncMessageForkButtons();
     }
@@ -688,10 +902,14 @@
       return 0;
     }
     ensureMessageForkStyles();
+    if (pendingForkNavTarget && tryActivateForkedRowInDom(pendingForkNavTarget.cascadeId)) {
+      pendingForkNavTarget = null;
+    }
+
     const cascadeId = route();
     const allToolbars = Array.from(document.querySelectorAll('[data-testid="cascade-system-message-toolbar"]'));
 
-    if (!cascadeId || !SIDEBAR_FORK_UUID_RE.test(cascadeId) || isActiveConversationBattle(cascadeId)) {
+    if (!cascadeId || !MSG_FORK_UUID_RE.test(cascadeId) || isActiveConversationBattle(cascadeId)) {
       for (const tb of allToolbars) {
         const oldBtn = tb.querySelector?.(`button[${MSG_FORK_BTN_ATTR}="true"]`);
         if (oldBtn) oldBtn.remove();
@@ -832,7 +1050,8 @@
     if (
       testId === 'cascade-system-message-toolbar' ||
       testId === 'side-question-insert-to-main' ||
-      testId === 'stop-button'
+      testId === 'stop-button' ||
+      testId === 'conversation-row-sidebar'
     ) {
       return true;
     }
@@ -920,6 +1139,12 @@
     msgForkTooltipEl = null;
     try { msgForkMenuEl?.remove?.(); } catch {}
     msgForkMenuEl = null;
+    for (const id of pendingForkNavTimers) {
+      clearInterval(id);
+    }
+    pendingForkNavTimers.clear();
+    pendingForkNavTarget = null;
+    forkingCascadeIds.clear();
     activeMessageForkState = null;
     msgForkTurnsCache = {
       cascadeId: '',

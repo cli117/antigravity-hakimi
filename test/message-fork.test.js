@@ -418,6 +418,143 @@ function createRendererSandbox(doc, opts = {}) {
   return { sandbox, api: sandbox.__AGContextMeter, assignedUrls };
 }
 
+test('buildForkConversationRequest sanitizes defaults and valid overrides', () => {
+  assert.deepEqual(meterMain.buildForkConversationRequest(ACTIVE_ID), {
+    sourceCascadeId: ACTIVE_ID,
+    forkAtStepIndex: -1,
+    targetForkWorkspace: 1,
+  });
+  assert.deepEqual(
+    meterMain.buildForkConversationRequest(ACTIVE_ID, { forkAtStepIndex: 12, targetForkWorkspace: 2 }),
+    { sourceCascadeId: ACTIVE_ID, forkAtStepIndex: 12, targetForkWorkspace: 2 }
+  );
+  assert.deepEqual(
+    meterMain.buildForkConversationRequest(ACTIVE_ID, { forkAtStepIndex: -9, targetForkWorkspace: 99 }),
+    { sourceCascadeId: ACTIVE_ID, forkAtStepIndex: -1, targetForkWorkspace: 1 }
+  );
+});
+
+test('buildForkedConversationTitle adds [Fork] prefix and increments cleanly without stacking', () => {
+  assert.equal(
+    meterMain.buildForkedConversationTitle('反重力文件识别问题', ['反重力文件识别问题']),
+    '[Fork] 反重力文件识别问题'
+  );
+  assert.equal(
+    meterMain.buildForkedConversationTitle('反重力文件识别问题', ['反重力文件识别问题', '[Fork] 反重力文件识别问题']),
+    '[Fork 2] 反重力文件识别问题'
+  );
+  assert.equal(
+    meterMain.buildForkedConversationTitle('[Fork] 反重力文件识别问题', ['反重力文件识别问题', '[Fork] 反重力文件识别问题']),
+    '[Fork 2] 反重力文件识别问题'
+  );
+  assert.equal(
+    meterMain.buildForkedConversationTitle('[Fork 2] 反重力文件识别问题', ['[Fork 2] 反重力文件识别问题']),
+    '[Fork 3] 反重力文件识别问题'
+  );
+  assert.equal(meterMain.buildForkedConversationTitle('', []), '[Fork]');
+  assert.equal(meterMain.buildForkedConversationTitle('[Fork]', ['[Fork]']), '[Fork 2]');
+});
+
+test('handleForkSession validates sender/UUID, calls ForkConversation + UpdateConversationAnnotations, and formats response', async () => {
+  await assert.rejects(
+    () => meterMain.handleForkSession({}, ACTIVE_ID, {}, { isLocalMainFrameSender: () => null }),
+    /仅允许本机主聊天窗口/
+  );
+
+  const invalidRes = await meterMain.handleForkSession(
+    {},
+    'not-a-uuid',
+    {},
+    { isLocalMainFrameSender: () => new URL('https://127.0.0.1:54321/') }
+  );
+  assert.equal(invalidRes.ok, false);
+  assert.match(invalidRes.error, /无效会话标识/);
+
+  const rpcCalls = [];
+  const okRes = await meterMain.handleForkSession(
+    {},
+    ACTIVE_ID,
+    {
+      forkAtStepIndex: 11,
+      targetForkWorkspace: 2,
+      sourceTitle: '反重力文件识别问题',
+      existingTitles: ['反重力文件识别问题', '[Fork] 反重力文件识别问题'],
+    },
+    {
+      isLocalMainFrameSender: () => new URL('https://127.0.0.1:54321/'),
+      callRpc: async (method, body) => {
+        rpcCalls.push({ method, body });
+        if (method === 'ForkConversation') {
+          return { newCascadeId: NEW_ID, newProjectId: 'proj-1', warnings: ['note 1', ''] };
+        }
+        return {};
+      },
+    }
+  );
+  assert.equal(rpcCalls.length, 2);
+  assert.deepEqual(rpcCalls[0], {
+    method: 'ForkConversation',
+    body: {
+      sourceCascadeId: ACTIVE_ID,
+      forkAtStepIndex: 11,
+      targetForkWorkspace: 2,
+    },
+  });
+  assert.deepEqual(rpcCalls[1], {
+    method: 'UpdateConversationAnnotations',
+    body: {
+      cascadeIds: [NEW_ID],
+      annotations: { title: '[Fork 2] 反重力文件识别问题' },
+      mergeAnnotations: true,
+    },
+  });
+  assert.deepEqual(okRes, {
+    ok: true,
+    newCascadeId: NEW_ID,
+    newProjectId: 'proj-1',
+    newTitle: '[Fork 2] 反重力文件识别问题',
+    warnings: ['note 1'],
+  });
+
+  // Fallback to GetAllCascadeTrajectories when sourceTitle is omitted, and rename failure is fail-open
+  const fallbackCalls = [];
+  const fallbackRes = await meterMain.handleForkSession(
+    {},
+    ACTIVE_ID,
+    {},
+    {
+      isLocalMainFrameSender: () => new URL('https://127.0.0.1:54321/'),
+      callRpc: async (method, body) => {
+        fallbackCalls.push({ method, body });
+        if (method === 'ForkConversation') return { newCascadeId: NEW_ID };
+        if (method === 'GetAllCascadeTrajectories') {
+          return { trajectorySummaries: { [ACTIVE_ID]: { summary: '原生标题' } } };
+        }
+        if (method === 'UpdateConversationAnnotations') throw new Error('transient rename error');
+        return {};
+      },
+    }
+  );
+  assert.equal(fallbackRes.ok, true);
+  assert.equal(fallbackRes.newTitle, '[Fork] 原生标题');
+  assert.equal(
+    fallbackCalls.map((c) => c.method).join(','),
+    'ForkConversation,GetAllCascadeTrajectories,UpdateConversationAnnotations'
+  );
+
+  const missingIdRes = await meterMain.handleForkSession(
+    {},
+    ACTIVE_ID,
+    {},
+    {
+      isLocalMainFrameSender: () => new URL('https://127.0.0.1:54321/'),
+      callRpc: async () => ({}),
+    }
+  );
+  assert.equal(missingIdRes.ok, false);
+  assert.match(missingIdRes.error, /未返回派生会话标识/);
+});
+
 test('buildTurnForkPoints computes accurate turn endStepIndex, cleared status, and sorting', () => {
   const turns = meterMain.buildTurnForkPoints(
     {
@@ -487,8 +624,10 @@ test('handleGetTrajectoryTurns validates sender/cascadeId and returns computed t
   assert.equal(rpcLog.map((x) => x.method).join(','), 'GetTrajectoryTurns,GetAllCascadeTrajectories');
 });
 
-test('preload generator exposes getTrajectoryTurns IPC bridge', () => {
+test('preload generator exposes forkSession and getTrajectoryTurns IPC bridges', () => {
   const preloadCode = modularInstaller.generateMeterPreloadCode();
+  assert.ok(preloadCode.includes('forkSession:'), 'preload should expose forkSession');
+  assert.ok(preloadCode.includes('context-meter:fork-session'), 'preload should invoke context-meter:fork-session');
   assert.ok(preloadCode.includes('getTrajectoryTurns:'), 'preload should expose getTrajectoryTurns');
   assert.ok(
     preloadCode.includes('context-meter:trajectory-turns'),
@@ -565,6 +704,10 @@ test('message fork button mounts after Copy, reads React Fiber stepIndex, suppor
 
   const { api } = createRendererSandbox(doc, { forkSession });
   assert.ok(api);
+
+  // Sidebar rows must NOT receive injected fork buttons (single clean fork entry on message toolbars)
+  assert.equal(rowActive.actions.querySelector('button[data-hakimi-fork="true"]'), null);
+  assert.equal(rowActive.actions.querySelector('button[data-hakimi-msg-fork="true"]'), null);
 
   // Verify slot position: right after Copy button, before Good response
   const histBtn = tbHist.btnGroup.querySelector('button[data-hakimi-msg-fork="true"]');

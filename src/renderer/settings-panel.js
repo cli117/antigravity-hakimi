@@ -77,7 +77,6 @@
     try { renderCliUnlockState(currentCliUnlockStatus); } catch {}
     try { renderHakimiUpgradeState(currentHakimiUpgradeState); } catch {}
     try { renderHakimiIconState(currentHakimiIconState); } catch {}
-    try { if (typeof syncSidebarForkButtons === 'function') syncSidebarForkButtons(); } catch {}
     try { if (typeof syncMessageForkButtons === 'function') syncMessageForkButtons(); } catch {}
     try {
       if (typeof renderPlanDetail === 'function' && ANTIGRAVITY_TOKEN_DATA?.planStatus) {
