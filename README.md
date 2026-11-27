@@ -33,7 +33,7 @@
    - 历史看板统计桌面端与 CLI 的纯 Token 消耗（输入 / 输出 / 缓存读取），提供按需惰性渲染的日/周/月/年/累计热力图、按模型与档位分组的输出速率中位数对比，以及订阅套餐（按 `userTier.id` 区分 `Google AI Ultra 5x` 与 `20x`）与 Prompt / Flow 额度池详情；支持归档元数据缓存（60s TTL）与隐藏标签页自动暂停空闲轮询。
 
 6. **消息级 Time-Travel Fork、简体中文界面与 Markdown 单波浪线修复**
-   - **消息级 Time-Travel Fork（方案 A）**：在聊天区每轮回复底部操作栏（`[data-testid="cascade-system-message-toolbar"]`）的「复制 / 点赞 / 点踩」按钮组中紧邻「复制」挂载原生风格分叉按钮（自动避让官方原生 Fork 按钮，并过滤 `/btw` 旁路提问、Battle 模式、运行中会话及已被超限清理的早期轮次）。优先读取宿主 React Fiber 获取该轮精确 `stepIndex`（缺失时降级调用官方本地 `GetTrajectoryTurns` 对齐，历史轮次无法确认步号时绝不误退回末尾）；调用官方本地 `ForkConversation` 派生（兼容本机与 Remote SSH 窗口），自动按 `[Fork]` / `[Fork 2]` 递增命名并切换至新会话：**单击**立即在当前工作区从该轮末尾派生分支（未触发物理清理时可无损回到压缩前快照），**`Shift + 点击`** 立即在新建 Git Worktree 中派生独立副本，**右键点击**弹出极简双项菜单按需选择。
+   - **消息级 Time-Travel Fork（方案 A）**：在聊天区每轮回复底部操作栏（`[data-testid="cascade-system-message-toolbar"]`）的「复制 / 点赞 / 点踩」按钮组中紧邻「复制」挂载原生风格分叉按钮（自动避让官方原生 Fork 按钮，并过滤 `/btw` 旁路提问、Battle 模式、运行中会话及已被超限清理的早期轮次）。直接读取宿主 React Fiber 获取该轮精确 `stepIndex`（历史轮次未解析出步号时绝不误退回末尾），通过官方本地 `ForkConversation` 派生（兼容本机与 Remote SSH 窗口），自动按 `[Fork]` / `[Fork 2]` 递增命名并切换至新会话：**单击**立即在当前工作区从该轮末尾派生分支（未触发物理清理时可无损回到压缩前快照），**`Shift + 点击`** 立即在新建 Git Worktree 中派生独立副本，**右键点击**弹出极简双项菜单按需选择。
    - **全量简体中文界面**：通过 `app.asar` 预加载注入全量简体中文词库（`zh-CN.json`）与 DOM 翻译引擎（`i18n-runtime.js`），严格限定于本地 Electron DOM 界面渲染，不触碰聊天正文、代码块或外发请求，支持在面板中随时切回英文界面。
    - **Markdown `remark-gfm` 单波浪线修复**：在 `dist/preload.js` 注入本地回环主框架作用域的预加载钩子，将 `remark-gfm` 默认配置设为 `singleTilde: false`，防止数值范围或路径中的单 `~` 被误渲染为删除线，同时保留标准 `~~删除线~~`。
 
@@ -166,7 +166,7 @@ bash ./build-hakimi.sh --stage-only --local
   - `hakimi-builder.js` / `hakimi-updater.js` / `hakimi-upgrade-helper.js` / `hakimi-icon-manager.js`：官方源极简/完整清单拉取与 Google 验签、基于公开 GitHub Web 端点（`commits/main.atom` / `info/refs` / `compare/*.patch`，零 `api.github.com`）的 `main` 提交对比与沙盒试构建、双源静默升级状态机与 `dist/updater.js` 接管桥接、应用内图标实时预览与沙盒替换/还原、零依赖脱离式 APFS 原子冷替换与 Orphan GC
   - `meter-region-unlock.js` / `meter-cli-unlock.js` / `meter-ssh.js` / `meter-enhance.js`：桌面端与 `agy` CLI 地区解锁、Remote SSH 远端 ELF64 自动解锁与会话通道、后台语言服务检测与重启
   - `meter-account-cold-helper.js` / `meter-account-switcher.js`：macOS 钥匙串多账号冷切换独立工作进程与编排引擎（含钥匙串身份防错配与活动账号档位同步）
-  - `meter-main.js` / `local-api.js` / `meter-collector.js` / `meter-core.js` / `meter-storage.js`：主进程 IPC（含会话 Fork 与轮次边界查询路由）、本地 API、Token 历史与额度采集、Ultra `5x`/`20x` 套餐识别及纯 Token 统计分析
+  - `meter-main.js` / `local-api.js` / `meter-collector.js` / `meter-core.js` / `meter-storage.js`：主进程 IPC（含会话 Fork 路由）、本地 API、Token 历史与额度采集、Ultra `5x`/`20x` 套餐识别及纯 Token 统计分析
   - `i18n/i18n-runtime.js` & `i18n/zh-CN.json`：桌面端简体中文 DOM 翻译运行时与词库
 - `src/renderer/`：Context Meter 悬浮胶囊、消息级 Time-Travel Fork 按钮与右键双项菜单（`message-fork.js`）、顶栏升级提示与设置面板、左下角模型额度与 Effort 速切卡片、自定义快捷键浮层、多账号冷切换浮层、速率对比与纯 Token 热力图源码
 - `unlock/agy-cli/agy-patch.py`：独立 Python 版 `agy` CLI 自适应地区解锁工具
