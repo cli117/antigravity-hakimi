@@ -35,6 +35,7 @@
   let sidebarForkTooltipAnchor = null;
   let sidebarForkTooltipTimer = null;
   let sidebarForkTooltipDocListenersBound = false;
+  let lastActiveSidebarRunning = null;
 
   function ensureSidebarForkStyles() {
     try {
@@ -386,6 +387,7 @@
 
     forkingCascadeIds.add(id);
     syncSidebarForkButtons();
+    if (typeof syncMessageForkButtons === 'function') syncMessageForkButtons();
     try {
       let data = null;
       if (hasIpcFork) {
@@ -446,8 +448,10 @@
 
       const warnText = Array.isArray(data.warnings) && data.warnings.length > 0 ? data.warnings.join('; ') : '';
       const doneMsg = warnText
-        ? t('sidebar.fork.doneWithWarn', { warn: warnText })
-        : t('sidebar.fork.done');
+        ? (typeof opts.doneWithWarnMessage === 'function'
+            ? opts.doneWithWarnMessage(warnText)
+            : t('sidebar.fork.doneWithWarn', { warn: warnText }))
+        : (typeof opts.doneMessage === 'string' && opts.doneMessage ? opts.doneMessage : t('sidebar.fork.done'));
       if (typeof showModelSwitchToast === 'function') showModelSwitchToast(doneMsg);
       if (opts.navigate !== false) {
         navigateToForkedConversation(data.newCascadeId, data.newProjectId);
@@ -466,6 +470,7 @@
     } finally {
       forkingCascadeIds.delete(id);
       syncSidebarForkButtons();
+      if (typeof syncMessageForkButtons === 'function') syncMessageForkButtons();
     }
   }
 
@@ -513,6 +518,9 @@
     const rows = document.querySelectorAll('[data-testid="conversation-row-sidebar"][data-cascade-id]');
     let mountedCount = 0;
 
+    const activeRouteId = route();
+    let currentActiveRunning = null;
+
     for (const row of rows) {
       const cascadeId = String(row.getAttribute?.('data-cascade-id') || '').trim();
       const actions = findRowActionsContainer(row);
@@ -530,6 +538,9 @@
       }
 
       const running = isSidebarRowRunning(actions);
+      if (activeRouteId && cascadeId === activeRouteId) {
+        currentActiveRunning = running;
+      }
       let btn = existing;
       if (!btn) {
         btn = createSidebarForkButton(cascadeId, actions);
@@ -548,6 +559,13 @@
       }
       updateSidebarForkButtonVisual(btn, cascadeId, running);
       mountedCount += 1;
+    }
+
+    if (currentActiveRunning !== lastActiveSidebarRunning) {
+      lastActiveSidebarRunning = currentActiveRunning;
+      if (typeof syncMessageForkButtons === 'function') {
+        syncMessageForkButtons();
+      }
     }
 
     if (sidebarForkNavTarget && tryActivateForkedRowInDom(sidebarForkNavTarget.cascadeId)) {
@@ -649,6 +667,7 @@
     }
     pendingNavTimers.clear();
     sidebarForkNavTarget = null;
+    lastActiveSidebarRunning = null;
     forkingCascadeIds.clear();
     try { document.getElementById(SIDEBAR_FORK_STYLE_ID)?.remove?.(); } catch {}
     try { document.getElementById(SIDEBAR_FORK_TOOLTIP_ID)?.remove?.(); } catch {}

@@ -419,6 +419,7 @@ function registerIpcOnce() {
   });
 
   ipcMain.handle('context-meter:fork-session', handleForkSession);
+  ipcMain.handle('context-meter:trajectory-turns', handleGetTrajectoryTurns);
 
   ipcMain.handle('context-meter:cli-unlock-status', async (event, options) => {
     const url = isLocalMainFrameSender(event);
@@ -1173,12 +1174,100 @@ async function handleForkSession(event, cascadeId, options = {}, deps = {}) {
   }
 }
 
+function isClearedStepStatus(status) {
+  return status === 5 || status === 'CORTEX_STEP_STATUS_CLEARED' || status === 'CLEARED';
+}
+
+function buildTurnForkPoints(turnsResponse, totalSteps = null) {
+  const rawTurns = Array.isArray(turnsResponse?.turns) ? turnsResponse.turns : [];
+  const normalized = [];
+  for (let i = 0; i < rawTurns.length; i++) {
+    const item = rawTurns[i];
+    if (!item || typeof item !== 'object') continue;
+    const startRaw = item.startStepIndex ?? item.start_step_index;
+    const startStepIndex = Number(startRaw);
+    if (!Number.isInteger(startStepIndex) || startStepIndex < 0) continue;
+    const firstStep = item.firstStep || item.first_step || null;
+    const cleared = isClearedStepStatus(firstStep?.status);
+    const preview = typeof (item.responsePreview ?? item.response_preview) === 'string'
+      ? String(item.responsePreview ?? item.response_preview).trim()
+      : '';
+    normalized.push({ startStepIndex, cleared, responsePreview: preview, _order: i });
+  }
+  normalized.sort((a, b) => (a.startStepIndex !== b.startStepIndex ? a.startStepIndex - b.startStepIndex : a._order - b._order));
+  const totalInt = Number.isInteger(Number(totalSteps)) && Number(totalSteps) > 0 ? Number(totalSteps) : null;
+  const out = [];
+  for (let i = 0; i < normalized.length; i++) {
+    const cur = normalized[i];
+    const isLatest = i === normalized.length - 1;
+    let endStepIndex = -1;
+    if (!isLatest) {
+      const nextStart = normalized[i + 1].startStepIndex;
+      endStepIndex = nextStart > cur.startStepIndex ? nextStart - 1 : cur.startStepIndex;
+    } else if (totalInt !== null && totalInt > cur.startStepIndex) {
+      endStepIndex = totalInt - 1;
+    }
+    out.push({
+      startStepIndex: cur.startStepIndex,
+      endStepIndex,
+      isLatest,
+      cleared: cur.cleared,
+      responsePreview: cur.responsePreview,
+    });
+  }
+  return out;
+}
+
+async function handleGetTrajectoryTurns(event, cascadeId, deps = {}) {
+  const checkSender = typeof deps.isLocalMainFrameSender === 'function'
+    ? deps.isLocalMainFrameSender
+    : isLocalMainFrameSender;
+  const url = checkSender(event);
+  if (!url) throw new Error('仅允许本机主聊天窗口');
+  if (typeof cascadeId !== 'string' || !/^[a-f\d-]{36}$/i.test(cascadeId)) {
+    return { ok: false, error: '无效会话标识', turns: [] };
+  }
+  try {
+    let callRpc;
+    if (typeof deps.callRpc === 'function') {
+      callRpc = deps.callRpc;
+    } else {
+      const remote = getRemoteBackendForSender(event?.sender);
+      if (remote) {
+        const sessionInfo = getRemoteSession(remote.hostId);
+        const requester = createRemoteSessionRequester(event.sender, sessionInfo, url.origin);
+        callRpc = requester.call;
+      } else {
+        const { connect } = require('./local-api');
+        const api = await connect();
+        callRpc = api.call;
+      }
+    }
+    const turnsRes = await callRpc('GetTrajectoryTurns', { cascadeId });
+    let totalSteps = null;
+    try {
+      const allTraj = await callRpc('GetAllCascadeTrajectories', {});
+      const summary = allTraj?.trajectorySummaries?.[cascadeId];
+      const count = Number(summary?.stepCount);
+      if (Number.isInteger(count) && count > 0) totalSteps = count;
+    } catch {}
+    return {
+      ok: true,
+      turns: buildTurnForkPoints(turnsRes, totalSteps),
+    };
+  } catch (e) {
+    return { ok: false, error: e.message, turns: [] };
+  }
+}
+
 exports.handleModulesStatus = handleModulesStatus;
 exports.handleToggleModule = handleToggleModule;
 exports.handleRestartHost = handleRestartHost;
 exports.buildForkConversationRequest = buildForkConversationRequest;
 exports.buildForkedConversationTitle = buildForkedConversationTitle;
 exports.handleForkSession = handleForkSession;
+exports.buildTurnForkPoints = buildTurnForkPoints;
+exports.handleGetTrajectoryTurns = handleGetTrajectoryTurns;
 exports.setAppQuitting = setAppQuitting;
 exports.getAppQuitting = getAppQuitting;
 exports.shouldInterceptWindowClose = shouldInterceptWindowClose;

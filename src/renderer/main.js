@@ -261,6 +261,7 @@
   /* @INSERT_MODEL_QUOTA_MODULE */
   /* @INSERT_ACCOUNT_SWITCHER_MODULE */
   /* @INSERT_SIDEBAR_FORK_MODULE */
+  /* @INSERT_MESSAGE_FORK_MODULE */
 
   function renderPlanDetail(ps) {
     if (!ps) return;
@@ -2064,6 +2065,7 @@
         reportedFinalCallOutputs: state.reportedFinalCallOutputs || new Map()
       });
       toggle(false); hideContextTooltip(); hideTopbarActionTooltip(true); render();
+      if (typeof onMessageForkRouteChange === 'function') onMessageForkRouteChange(id);
       if (!state.quotaSynced || Date.now() - lastHistorySync >= HISTORY_RESUME_STALE_MS) {
         void syncTokenHistoryFromHost(false);
       }
@@ -2172,6 +2174,10 @@
     triggerSessionCompactForTest: (src) => triggerSessionCompact(src),
     syncSidebarForkButtonsForTest: () => syncSidebarForkButtons(),
     triggerSidebarForkForTest: (id, opts) => triggerSidebarFork(id, opts),
+    syncMessageForkButtonsForTest: () => syncMessageForkButtons(),
+    triggerMessageForkForTest: (id, opts) => triggerMessageFork(id, opts),
+    openMessageForkMenuForTest: (btn) => openMessageForkMenu(btn),
+    closeMessageForkMenuForTest: () => closeMessageForkMenu(),
     getPanelLanguage: () => getPanelLanguage(),
     setPanelLanguage: (lang, opts) => applyPanelLanguage(lang, opts),
     renderModelQuotaForTest: (force = true) => renderModelQuota(force),
@@ -2222,6 +2228,7 @@
       disposeModelQuota();
       if (typeof disposeAccountSwitcher === 'function') disposeAccountSwitcher();
       if (typeof disposeSidebarFork === 'function') disposeSidebarFork();
+      if (typeof disposeMessageFork === 'function') disposeMessageFork();
       try { if (typeof unsubscribeHakimiUpgradeChanged === 'function') unsubscribeHakimiUpgradeChanged(); } catch {}
       host.remove();
     }
@@ -2237,6 +2244,7 @@
   if (typeof refreshAccountsStatus === 'function') void refreshAccountsStatus({ silent: true, consumeLastResult: true });
   render();
   if (typeof initSidebarFork === 'function') initSidebarFork();
+  if (typeof initMessageFork === 'function') initMessageFork();
   tick();
 })();
 

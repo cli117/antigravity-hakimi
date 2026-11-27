@@ -78,6 +78,27 @@
     'sidebar.fork.done': { 'zh-CN': '✔ 已 Fork 会话，正在切换…', 'zh-TW': '✔ 已 Fork 工作階段，正在切換…', en: '✔ Forked conversation, switching…' },
     'sidebar.fork.doneWithWarn': { 'zh-CN': '✔ 已 Fork 会话（{warn}）', 'zh-TW': '✔ 已 Fork 工作階段（{warn}）', en: '✔ Forked conversation ({warn})' },
     'sidebar.fork.fail': { 'zh-CN': '✖ Fork 失败：{err}', 'zh-TW': '✖ Fork 失敗：{err}', en: '✖ Fork failed: {err}' },
+    'msg.fork.tipHistorical': {
+      'zh-CN': '从此处派生分支（Shift+点击 / 右键：新 Worktree）',
+      'zh-TW': '從此處派生分支（Shift+點擊 / 右鍵：新 Worktree）',
+      en: 'Fork from here (Shift+click / Right-click: New Worktree)'
+    },
+    'msg.fork.tipLatest': {
+      'zh-CN': '派生会话分支（Shift+点击 / 右键：新 Worktree）',
+      'zh-TW': '派生工作階段分支（Shift+點擊 / 右鍵：新 Worktree）',
+      en: 'Fork conversation (Shift+click / Right-click: New Worktree)'
+    },
+    'msg.fork.busy': { 'zh-CN': '正在从此处派生分支…', 'zh-TW': '正在從此處派生分支…', en: 'Forking from here…' },
+    'msg.fork.busyWorktree': { 'zh-CN': '正在新建 Worktree 并派生分支…', 'zh-TW': '正在新建 Worktree 並派生分支…', en: 'Creating Worktree for forked conversation…' },
+    'msg.fork.doneHistorical': { 'zh-CN': '✔ 已从该轮派生分支，正在切换…', 'zh-TW': '✔ 已從該輪派生分支，正在切換…', en: '✔ Forked from this turn, switching…' },
+    'msg.fork.doneWorktree': { 'zh-CN': '✔ 已在新 Worktree 派生分支，正在切换…', 'zh-TW': '✔ 已在新 Worktree 派生分支，正在切換…', en: '✔ Forked in new Worktree, switching…' },
+    'msg.fork.clearedDisabled': { 'zh-CN': '该轮已为节省空间被清理，无法从此节点派生', 'zh-TW': '該輪已為節省空間被清理，無法從此節點派生', en: 'This turn was cleared to save space and cannot be forked' },
+    'msg.fork.noStepIndex': { 'zh-CN': '暂未解析到该历史轮次的步骤索引', 'zh-TW': '暫未解析到該歷史輪次的步驟索引', en: 'Could not resolve step index for this historical turn' },
+    'msg.fork.menuCurrentTitle': { 'zh-CN': '当前工作区派生', 'zh-TW': '目前工作區派生', en: 'Fork in Current Workspace' },
+    'msg.fork.menuCurrentDescHist': { 'zh-CN': '仅回溯对话上下文，工作区文件保持现状', 'zh-TW': '僅回溯對話上下文，工作區檔案維持現狀', en: 'Rewinds conversation only; workspace files stay as they are' },
+    'msg.fork.menuCurrentDescLatest': { 'zh-CN': '沿用当前工作区继续分支，不复制文件', 'zh-TW': '沿用目前工作區繼續分支，不複製檔案', en: 'Keeps working in this workspace without copying files' },
+    'msg.fork.menuWorktreeTitle': { 'zh-CN': '新建 Worktree 派生', 'zh-TW': '新建 Worktree 派生', en: 'Fork in New Worktree' },
+    'msg.fork.menuWorktreeDesc': { 'zh-CN': '基于 Git Worktree 创建独立副本（未提交改动留在原处）', 'zh-TW': '基於 Git Worktree 建立獨立副本（未提交改動留在原處）', en: 'Creates an isolated Git worktree (uncommitted changes stay behind)' },
     'twp.aria': { 'zh-CN': '调整上下文窗口上限', 'zh-TW': '調整上下文視窗上限', en: 'Adjust context window limit' },
     'twp.tipTitle': { 'zh-CN': '上下文窗口（{cur}）', 'zh-TW': '上下文視窗（{cur}）', en: 'Context Window ({cur})' },
     'twp.tipDescUnified': { 'zh-CN': '全局统一 · 点击切换 512K / 1M / 动态', 'zh-TW': '全域統一 · 點擊切換 512K / 1M / 動態', en: 'All models · Click to switch 512K / 1M / Dynamic' },
