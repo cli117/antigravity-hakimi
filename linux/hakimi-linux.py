@@ -530,10 +530,12 @@ def is_elf64_file(path):
 
 
 def is_official_mac_bundle(path):
-    real = os.path.realpath(os.path.abspath(path))
-    for root in ("/Applications/Antigravity.app", "/Applications/Antigravity.app.orig"):
-        if real == root or real.startswith(root + "/"):
-            return True
+    expanded = os.path.abspath(os.path.expanduser(path))
+    candidates = (expanded, os.path.realpath(expanded))
+    for candidate in candidates:
+        for root in ("/Applications/Antigravity.app", "/Applications/Antigravity.app.orig"):
+            if candidate == root or candidate.startswith(root + "/"):
+                return True
     return False
 
 
@@ -605,9 +607,14 @@ def discover_targets(args):
 
     targets = []
     for path in dedupe_paths(paths):
-        kind = "language_server" if "language_server" in os.path.basename(path) else ("agy" if os.path.basename(path) == "agy" else "binary")
+        base_name = os.path.basename(path)
+        kind = (
+            "language_server"
+            if "language_server" in base_name
+            else ("agy" if base_name in ("agy", "agy.real") else "binary")
+        )
         entry = {"kind": kind, "path": path, "real_path": os.path.realpath(path), "exists": os.path.exists(path)}
-        if entry["exists"] and is_official_mac_bundle(path):
+        if is_official_mac_bundle(path):
             entry["error"] = "拒绝处理官方 Antigravity.app 路径"
             targets.append(entry)
             continue
@@ -818,13 +825,11 @@ def cmd_patch(args):
     changed_paths = set()
 
     for entry in targets:
-        if entry.get("error") and not entry.get("exists"):
-            failed += 1
-            results.append({"path": entry["path"], "ok": False, "status": "error", "error": entry["error"]})
-            continue
         if entry.get("error"):
             failed += 1
             results.append({"path": entry["path"], "ok": False, "status": "error", "error": entry["error"]})
+            if not quiet:
+                print(f"[failed]  {entry['path']}  {entry['error']}", file=sys.stderr)
             continue
 
         data = read_target(entry)
@@ -946,16 +951,25 @@ def cmd_restore(args):
         selected = list(entries.items())
 
     if not selected:
-        if not quiet:
+        missing_results = [{"path": p, "ok": False, "error": "没有备份记录"} for p in sorted(missing)]
+        if args.json:
+            print(json.dumps(json_safe({"ok": False, "error": "没有可还原的备份记录", "results": missing_results}), ensure_ascii=False, indent=2))
+        elif not quiet:
             print("没有可还原的备份记录。")
         return 1
 
     failed = 0
     results = []
-    for p in missing:
+    for p in sorted(missing):
         failed += 1
         results.append({"path": p, "ok": False, "error": "没有备份记录"})
     for real, meta in selected:
+        if is_official_mac_bundle(real):
+            failed += 1
+            results.append({"path": real, "ok": False, "error": "拒绝处理官方 Antigravity.app 路径"})
+            if not quiet:
+                print(f"[failed]  {real}  拒绝处理官方 Antigravity.app 路径", file=sys.stderr)
+            continue
         backup = meta.get("backup")
         if not backup or not os.path.exists(backup):
             failed += 1
@@ -1031,6 +1045,13 @@ def systemctl(*argv):
         return subprocess.CompletedProcess(["systemctl"], 127, "", str(exc))
 
 
+def escape_systemd_exec_arg(value):
+    if "\n" in value or "\r" in value or "\x00" in value:
+        raise PatchError("脚本路径包含非法控制字符，无法写入 systemd unit")
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
+    return f'"{escaped}"'
+
+
 def cmd_install_timer(args):
     script = os.path.realpath(os.path.abspath(__file__))
     service, timer = service_paths()
@@ -1044,7 +1065,7 @@ After=default.target
 [Service]
 Type=oneshot
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=/usr/bin/env python3 "{script}" patch --quiet
+ExecStart=/usr/bin/env python3 {escape_systemd_exec_arg(script)} patch --quiet
 """
     timer_body = f"""[Unit]
 Description=Periodically re-apply Hakimi Linux region unlock after agy updates

@@ -75,7 +75,7 @@ npm run unlock:cli
 npm run doctor
 ```
 
-### 2. 在 Linux 开发机解锁 `agy` CLI（支持 `x86-64` / `arm64`）
+### 2. 在 Linux 开发机解锁 `agy` CLI 与 hub `language_server`（支持 `x86-64` / `arm64`）
 
 Linux 环境无需 macOS `codesign` 或桌面端应用，自动探测 `~/.local/bin/agy`、`~/.antigravity/antigravity/bin/agy`、`$PATH`（或通过 `--binary` / `AGY_CLI_BIN` 指定）：
 

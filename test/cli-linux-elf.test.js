@@ -428,3 +428,200 @@ test('build-hakimi.sh --cli-only patches Linux ELF64 agy CLI without requiring m
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('linux/hakimi-linux.py and hakimi-linux.sh pass syntax check, patch/restore agy + hub language_server, and enforce guards', (t) => {
+  const pyCheck = spawnSync('python3', ['--version'], { encoding: 'utf8' });
+  if (pyCheck.status !== 0) {
+    t.skip('python3 not available in test environment');
+    return;
+  }
+
+  const pyScript = path.join(ROOT, 'linux', 'hakimi-linux.py');
+  const shScript = path.join(ROOT, 'linux', 'hakimi-linux.sh');
+
+  // 1. Syntax checks for both Python script and bash wrapper
+  const astCheck = spawnSync(
+    'python3',
+    ['-c', 'import ast, sys; ast.parse(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1])', pyScript],
+    { encoding: 'utf8' }
+  );
+  assert.equal(astCheck.status, 0, `hakimi-linux.py AST parse failed: ${astCheck.stderr}`);
+
+  const bashCheck = spawnSync('bash', ['-n', shScript], { encoding: 'utf8' });
+  assert.equal(bashCheck.status, 0, `hakimi-linux.sh bash -n failed: ${bashCheck.stderr}`);
+
+  // Verify systemd ExecStart escaping handles %, quotes, backslashes, and rejects newlines
+  const escCheck = spawnSync(
+    'python3',
+    [
+      '-c',
+      [
+        'import importlib.util, sys',
+        'spec = importlib.util.spec_from_file_location("hl", sys.argv[1])',
+        'mod = importlib.util.module_from_spec(spec)',
+        'spec.loader.exec_module(mod)',
+        'assert mod.escape_systemd_exec_arg(\'/tmp/a%b"c\\\\d\') == \'"/tmp/a%%b\\\\"c\\\\\\\\d"\'',
+        'try:',
+        '    mod.escape_systemd_exec_arg("/tmp/bad\\npath")',
+        '    raise AssertionError("expected newline rejection")',
+        'except mod.PatchError:',
+        '    pass',
+      ].join('\n'),
+      pyScript,
+    ],
+    { encoding: 'utf8' }
+  );
+  assert.equal(escCheck.status, 0, `escape_systemd_exec_arg check failed: ${escCheck.stderr}`);
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hakimi-linux-tool-'));
+  try {
+    const homeDir = path.join(tmp, 'home');
+    const stateDir = path.join(tmp, 'state');
+    const agyBin = path.join(homeDir, '.local', 'bin', 'agy');
+    const agyRealBin = path.join(homeDir, '.local', 'bin', 'agy.real');
+    const hubLsBin = path.join(homeDir, '.antigravity-hub-server', 'bin', '2.35.0-linux-arm64', 'language_server');
+    fs.mkdirSync(path.dirname(agyBin), { recursive: true });
+    fs.mkdirSync(path.dirname(hubLsBin), { recursive: true });
+
+    const fxX64 = buildSyntheticLinuxCliX64Pie();
+    const fxA64 = buildSyntheticLinuxCliArm64();
+    const origX64Buf = Buffer.from(fxX64.buf);
+    const origA64Buf = Buffer.from(fxA64.buf);
+    const origX64Allowed = Buffer.from(fxX64.buf.subarray(fxX64.alwCmp, fxX64.alwCmp + 25));
+    const origX64Canary = Buffer.from(fxX64.buf.subarray(fxX64.canaryOff, fxX64.canaryOff + 11));
+    const origA64AllowedWord = fxA64.buf.readUInt32LE(fxA64.alwP + 4);
+    const origA64Canary = Buffer.from(fxA64.buf.subarray(fxA64.canaryOff, fxA64.canaryOff + 8));
+
+    fs.writeFileSync(agyBin, fxX64.buf, { mode: 0o755 });
+    fs.writeFileSync(agyRealBin, fxX64.buf, { mode: 0o755 });
+    fs.writeFileSync(hubLsBin, fxA64.buf, { mode: 0o755 });
+
+    const env = {
+      ...process.env,
+      HOME: homeDir,
+      HAKIMI_LINUX_STATE_DIR: stateDir,
+      AGY_CLI_BIN: '',
+    };
+    const runTool = (args, useShell = false) =>
+      spawnSync(useShell ? 'bash' : 'python3', [useShell ? shScript : pyScript, ...args], {
+        encoding: 'utf8',
+        env,
+      });
+
+    // 2. Empty manifest restore --json still emits valid JSON error
+    const emptyRestore = runTool(['restore', '--json']);
+    assert.equal(emptyRestore.status, 1);
+    const emptyRestoreJson = JSON.parse(emptyRestore.stdout);
+    assert.equal(emptyRestoreJson.ok, false);
+    assert.ok(Array.isArray(emptyRestoreJson.results));
+
+    // 3. Auto-discovery via bash wrapper picks up agy, agy.real, and hub language_server
+    const autoStatus = runTool(['status', '--json'], true);
+    assert.equal(autoStatus.status, 1, 'unpatched targets should return exit code 1');
+    const autoJson = JSON.parse(autoStatus.stdout);
+    assert.equal(autoJson.ok, true);
+    const byPath = new Map(autoJson.targets.map((item) => [item.path, item]));
+    assert.equal(byPath.get(agyBin)?.kind, 'agy');
+    assert.equal(byPath.get(agyBin)?.status, 'unpatched');
+    assert.equal(byPath.get(agyRealBin)?.kind, 'agy');
+    assert.equal(byPath.get(hubLsBin)?.kind, 'language_server');
+    assert.equal(byPath.get(hubLsBin)?.arch, 'arm64');
+    assert.equal(byPath.get(hubLsBin)?.status, 'unpatched');
+
+    // 4. Dry-run reports would_patch without modifying binaries or creating backups
+    const dryRun = runTool(['patch', '--dry-run', '--json', '--binary', agyBin, '--binary', hubLsBin]);
+    assert.equal(dryRun.status, 0, dryRun.stderr);
+    const dryJson = JSON.parse(dryRun.stdout);
+    assert.equal(dryJson.ok, true);
+    assert.deepEqual(dryJson.results.map((r) => r.status), ['would_patch', 'would_patch']);
+    assert.deepEqual(fs.readFileSync(agyBin), origX64Buf);
+    assert.deepEqual(fs.readFileSync(hubLsBin), origA64Buf);
+    assert.equal(fs.existsSync(path.join(stateDir, 'backups', 'manifest.json')), false);
+
+    // 5. Apply patch to both x86-64 PIE and arm64 targets, verify consistency with Node analyzer
+    const patched = runTool(['patch', '--json', '--binary', agyBin, '--binary', hubLsBin]);
+    assert.equal(patched.status, 0, patched.stderr);
+    const patchJson = JSON.parse(patched.stdout);
+    assert.equal(patchJson.ok, true);
+    assert.deepEqual(patchJson.results.map((r) => [r.status, r.changed]), [
+      ['patched', true],
+      ['patched', true],
+    ]);
+
+    const diskX64 = fs.readFileSync(agyBin);
+    assert.equal(diskX64[fxX64.inelBranchOff], 0x90);
+    assert.equal(diskX64[fxX64.inelBranchOff + 1], 0xe9);
+    assert.deepEqual(diskX64.subarray(fxX64.alwCmp, fxX64.alwCmp + 25), origX64Allowed);
+    assert.deepEqual(diskX64.subarray(fxX64.canaryOff, fxX64.canaryOff + 11), origX64Canary);
+
+    const diskA64 = fs.readFileSync(hubLsBin);
+    assert.equal(diskA64.readUInt32LE(fxA64.alwP + 4), origA64AllowedWord);
+    assert.equal(((diskA64.readUInt32LE(fxA64.inelBranchOff) & 0xfc000000) >>> 0), 0x14000000);
+    assert.deepEqual(diskA64.subarray(fxA64.canaryOff, fxA64.canaryOff + 8), origA64Canary);
+
+    // Cross-check with Node engine
+    assert.equal(cli.analyzeAgyCli(agyBin, { homeDir, stateDir }).status, 'patched');
+    assert.equal(cli.analyzeAgyCli(hubLsBin, { homeDir, stateDir }).status, 'patched');
+
+    // Status now returns 0 for patched targets; re-patch is idempotent
+    const postStatus = runTool(['status', '--json', '--binary', agyBin, '--binary', hubLsBin]);
+    assert.equal(postStatus.status, 0, postStatus.stderr);
+    const postJson = JSON.parse(postStatus.stdout);
+    assert.equal(postJson.summary.patched, 2);
+    assert.equal(postJson.summary.unpatched, 0);
+
+    const repatch = runTool(['patch', '--json', '--binary', agyBin, '--binary', hubLsBin]);
+    assert.equal(repatch.status, 0);
+    const repatchJson = JSON.parse(repatch.stdout);
+    assert.deepEqual(repatchJson.results.map((r) => r.changed), [false, false]);
+
+    // 6. Restore guards against externally replaced binary unless --force is passed
+    const modifiedAgy = Buffer.from(diskX64);
+    modifiedAgy[0x3f] ^= 0xff;
+    fs.writeFileSync(agyBin, modifiedAgy, { mode: 0o755 });
+
+    const blockedRestore = runTool(['restore', '--json', '--binary', agyBin]);
+    assert.equal(blockedRestore.status, 1);
+    const blockedJson = JSON.parse(blockedRestore.stdout);
+    assert.equal(blockedJson.ok, false);
+    assert.match(blockedJson.results[0].error, /--force/);
+    assert.deepEqual(fs.readFileSync(agyBin), modifiedAgy);
+
+    const forcedRestore = runTool(['restore', '--json', '--force', '--binary', agyBin]);
+    assert.equal(forcedRestore.status, 0, forcedRestore.stderr);
+    assert.deepEqual(fs.readFileSync(agyBin), origX64Buf);
+
+    // Normal restore of unmodified patched hub language_server restores exact original bytes
+    const normalRestore = runTool(['restore', '--json', '--binary', hubLsBin]);
+    assert.equal(normalRestore.status, 0, normalRestore.stderr);
+    const normalRestoreJson = JSON.parse(normalRestore.stdout);
+    assert.equal(normalRestoreJson.ok, true);
+    assert.equal(normalRestoreJson.results[0].status, 'unpatched');
+    assert.deepEqual(fs.readFileSync(hubLsBin), origA64Buf);
+
+    // 7. Official /Applications/Antigravity.app guard on patch & restore
+    const officialPath = '/Applications/Antigravity.app/Contents/Resources/bin/language_server';
+    const officialPatch = runTool(['patch', '--json', '--binary', officialPath]);
+    assert.equal(officialPatch.status, 1);
+    const officialPatchJson = JSON.parse(officialPatch.stdout);
+    assert.equal(officialPatchJson.ok, false);
+    assert.match(officialPatchJson.results[0].error, /Antigravity\.app/);
+
+    const poisonedManifestPath = path.join(stateDir, 'backups', 'manifest.json');
+    const manifestObj = JSON.parse(fs.readFileSync(poisonedManifestPath, 'utf8'));
+    manifestObj.entries[officialPath] = {
+      backup: path.join(stateDir, 'backups', 'fake.orig'),
+      original_sha256: '0'.repeat(64),
+      patched_sha256: '0'.repeat(64),
+    };
+    fs.writeFileSync(poisonedManifestPath, JSON.stringify(manifestObj, null, 2));
+
+    const officialRestore = runTool(['restore', '--json', '--force', '--binary', officialPath]);
+    assert.equal(officialRestore.status, 1);
+    const officialRestoreJson = JSON.parse(officialRestore.stdout);
+    assert.equal(officialRestoreJson.ok, false);
+    assert.match(officialRestoreJson.results[0].error, /Antigravity\.app/);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
