@@ -18,6 +18,13 @@ const { packHakimiAsar, PAYLOAD_FILES } = require(path.join(ROOT, 'scripts', 'pa
 const { inspectDiskModules } = require(path.join(ROOT, 'payload', 'dist', 'modules-config.js'));
 const { runDoctor } = require(path.join(ROOT, 'scripts', 'doctor.js'));
 
+// Host architecture drives the default official manifest name (`latest-<arch>-mac.yml`)
+// and the zip directory inside it. Keep fixtures host-agnostic so the suite passes on
+// both Apple Silicon (arm64) and Intel (x64) machines.
+const HOST_ARCH = builder.normalizeMacArch();
+const HOST_MANIFEST = `latest-${HOST_ARCH}-mac.yml`;
+const HOST_ZIP_DIR = HOST_ARCH === 'x64' ? 'darwin-x64' : 'darwin-arm';
+
 function makeFakeBundle(bundleDir, { version = '2.34.0', marker = 'old', commit = null } = {}) {
   fs.mkdirSync(path.join(bundleDir, 'Contents', 'MacOS'), { recursive: true });
   fs.mkdirSync(path.join(bundleDir, 'Contents', 'Resources', 'bin'), { recursive: true });
@@ -254,6 +261,16 @@ test('official manifest YAML parsing, URL allowlist, SHA-512 verification, and G
   assert.equal(selected.sha512, 'arm64sha==');
   assert.ok(selected.url.includes('darwin-arm/Antigravity.zip'));
 
+  // Intel (x64) selection must resolve the darwin-x64 zip instead of falling back to arm64.
+  const selectedX64 = builder.selectMacZipFromManifest(parsed, appUpd.url, 'x64');
+  assert.equal(selectedX64.sha512, 'x64sha==');
+  assert.ok(selectedX64.url.includes('darwin-x64/Antigravity.zip'));
+  // Aliases used by different call sites must normalize to the same feed token.
+  assert.equal(builder.normalizeMacArch('x86_64'), 'x64');
+  assert.equal(builder.normalizeMacArch('amd64'), 'x64');
+  assert.equal(builder.normalizeMacArch('aarch64'), 'arm64');
+  assert.equal(builder.normalizeMacArch(undefined), HOST_ARCH);
+
   assert.equal(builder.compareSemver('2.35.1', '2.34.0'), 1);
   assert.equal(builder.compareSemver('2.34.0', '2.34.0'), 0);
   assert.equal(builder.compareSemver('2.9.0', '2.10.0'), -1);
@@ -357,6 +374,7 @@ test('official manifest YAML parsing, URL allowlist, SHA-512 verification, and G
 
   // Official minimal manifest (`version: 2.35.1` without `files:`) returned when x-app-version is already up-to-date
   const minUpToDate = await builder.fetchOfficialLatestManifest({
+    arch: 'arm64',
     currentVersion: '2.35.1',
     httpRequest: async (_url, opts = {}) => {
       assert.equal(opts.headers?.['x-app-version'], '2.35.1');
@@ -371,6 +389,7 @@ test('official manifest YAML parsing, URL allowlist, SHA-512 verification, and G
   // Official minimal manifest reporting a NEWER version while x-app-version was sent: retries once without x-app-version
   let manifestAttempts = 0;
   const retriedNewer = await builder.fetchOfficialLatestManifest({
+    arch: 'arm64',
     currentVersion: '2.34.0',
     httpRequest: async (_url, opts = {}) => {
       manifestAttempts++;
@@ -590,13 +609,13 @@ test('dual-source updater enforces silent-until-ready, cleans failed downloads, 
 
     const httpRequest = async (url, opts = {}) => {
       assert.equal(url.includes('api.github.com'), false, `Updater must never hit api.github.com: ${url}`);
-      if (url.endsWith('latest-arm64-mac.yml')) {
+      if (url.endsWith(HOST_MANIFEST)) {
         return {
           status: 200,
           text: [
             'version: 2.35.1',
             'files:',
-            '  - url: https://storage.googleapis.com/antigravity-public/2.35.1/darwin-arm/Antigravity.zip',
+            `  - url: https://storage.googleapis.com/antigravity-public/2.35.1/${HOST_ZIP_DIR}/Antigravity.zip`,
             `    sha512: ${zip2351Sha}`,
           ].join('\n'),
         };
@@ -751,7 +770,7 @@ test('updater handles minimal up-to-date official manifest cleanly and refetches
 
     const httpRequest = async (url, opts = {}) => {
       assert.equal(url.includes('api.github.com'), false, `Must never hit api.github.com: ${url}`);
-      if (url.endsWith('latest-arm64-mac.yml')) {
+      if (url.endsWith(HOST_MANIFEST)) {
         if (opts.headers?.['x-app-version'] === '2.35.1') {
           // Real Google Cloud Run behavior when client is already on latest 2.35.1
           return { status: 200, text: 'version: 2.35.1\n' };
@@ -762,7 +781,7 @@ test('updater handles minimal up-to-date official manifest cleanly and refetches
           text: [
             'version: 2.35.1',
             'files:',
-            '  - url: https://storage.googleapis.com/antigravity-public/2.35.1/darwin-arm/Antigravity.zip',
+            `  - url: https://storage.googleapis.com/antigravity-public/2.35.1/${HOST_ZIP_DIR}/Antigravity.zip`,
             `    sha512: ${zip2351Sha}`,
           ].join('\n'),
         };

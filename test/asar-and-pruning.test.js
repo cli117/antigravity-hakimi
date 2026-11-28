@@ -477,6 +477,25 @@ test('renamed script and package references have zero stale antigravity-unlock.s
   const buildHakimiSrc = fs.readFileSync(path.join(ROOT, 'build-hakimi.sh'), 'utf8');
   assert.equal(buildHakimiSrc.includes('--chinese-title'), false, 'build-hakimi.sh must not retain --chinese-title');
   assert.equal(buildHakimiSrc.includes('CHINESE_TITLE'), false, 'build-hakimi.sh must not retain CHINESE_TITLE');
+
+  // Intel (x86_64) support: the build must resolve a target arch and forward it to the official
+  // feed fetcher instead of assuming Apple Silicon.
+  assert.equal(buildHakimiSrc.includes('--arch'), true, 'build-hakimi.sh must expose --arch');
+  assert.equal(
+    buildHakimiSrc.includes('--arch "$TARGET_ARCH"'),
+    true,
+    'build-hakimi.sh must forward --arch to hakimi-builder fetch-official'
+  );
+  assert.equal(
+    /uname -m/.test(buildHakimiSrc),
+    true,
+    'build-hakimi.sh must detect the host architecture via uname -m'
+  );
+  assert.equal(
+    buildHakimiSrc.includes('x86_64'),
+    true,
+    'build-hakimi.sh must map x86_64 hosts to the x64 target arch'
+  );
 });
 
 function writeSyntheticTestImage({ outPath, width, height, format, cornerAlphaZero }) {

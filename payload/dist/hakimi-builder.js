@@ -264,17 +264,32 @@ function manifestHasZipEntry(manifest) {
   return Boolean(manifest?.path && /\.zip(?:$|\?)/i.test(manifest.path));
 }
 
+/**
+ * Normalize an Electron/host architecture label to the official feed's arch token.
+ * Official macOS manifests are published as `latest-arm64-mac.yml` and `latest-x64-mac.yml`.
+ * @param {string|undefined|null} raw
+ * @returns {'arm64'|'x64'}
+ */
+function normalizeMacArch(raw) {
+  const a = String(raw || process.arch || 'arm64').trim().toLowerCase().replace(/[_\s]/g, '-');
+  if (a === 'arm64' || a === 'aarch64' || a === 'arm64e') return 'arm64';
+  if (a === 'x64' || a === 'x86-64' || a === 'x86_64' || a === 'amd64' || a === 'ia32') return 'x64';
+  return 'arm64';
+}
+
 function selectMacZipFromManifest(manifest, feedUrl, arch = process.arch) {
+  const wanted = normalizeMacArch(arch);
   const files = Array.isArray(manifest?.files) ? manifest.files : [];
   const zipCandidates = files.filter((f) => f && typeof f.url === 'string' && /\.zip(?:$|\?)/i.test(f.url));
   let chosen = null;
   if (zipCandidates.length > 0) {
-    if (arch === 'arm64') {
+    if (wanted === 'arm64') {
       chosen =
         zipCandidates.find((f) => /arm64|darwin-arm/i.test(f.url)) ||
         zipCandidates[0];
     } else {
       chosen =
+        zipCandidates.find((f) => /x64|x86_64|amd64|darwin-x64/i.test(f.url)) ||
         zipCandidates.find((f) => !/arm64|darwin-arm/i.test(f.url)) ||
         zipCandidates[0];
     }
@@ -457,7 +472,7 @@ function computeFileSha512Base64(filePath) {
 
 async function fetchOfficialLatestManifest(options = {}) {
   const feedUrl = options.feedUrl || resolveOfficialFeedUrl(options.appBundlePath);
-  const arch = options.arch || process.arch || 'arm64';
+  const arch = normalizeMacArch(options.arch);
   const manifestUrl = new URL(`latest-${arch}-mac.yml`, feedUrl.endsWith('/') ? feedUrl : `${feedUrl}/`).toString();
   const httpImpl = options.httpRequest || defaultHttpRequest;
   const currentVersion = options.currentVersion ? String(options.currentVersion).trim() : '';
@@ -474,7 +489,10 @@ async function fetchOfficialLatestManifest(options = {}) {
       allowUrlFn: (u) => isAllowedOfficialUrl(u, feedUrl),
     });
     if (res.status < 200 || res.status >= 300) {
-      throw new Error(`拉取官方更新清单失败 (HTTP ${res.status}): ${manifestUrl}`);
+      throw new Error(
+        `拉取官方更新清单失败 (HTTP ${res.status}, arch=${arch}): ${manifestUrl}` +
+          (res.status === 404 ? `（官方可能未发布 ${arch} 架构的 macOS 安装包）` : '')
+      );
     }
     const parsed = parseLatestMacYml(res.text);
     if (!parsed.version) {
@@ -1487,9 +1505,10 @@ async function runCli(argv = process.argv.slice(2)) {
     const appBundle = getArg('--app-bundle');
     const keepZipOut = getArg('--keep-zip-out');
     const stateDir = getArg('--state-dir');
+    const arch = normalizeMacArch(getArg('--arch'));
     const jsonOut = argv.includes('--json');
 
-    const manifest = await fetchOfficialLatestManifest({ appBundlePath: appBundle });
+    const manifest = await fetchOfficialLatestManifest({ appBundlePath: appBundle, arch });
     const tmpZip = keepZipOut
       ? path.resolve(keepZipOut)
       : path.join(path.resolve(outAppDir), `Antigravity-${manifest.version}.zip`);
@@ -1504,6 +1523,7 @@ async function runCli(argv = process.argv.slice(2)) {
     const keptZipPath = keepZipOut && acquired.zipPath === tmpZip ? tmpZip : '';
     const summary = {
       ok: true,
+      arch,
       version: manifest.version,
       sha512: manifest.sha512,
       appPath,
@@ -1599,6 +1619,7 @@ module.exports = {
   parseLatestMacYml,
   manifestHasZipEntry,
   selectMacZipFromManifest,
+  normalizeMacArch,
   decodeXmlEntities,
   parseGithubCommitsAtom,
   parseGitUploadPackBranchSha,

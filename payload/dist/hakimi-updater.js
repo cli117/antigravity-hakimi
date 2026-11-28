@@ -6,7 +6,8 @@
  * Replaces official Squirrel.Mac auto-updater inside `哈基米.app`:
  * - Completely disables Squirrel.Mac (eliminating hourly ad-hoc signature mismatch errors
  *   and preventing accidental overwrite with unpatched official `Antigravity.app`).
- * - Polls BOTH official Antigravity (`app-update.yml` -> `latest-arm64-mac.yml`) AND
+ * - Polls BOTH official Antigravity (`app-update.yml` -> `latest-<arch>-mac.yml`, i.e.
+ *   `latest-arm64-mac.yml` on Apple Silicon / `latest-x64-mac.yml` on Intel) AND
  *   Hakimi GitHub `main` (`cli117/antigravity-hakimi`, with `compare/<sha>...main`
  *   developer local-commit protection).
  * - Runs full sandbox stage-builds silently in a background Node worker (`ELECTRON_RUN_AS_NODE=1`)

@@ -1,10 +1,14 @@
 'use strict';
 /**
  * Shared low-level binary helpers for 哈基米.app region unlock engines
- * (Mach-O / ELF64 Go .gopclntab scanning and adaptive ARM64 ValidateAndOnboardAccount branch analysis).
+ * (Mach-O / ELF64 Go .gopclntab scanning and arch-adaptive ValidateAndOnboardAccount
+ * branch analysis covering Apple Silicon arm64, Intel x86-64 Mach-O and Linux ELF64).
  */
 
 const crypto = require('crypto');
+
+/** `"free-tie"` little-endian bytes (first 8 bytes of the `free-tier` tier name). */
+const FREE_TIE_BYTES = Buffer.from('667265652d746965', 'hex');
 
 function sha256Buffer(buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
@@ -278,6 +282,246 @@ function analyzeArm64RegionInRange(buf, fnStart, fnEnd, fnName) {
   };
 }
 
+/**
+ * Decode an x86-64 `jne` (0x75 rel8 / 0F 85 rel32) or its already-patched unconditional
+ * `jmp` (EB rel8 / E9 rel32, optionally NOP-padded) form at `off`.
+ * Returns the branch length, current state, branch target and the 1:1 same-length patch bytes.
+ * @param {Buffer} buf
+ * @param {number} off
+ * @param {number} fnEnd
+ */
+function decodeX64JneOrJmp(buf, off, fnEnd) {
+  if (off + 2 > fnEnd) return null;
+  const b0 = buf[off];
+  const b1 = buf[off + 1];
+  if (b0 === 0x0f && b1 === 0x85 && off + 6 <= fnEnd) {
+    const rel32 = buf.readInt32LE(off + 2);
+    const patched = Buffer.alloc(6);
+    patched[0] = 0x90;
+    patched[1] = 0xe9;
+    patched.writeInt32LE(rel32, 2);
+    return { len: 6, state: 'unpatched', target: off + 6 + rel32, patched };
+  }
+  if (b0 === 0x90 && b1 === 0xe9 && off + 6 <= fnEnd) {
+    const rel32 = buf.readInt32LE(off + 2);
+    return { len: 6, state: 'patched', target: off + 6 + rel32, patched: Buffer.from(buf.subarray(off, off + 6)) };
+  }
+  if (b0 === 0xe9 && off + 6 <= fnEnd && buf[off + 5] === 0x90) {
+    const rel32 = buf.readInt32LE(off + 1);
+    return { len: 6, state: 'patched', target: off + 5 + rel32, patched: Buffer.from(buf.subarray(off, off + 6)) };
+  }
+  if (b0 === 0x75) {
+    const rel8 = buf.readInt8(off + 1);
+    const patched = Buffer.from([0xeb, buf[off + 1]]);
+    return { len: 2, state: 'unpatched', target: off + 2 + rel8, patched };
+  }
+  if (b0 === 0xeb) {
+    const rel8 = buf.readInt8(off + 1);
+    return { len: 2, state: 'patched', target: off + 2 + rel8, patched: Buffer.from(buf.subarray(off, off + 2)) };
+  }
+  return null;
+}
+
+/**
+ * Shared adaptive x86-64 instruction-pattern analyzer for authclient.ValidateAndOnboardAccount.
+ * Container-agnostic: works for Linux ELF64 x86-64 and macOS Intel (x86_64) Mach-O alike.
+ * Distinguishes allowedTiers (BREAK_ONLY) vs ineligibleTiers (HAS_MATCH_BODY) loops.
+ * @param {Buffer} buf
+ * @param {number} fnStart
+ * @param {number} fnEnd
+ * @param {string} fnName
+ */
+function analyzeX64RegionInRange(buf, fnStart, fnEnd, fnName) {
+  const freeIdxAny = buf.indexOf(FREE_TIE_BYTES, fnStart);
+  const hasFreeTieConst = freeIdxAny >= fnStart && freeIdxAny < fnEnd;
+  const candidates = [];
+  const seenJOff = new Set();
+
+  for (let p = fnStart; p < fnEnd - 24; p++) {
+    let cmpLen = 0;
+    // cmp r64, imm8 == 9  ->  REX.W 83 /7 ib
+    if ((buf[p] === 0x48 || buf[p] === 0x49) && buf[p + 1] === 0x83 && (buf[p + 2] & 0xf8) === 0xf8 && buf[p + 3] === 0x09) {
+      cmpLen = 4;
+    } else if (
+      // cmp r32, imm8 == 9  ->  83 /7 ib (no REX.W prefix)
+      buf[p] === 0x83 &&
+      (buf[p + 1] & 0xf8) === 0xf8 &&
+      buf[p + 2] === 0x09 &&
+      !(p > fnStart && (buf[p - 1] === 0x48 || buf[p - 1] === 0x49))
+    ) {
+      cmpLen = 3;
+    } else {
+      continue;
+    }
+
+    const jOff = p + cmpLen;
+    if (seenJOff.has(jOff)) continue;
+    const br = decodeX64JneOrJmp(buf, jOff, fnEnd);
+    if (!br) continue;
+
+    // The "free-tie" immediate must follow the length check almost immediately (Go movabs).
+    const afterBr = jOff + br.len;
+    const freeIdx = buf.indexOf(FREE_TIE_BYTES, afterBr);
+    if (freeIdx < 0 || freeIdx > afterBr + 16) continue;
+
+    // Locate the tail byte check `cmp byte ptr [reg+8], 0x72` ('r') and confirm it branches
+    // back to the very same loop top as the length check.
+    let tailEnd = null;
+    let loopTop = null;
+    const tailScanEnd = Math.min(fnEnd - 6, freeIdx + 0x30);
+    for (let q = freeIdx + 8; q < tailScanEnd; q++) {
+      let nextQ = -1;
+      if (buf[q] === 0x80 && (buf[q + 1] & 0xf8) === 0x78 && buf[q + 2] === 0x08 && buf[q + 3] === 0x72) {
+        nextQ = q + 4;
+      } else if (buf[q] === 0x80 && buf[q + 1] === 0x7c && buf[q + 3] === 0x08 && buf[q + 4] === 0x72) {
+        nextQ = q + 5;
+      }
+      if (nextQ < 0 || nextQ + 2 > fnEnd) continue;
+      let tTarget = null;
+      let tEnd = null;
+      if (buf[nextQ] === 0x0f && buf[nextQ + 1] === 0x85 && nextQ + 6 <= fnEnd) {
+        tTarget = nextQ + 6 + buf.readInt32LE(nextQ + 2);
+        tEnd = nextQ + 6;
+      } else if (buf[nextQ] === 0x75) {
+        tTarget = nextQ + 2 + buf.readInt8(nextQ + 1);
+        tEnd = nextQ + 2;
+      }
+      if (tTarget !== null && tTarget >= fnStart && tTarget < p) {
+        loopTop = tTarget;
+        tailEnd = tEnd;
+        break;
+      }
+    }
+    if (tailEnd === null || loopTop === null) continue;
+
+    // Collect loop-exit conditional branches in the loop head region.
+    const loopExits = [];
+    const loopScanEnd = Math.min(p, loopTop + 0x48);
+    for (let r = loopTop; r < loopScanEnd - 2; r++) {
+      let dest = null;
+      if (buf[r] === 0x0f && buf[r + 1] >= 0x80 && buf[r + 1] <= 0x8f && r + 6 <= fnEnd) {
+        dest = r + 6 + buf.readInt32LE(r + 2);
+      } else if (buf[r] >= 0x70 && buf[r] <= 0x7f) {
+        dest = r + 2 + buf.readInt8(r + 1);
+      }
+      if (dest !== null && dest >= tailEnd && dest < fnEnd) {
+        loopExits.push({ offset: r, dest });
+      }
+    }
+    if (loopExits.length === 0) continue;
+
+    // An immediate unconditional `jmp` right after the tail check means "match => break only".
+    let immediateBreakTarget = null;
+    if (tailEnd + 2 <= fnEnd && buf[tailEnd] === 0xeb) {
+      immediateBreakTarget = tailEnd + 2 + buf.readInt8(tailEnd + 1);
+    } else if (tailEnd + 5 <= fnEnd && buf[tailEnd] === 0xe9) {
+      immediateBreakTarget = tailEnd + 5 + buf.readInt32LE(tailEnd + 1);
+    }
+
+    const isBreakOnly =
+      immediateBreakTarget !== null && loopExits.some((e) => e.dest === immediateBreakTarget);
+    const hasMatchBody =
+      !isBreakOnly &&
+      br.target === loopTop &&
+      loopExits.some((e) => e.dest > tailEnd + 0x10);
+
+    seenJOff.add(jOff);
+    candidates.push({
+      p,
+      jOff,
+      jLen: br.len,
+      state: br.state,
+      target: br.target,
+      patched: br.patched,
+      loopTop,
+      tailEnd,
+      hasMatchBody,
+      isBreakOnly,
+    });
+  }
+
+  const ineligible = candidates.filter((c) => c.hasMatchBody);
+  const allowed = candidates.filter((c) => c.isBreakOnly && !c.hasMatchBody);
+
+  if (ineligible.length === 0) {
+    return {
+      ok: false,
+      status: 'pattern_missing',
+      code: 'PATTERN_NOT_FOUND',
+      fnName,
+      fnStart,
+      fnEnd,
+      hasFreeTieConst,
+      allowedTiersCount: allowed.length,
+      error: '未找到 x86-64 free-tier 地区限制分支',
+    };
+  }
+  if (ineligible.length > 1) {
+    return {
+      ok: false,
+      status: 'ambiguous',
+      code: 'AMBIGUOUS_MATCH',
+      fnName,
+      fnStart,
+      fnEnd,
+      error: `在 ValidateAndOnboardAccount 中命中 ${ineligible.length} 处 x86-64 候选分支`,
+    };
+  }
+  if (allowed.some((c) => c.state !== 'unpatched')) {
+    return {
+      ok: false,
+      status: 'corrupted_allowed_tiers',
+      code: 'ALLOWED_TIERS_MODIFIED',
+      fnName,
+      error: '检测到 allowedTiers 循环被意外修改',
+    };
+  }
+
+  const hit = ineligible[0];
+  return {
+    ok: true,
+    arch: 'x86-64',
+    status: hit.state,
+    fnName,
+    fnStart,
+    fnEnd,
+    cmpOffset: hit.p,
+    branchOffset: hit.jOff,
+    branchLength: hit.jLen,
+    relOffsetInFn: hit.p - fnStart,
+    targetOffset: hit.target,
+    currentBytes: Buffer.from(buf.subarray(hit.jOff, hit.jOff + hit.jLen)),
+    patchedBytes: hit.patched,
+    allowedTiersCount: allowed.length,
+    hasFreeTieConst,
+  };
+}
+
+/**
+ * Normalize an architecture label to the two internal engine names.
+ * @param {string} arch
+ * @returns {'arm64'|'x86-64'}
+ */
+function normalizeRegionArch(arch) {
+  const a = String(arch || '').toLowerCase().replace(/[_\s]/g, '-');
+  if (a === 'arm64' || a === 'aarch64' || a === 'arm64e') return 'arm64';
+  return 'x86-64';
+}
+
+/**
+ * Dispatch the adaptive region analyzer by architecture.
+ * @param {Buffer} buf
+ * @param {number} fnStart
+ * @param {number} fnEnd
+ * @param {string} fnName
+ * @param {string} arch
+ */
+function analyzeRegionInRangeByArch(buf, fnStart, fnEnd, fnName, arch) {
+  return normalizeRegionArch(arch) === 'arm64'
+    ? analyzeArm64RegionInRange(buf, fnStart, fnEnd, fnName)
+    : analyzeX64RegionInRange(buf, fnStart, fnEnd, fnName);
+}
+
 module.exports = {
   sha256Buffer,
   signExtend,
@@ -286,5 +530,11 @@ module.exports = {
   decodeArm64CondBranchTarget,
   decodeArm64UncondBranchTarget,
   scanGopclntabBySuffix,
+  FREE_TIE_BYTES,
+  decodeX64JneOrJmp,
   analyzeArm64RegionInRange,
+  analyzeX64RegionInRange,
+  normalizeRegionArch,
+  analyzeRegionInRangeByArch,
 };
+

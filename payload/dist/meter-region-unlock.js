@@ -6,18 +6,34 @@ const { assertNotOfficialAntigravityApp } = require('./asar-engine');
 const {
   sha256Buffer,
   scanGopclntabBySuffix,
-  analyzeArm64RegionInRange,
+  normalizeRegionArch,
+  analyzeRegionInRangeByArch,
 } = require('./binary-utils');
 
 const MH_MAGIC_64 = 0xfeedfacf;
+const CPU_TYPE_X86_64 = 0x01000007;
 const CPU_TYPE_ARM64 = 0x0100000c;
+
+/** cputype -> internal engine arch label */
+const MACHO_CPU_ARCH = {
+  [CPU_TYPE_X86_64]: 'x86_64',
+  [CPU_TYPE_ARM64]: 'arm64',
+};
+
+/** Go .gopclntab minLC (instruction alignment) per normalized arch: 1 for x86, 4 for arm64. */
+const MIN_LC_BY_ARCH = {
+  'x86-64': 0x01,
+  arm64: 0x04,
+};
+
 const LC_SEGMENT_64 = 0x19;
 const LC_UUID = 0x1b;
 
 const TARGET_FUNC_SUFFIX = 'authclient.ValidateAndOnboardAccount';
 
 /**
- * Parse Mach-O 64-bit ARM64 __TEXT,__text section and LC_UUID.
+ * Parse Mach-O 64-bit __TEXT,__text section and LC_UUID.
+ * Supports both Apple Silicon (arm64) and Intel (x86_64) thin binaries.
  * @param {Buffer} buf
  */
 function parseMachOTextSection(buf) {
@@ -25,12 +41,18 @@ function parseMachOTextSection(buf) {
     throw new Error('目标文件不是有效的 Mach-O 二进制 (长度不足)');
   }
   const magic = buf.readUInt32LE(0);
+  if (magic === 0xcafebabe || magic === 0xbebafeca || magic === 0xcafebabf || magic === 0xbfbafeca) {
+    throw new Error('目标为 Universal (fat) Mach-O，请先使用 lipo -thin 提取单一架构后再处理');
+  }
   if (magic !== MH_MAGIC_64) {
     throw new Error(`非 64-bit Mach-O 文件 (magic=0x${magic.toString(16)})`);
   }
   const cputype = buf.readUInt32LE(4);
-  if (cputype !== CPU_TYPE_ARM64) {
-    throw new Error(`仅支持 Apple Silicon ARM64 Mach-O (cputype=0x${cputype.toString(16)})`);
+  const arch = MACHO_CPU_ARCH[cputype];
+  if (!arch) {
+    throw new Error(
+      `仅支持 Mach-O arm64 / x86_64 (cputype=0x${cputype.toString(16)})`
+    );
   }
 
   const ncmds = buf.readUInt32LE(16);
@@ -75,7 +97,8 @@ function parseMachOTextSection(buf) {
   return {
     ...textSection,
     uuid,
-    arch: 'arm64',
+    cputype,
+    arch,
     format: 'Mach-O',
   };
 }
@@ -85,9 +108,11 @@ function parseMachOTextSection(buf) {
  * @param {Buffer} buf
  * @param {number} textOff
  * @param {string} targetSuffix
+ * @param {string} [arch] Mach-O arch label ('arm64' | 'x86_64'); controls Go minLC.
  */
-function findGoFunction(buf, textOff, targetSuffix = TARGET_FUNC_SUFFIX) {
-  const res = scanGopclntabBySuffix(buf, [targetSuffix], { minLC: 0x04, textOff });
+function findGoFunction(buf, textOff, targetSuffix = TARGET_FUNC_SUFFIX, arch = 'arm64') {
+  const minLC = MIN_LC_BY_ARCH[normalizeRegionArch(arch)] ?? MIN_LC_BY_ARCH.arm64;
+  const res = scanGopclntabBySuffix(buf, [targetSuffix], { minLC, textOff });
   if (!res.foundPcln) return { foundPcln: false, name: null };
   const hit = res.funcs[targetSuffix];
   if (!hit) return { foundPcln: true, name: null };
@@ -135,7 +160,7 @@ function analyzeRegionUnlock(filePathOrBuf) {
     return { ok: false, status: 'unsupported', code: 'INVALID_MACHO', sha256, error: e.message };
   }
 
-  const fn = findGoFunction(buf, macho.textOff, TARGET_FUNC_SUFFIX);
+  const fn = findGoFunction(buf, macho.textOff, TARGET_FUNC_SUFFIX, macho.arch);
   if (!fn.foundPcln) {
     return {
       ok: false,
@@ -168,23 +193,29 @@ function analyzeRegionUnlock(filePathOrBuf) {
     };
   }
 
-  const analyzed = analyzeArm64RegionInRange(buf, fnStart, fnEnd, fn.name);
+  const analyzed = analyzeRegionInRangeByArch(buf, fnStart, fnEnd, fn.name, macho.arch);
   if (!analyzed.ok) {
     return { ...analyzed, sha256 };
   }
 
   return {
     ok: true,
+    arch: analyzed.arch,
     status: analyzed.status,
     fnName: analyzed.fnName,
     fnStart: analyzed.fnStart,
     fnEnd: analyzed.fnEnd,
     cmpOffset: analyzed.cmpOffset,
     branchOffset: analyzed.branchOffset,
+    branchLength: analyzed.branchLength,
     relOffsetInFn: analyzed.relOffsetInFn,
     targetOffset: analyzed.targetOffset,
-    currentWord: analyzed.currentWord,
-    patchedWord: analyzed.patchedWord,
+    currentBytes: analyzed.currentBytes,
+    patchedBytes: analyzed.patchedBytes,
+    // 4-byte ARM64 word view, kept for backward compatibility with existing callers.
+    ...(analyzed.currentBytes && analyzed.currentBytes.length === 4
+      ? { currentWord: analyzed.currentWord, patchedWord: analyzed.patchedWord }
+      : {}),
     allowedTiersCount: analyzed.allowedTiersCount,
     hasFreeTieConst: analyzed.hasFreeTieConst,
     uuid: macho.uuid,
@@ -193,7 +224,8 @@ function analyzeRegionUnlock(filePathOrBuf) {
 }
 
 /**
- * Apply unconditional branch patch at ineligibleTiers free-tier check in language_server.
+ * Apply an unconditional branch patch at the ineligibleTiers free-tier check.
+ * The patch length follows the analyzed architecture (4 bytes on arm64, 2 or 6 bytes on x86_64).
  * Refuses official Antigravity.app paths.
  * @param {string} targetPath
  */
@@ -206,9 +238,24 @@ function applyRegionUnlock(targetPath) {
     return { ...analysis, alreadyPatched: true };
   }
 
+  const patchBytes = analysis.patchedBytes;
+  if (
+    !Buffer.isBuffer(patchBytes) ||
+    !Number.isInteger(analysis.branchOffset) ||
+    analysis.branchOffset < 0 ||
+    analysis.branchOffset + patchBytes.length > fs.statSync(targetPath).size
+  ) {
+    return {
+      ...analysis,
+      ok: false,
+      code: 'BRANCH_SITE_INVALID',
+      error: '地区解锁分支偏移与补丁字节不合法，停止处理',
+    };
+  }
+
   const stat = fs.statSync(targetPath);
   const data = fs.readFileSync(targetPath);
-  data.writeUInt32LE(analysis.patchedWord >>> 0, analysis.branchOffset);
+  patchBytes.copy(data, analysis.branchOffset);
 
   const tmpPath = `${targetPath}.region_tmp_${process.pid}`;
   fs.writeFileSync(tmpPath, data);
@@ -226,32 +273,51 @@ function formatHex32(word) {
   return `0x${(word >>> 0).toString(16).padStart(8, '0')}`;
 }
 
-if (require.main === module) {
-  const args = process.argv.slice(2);
+/** Render a patch site as hex bytes, falling back to the legacy 32-bit word view. */
+function formatPatchSite(res, which) {
+  const bytes = which === 'patched' ? res.patchedBytes : res.currentBytes;
+  if (Buffer.isBuffer(bytes)) {
+    return bytes.toString('hex').replace(/(..)(?=.)/g, '$1 ');
+  }
+  const word = which === 'patched' ? res.patchedWord : res.currentWord;
+  return Number.isInteger(word) ? formatHex32(word) : '?';
+}
+
+const PATCH_MNEMONIC = { 'x86-64': ['jne', 'jmp'], arm64: ['b.ne', 'b'] };
+
+
+const USAGE = 'Usage: node scripts/region-unlock.js <--analyze|--apply> <language_server> [--json]';
+
+/**
+ * Shared CLI entry point for both scripts/region-unlock.js and direct module execution.
+ * @param {string[]} argv
+ * @returns {number} process exit code
+ */
+function runCli(argv = process.argv.slice(2)) {
   let mode = null;
   let target = null;
   let jsonOut = false;
 
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--analyze') {
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--analyze') {
       mode = 'analyze';
-      target = args[++i];
-    } else if (args[i] === '--apply') {
+      target = argv[++i];
+    } else if (argv[i] === '--apply') {
       mode = 'apply';
-      target = args[++i];
-    } else if (args[i] === '--json') {
+      target = argv[++i];
+    } else if (argv[i] === '--json') {
       jsonOut = true;
-    } else if (args[i] === '-h' || args[i] === '--help') {
-      console.log('Usage: node scripts/region-unlock.js <--analyze|--apply> <language_server> [--json]');
-      process.exit(0);
+    } else if (argv[i] === '-h' || argv[i] === '--help') {
+      console.log(USAGE);
+      return 0;
     } else if (!target) {
-      target = args[i];
+      target = argv[i];
     }
   }
 
   if (!mode || !target) {
-    console.error('Usage: node scripts/region-unlock.js <--analyze|--apply> <language_server> [--json]');
-    process.exit(2);
+    console.error(USAGE);
+    return 2;
   }
 
   try {
@@ -260,32 +326,37 @@ if (require.main === module) {
       console.log(JSON.stringify(res, null, 2));
     } else if (res.ok) {
       const fnShort = String(res.fnName || TARGET_FUNC_SUFFIX).split('/').pop();
+      const [fromMnemonic, toMnemonic] = PATCH_MNEMONIC[res.arch] || PATCH_MNEMONIC.arm64;
       if (mode === 'analyze') {
         console.log(
-          `  [${res.status}] ${fnShort} @ 0x${res.fnStart.toString(16)} (rel +0x${res.relOffsetInFn.toString(16)}, allowedTiers=${res.allowedTiersCount})`
+          `  [${res.status}] (${res.arch}) ${fnShort} @ 0x${res.fnStart.toString(16)} (rel +0x${res.relOffsetInFn.toString(16)}, allowedTiers=${res.allowedTiersCount})`
         );
       } else if (res.alreadyPatched) {
-        console.log(`  already patched: ${fnShort} @ file 0x${res.branchOffset.toString(16)} (${formatHex32(res.currentWord)})`);
+        console.log(`  already patched: ${fnShort} @ file 0x${res.branchOffset.toString(16)} (${formatPatchSite(res, 'current')})`);
       } else {
         console.log(
           `  找到 ${fnShort} @ file offset 0x${res.fnStart.toString(16)} (len 0x${(res.fnEnd - res.fnStart).toString(16)}, allowedTiers=${res.allowedTiersCount})`
         );
         console.log(
-          `  patched: file 0x${res.branchOffset.toString(16)}  ${formatHex32(res.currentWord)}(b.ne) -> ${formatHex32(res.patchedWord)}(b)  target 0x${res.targetOffset.toString(16)}`
+          `  patched: file 0x${res.branchOffset.toString(16)}  ${formatPatchSite(res, 'current')}(${fromMnemonic}) -> ${formatPatchSite(res, 'patched')}(${toMnemonic})  target 0x${res.targetOffset.toString(16)}`
         );
       }
     } else {
       console.error(res.error || '地区解锁分析失败');
     }
-    process.exit(res.ok ? 0 : 1);
+    return res.ok ? 0 : 1;
   } catch (err) {
     if (jsonOut) {
       console.log(JSON.stringify({ ok: false, error: err.message }, null, 2));
     } else {
       console.error(err.message);
     }
-    process.exit(1);
+    return 1;
   }
+}
+
+if (require.main === module) {
+  process.exit(runCli());
 }
 
 module.exports = {
@@ -293,4 +364,6 @@ module.exports = {
   findGoFunction,
   analyzeRegionUnlock,
   applyRegionUnlock,
+  formatPatchSite,
+  runCli,
 };

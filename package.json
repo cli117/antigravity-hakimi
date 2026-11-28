@@ -1,7 +1,7 @@
 {
   "name": "antigravity-hakimi",
   "version": "1.0.0",
-  "description": "macOS Apple Silicon (ARM64) standalone 哈基米.app patcher with region unlock, context & token viewer, and UI localization",
+  "description": "macOS standalone 哈基米.app patcher for Apple Silicon (arm64) and Intel (x86_64) with region unlock, context & token viewer, and UI localization",
   "engines": {
     "node": ">=22.4.0"
   },
@@ -22,7 +22,9 @@
     "context-viewer",
     "context-window",
     "token-tracker",
-    "region-unlock"
+    "region-unlock",
+    "x64",
+    "intel"
   ],
   "license": "MIT"
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply adaptive region unlock to the agy CLI on macOS (arm64 Mach-O) and Linux (x86-64 / arm64 ELF64, PIE & non-PIE).
+"""Apply adaptive region unlock to the agy CLI on macOS (arm64 / x86_64 Mach-O) and Linux (x86-64 / arm64 ELF64, PIE & non-PIE).
 
 Patches authclient.ValidateAndOnboardAccount to bypass the ineligibleTiers "free-tier" check
 while leaving allowedTiers untouched.

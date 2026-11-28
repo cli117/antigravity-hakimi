@@ -1,18 +1,20 @@
 # antigravity-hakimi (`哈基米.app`)
 
-> 面向 **macOS Apple Silicon (ARM64)**，直接从官方更新源拉取并验签最新版 Antigravity（无需预先安装原版，也可离线基于本地只读 `/Applications/Antigravity.app`）构建独立增强版桌面客户端 **`/Applications/哈基米.app`**。与官方客户端共享 Google 登录态、历史对话与设置，同时严格保持官方 `/Applications/Antigravity.app`（及 `.orig`）只读不改。
+> 面向 **macOS Apple Silicon (arm64) 与 Intel (x86_64)**，直接从官方更新源拉取并验签最新版 Antigravity（无需预先安装原版，也可离线基于本地只读 `/Applications/Antigravity.app`）构建独立增强版桌面客户端 **`/Applications/哈基米.app`**。与官方客户端共享 Google 登录态、历史对话与设置，同时严格保持官方 `/Applications/Antigravity.app`（及 `.orig`）只读不改。
+>
+> 目标架构默认按本机 `uname -m` 自动推导（`arm64` → `latest-arm64-mac.yml`，`x86_64` → `latest-x64-mac.yml`），也可用 `--arch arm64|x64` 显式指定（支持交叉构建）。
 
 ---
 
 ## 核心特性
 
 1. **账号地区 / Free-tier 自适应解锁与版本同步检测**
-   - [`meter-region-unlock.js`](payload/dist/meter-region-unlock.js) 动态解析 `language_server` Mach-O Go `.gopclntab` 符号表与 `authclient.ValidateAndOnboardAccount` 指令特征，自动定位 `"free-tier"` 限制分支并写入无条件跳转，不依赖写死 SHA-256 或固定偏移。
-   - **`agy` CLI 地区解锁（macOS ARM64 & Linux `x86-64` / `arm64`）**：[`meter-cli-unlock.js`](payload/dist/meter-cli-unlock.js) 与独立 Python 版 [`unlock/agy-cli/agy-patch.py`](unlock/agy-cli/agy-patch.py) 支持在 macOS 和 Linux（兼容 ELF64 PIE `.rela.dyn`）上对本机 `agy` CLI 二进制执行自适应地区解锁。
+   - [`meter-region-unlock.js`](payload/dist/meter-region-unlock.js) 动态解析 `language_server` Mach-O Go `.gopclntab` 符号表与 `authclient.ValidateAndOnboardAccount` 指令特征，自动定位 `"free-tier"` 限制分支并写入无条件跳转，不依赖写死 SHA-256 或固定偏移。**同一引擎同时支持 Apple Silicon (arm64, `cmp/b.ne` → `b`) 与 Intel (x86_64, `cmp/jne` → `nop;jmp`)**，按 Mach-O `cputype` 自动选择对应分析器与 Go `minLC`。
+   - **`agy` CLI 地区解锁（macOS arm64 / x86_64 & Linux `x86-64` / `arm64`）**：[`meter-cli-unlock.js`](payload/dist/meter-cli-unlock.js) 与独立 Python 版 [`unlock/agy-cli/agy-patch.py`](unlock/agy-cli/agy-patch.py) 支持在 macOS 和 Linux（兼容 ELF64 PIE `.rela.dyn`）上对本机 `agy` CLI 二进制执行自适应地区解锁。
    - **语义化版本同步检测**：比对只读官方 `/Applications/Antigravity.app` 与 `/Applications/哈基米.app` 的 `CFBundleShortVersionString`，仅当官方版本**高于**哈基米版本时弹出同步提示；当哈基米通过内置升级超前于本地只读官方版时自动放行。
 
 2. **双源静默自动升级与一键原子冷替换**
-   - **官方反重力 + 哈基米本体双源追新**：直接读取 `app-update.yml` 拉取官方最新 `latest-arm64-mac.yml`（兼容仅含 `version` 的极简清单，仅哈基米升级需要底包时自动去 `x-app-version` 重拉完整清单）与 `Antigravity.zip`（校验 `SHA-512` 与 Google LLC Developer ID 代码签名）；同时通过公开 `github.com` Web 端点（`commits/main.atom` + Git Smart HTTP `info/refs` 兜底与轻量 `compare/*.patch` 祖先探测，零 `api.github.com` 调用，避免共享出口 IP 限流）追踪 `cli117/antigravity-hakimi` 的 `main` 提交，基于包内 `hakimi-build-meta.json` 仅在 `ahead` 时触发，避免误降级本地开发版。后台通过 Electron 内置 Node（`ELECTRON_RUN_AS_NODE=1`）完成构建，不依赖本地仓库路径、`git` 或系统 `node`。
+   - **官方反重力 + 哈基米本体双源追新**：直接读取 `app-update.yml` 拉取官方最新 `latest-<arch>-mac.yml`（`arm64` / `x64`；兼容仅含 `version` 的极简清单，仅哈基米升级需要底包时自动去 `x-app-version` 重拉完整清单）与 `Antigravity.zip`（校验 `SHA-512` 与 Google LLC Developer ID 代码签名）；同时通过公开 `github.com` Web 端点（`commits/main.atom` + Git Smart HTTP `info/refs` 兜底与轻量 `compare/*.patch` 祖先探测，零 `api.github.com` 调用，避免共享出口 IP 限流）追踪 `cli117/antigravity-hakimi` 的 `main` 提交，基于包内 `hakimi-build-meta.json` 仅在 `ahead` 时触发，避免误降级本地开发版。后台通过 Electron 内置 Node（`ELECTRON_RUN_AS_NODE=1`）完成构建，不依赖本地仓库路径、`git` 或系统 `node`。
    - **仅验证成功才提示**：检测到上游更新后在独立沙盒静默执行全套构建与校验（`region-unlock` + `pack-hakimi-asar` + `ElectronAsarIntegrity` SHA-256 + 自定义图标沿用 + `codesign --verify --strict`）。**只有全部通过**，顶栏才会亮起「重启更新」提示；点击后由零外部依赖的脱离式冷替换进程 [`hakimi-upgrade-helper.js`](payload/dist/hakimi-upgrade-helper.js) 完成零存活退出屏障、`SingletonLock` 清理、同盘 APFS 原子替换（失败通过 `.prev` 自动回滚）与干净环境重启。
    - **失败静默隔离与原生更新器接管**：若官方新版本导致补丁不兼容，顶栏保持安静且不影响当前版本，仅在「设置」面板更新卡片记录具体失败阶段诊断，并跳过该不兼容版本直到哈基米 `main` 有新提交再重试（期间若 `main` 领先仍可回退执行仅哈基米升级）。同时在模块边界包装接管原生 `dist/updater.js`，禁用必然验签失败的 Squirrel.Mac，消除原版更新按钮闪现消失问题。
    - **严格磁盘防囤积**：官方干净 `Antigravity.zip` 仅维护单槽位缓存（对应当前已安装版本，并避免与 `~/Library/Caches/com.google.antigravity/` 重复留存），哈基米源码 tarball 与失败沙盒用完即删，`.prev` 替换成功后立刻清理，启动时自动执行 Orphan GC 清扫异常中断残留。仅限 macOS 本机窗口，Remote SSH 窗口自动隐藏。
@@ -69,6 +71,10 @@ bash ./build-hakimi.sh --icon ~/Pictures/hakimi.jpg
 
 # 纯离线使用本机 /Applications/Antigravity.app 构建（不联网）
 bash ./build-hakimi.sh --local
+
+# 显式指定目标架构（默认按本机 uname -m 自动推导：arm64 / x64）
+bash ./build-hakimi.sh --arch x64
+bash ./build-hakimi.sh --arch arm64
 
 # 单独解锁本机 agy CLI 或运行只读健康诊断
 npm run unlock:cli
@@ -179,10 +185,10 @@ bash ./build-hakimi.sh --stage-only --local
 - `src/renderer/`：Context Meter 悬浮胶囊、消息级 Time-Travel Fork 按钮与右键双项菜单（`message-fork.js`）、顶栏升级提示与设置面板、左下角模型额度与 Effort 速切卡片、自定义快捷键浮层、多账号冷切换浮层、速率对比与纯 Token 热力图源码
 - `unlock/agy-cli/agy-patch.py`：独立 Python 版 `agy` CLI 自适应地区解锁工具
 - `linux/`：Linux 专用轻量补丁工具（`hakimi-linux.py` / `hakimi-linux.sh` / `README.md`），同时覆盖 `agy` CLI 与 `~/.antigravity-hub-server/bin/*/language_server`，支持 `status` / `patch` / `restore` 与 systemd 用户定时器自动重打，不触碰桌面端安装目录
-- `test/`：自动化单元测试套件（双源自动升级与原子冷替换、应用内图标替换与还原、冷切账号与防错配、消息级 Time-Travel Fork、ARM64/ELF64 地区解锁与 Linux 独立工具、ASAR 打包与符号守卫、模型额度与快捷键、Remote SSH）
+- `test/`：自动化单元测试套件（双源自动升级与原子冷替换、应用内图标替换与还原、冷切账号与防错配、消息级 Time-Travel Fork、Mach-O arm64/x86_64 + ELF64 地区解锁与 Linux 独立工具、ASAR 打包与符号守卫、模型额度与快捷键、Remote SSH）
 
 ---
 
 ## 致谢与上游项目
 
-- **Context Meter / 看板与汉化基础**：本项目的前端监控面板、纯 Token 统计与桌面端简体中文化运行时基于 [`elviscjn-cjn/antigravity-context-viewer`](https://github.com/elviscjn-cjn/antigravity-context-viewer)（`v0.8.3`）演进，在此基础上构建了 macOS Apple Silicon 独立 `/Applications/哈基米.app` 打包体系、双源静默自动升级与原子冷替换、自适应账号地区与 `agy` CLI 解锁、Remote SSH 远端自动解锁、左下角模型额度/Effort/快捷键卡片、macOS 钥匙串多账号冷切换及自定义图标能力。
+- **Context Meter / 看板与汉化基础**：本项目的前端监控面板、纯 Token 统计与桌面端简体中文化运行时基于 [`elviscjn-cjn/antigravity-context-viewer`](https://github.com/elviscjn-cjn/antigravity-context-viewer)（`v0.8.3`）演进，在此基础上构建了 macOS（Apple Silicon / Intel 双架构）独立 `/Applications/哈基米.app` 打包体系、双源静默自动升级与原子冷替换、自适应账号地区与 `agy` CLI 解锁、Remote SSH 远端自动解锁、左下角模型额度/Effort/快捷键卡片、macOS 钥匙串多账号冷切换及自定义图标能力。

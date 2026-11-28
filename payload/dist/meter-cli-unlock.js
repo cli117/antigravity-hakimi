@@ -168,7 +168,7 @@ function inspectCliBinaryLayout(buf) {
     };
   }
 
-  // macOS Mach-O 64-bit LE (Apple Silicon arm64)
+  // macOS Mach-O 64-bit LE (Apple Silicon arm64 / Intel x86_64)
   if (buf.readUInt32LE(0) === MH_MAGIC_64) {
     let macho;
     try {
@@ -176,7 +176,7 @@ function inspectCliBinaryLayout(buf) {
     } catch (e) {
       return { ok: false, format: 'Mach-O', reason: e.message };
     }
-    const fn = findGoFunction(buf, macho.textOff, FUNC_REGION);
+    const fn = findGoFunction(buf, macho.textOff, FUNC_REGION, macho.arch);
     if (!fn.foundPcln) {
       return {
         ok: false,
@@ -201,7 +201,7 @@ function inspectCliBinaryLayout(buf) {
 
   return {
     ok: false,
-    reason: '仅支持 macOS ARM64 Mach-O 或 Linux ELF64 (x86-64 / arm64) 可执行文件',
+    reason: '仅支持 macOS Mach-O (arm64 / x86_64) 或 Linux ELF64 (x86-64 / arm64) 可执行文件',
   };
 }
 
@@ -407,43 +407,45 @@ function applyAgyCliUnlock(options = {}) {
   const patchedHooks = [];
 
   if (pre.regionUnlock.status === 'unpatched') {
-    if (pre.format === 'ELF64') {
-      const { branchOffset, currentBytes, patchedBytes } = pre.regionUnlock;
-      if (
-        !Number.isInteger(branchOffset) ||
-        branchOffset < 0 ||
-        !Buffer.isBuffer(currentBytes) ||
-        !Buffer.isBuffer(patchedBytes) ||
-        currentBytes.length !== patchedBytes.length ||
-        branchOffset + patchedBytes.length > buf.length ||
-        !buf.subarray(branchOffset, branchOffset + currentBytes.length).equals(currentBytes)
-      ) {
-        return { ok: false, code: 'REGION_SITE_CHANGED', error: 'CLI 地区分支与分析结果不一致，停止处理' };
-      }
-      patchedBytes.copy(buf, branchOffset);
-      const verified = analyzeElfRegionUnlock(buf);
-      if (!verified.ok || verified.status !== 'patched' || verified.branchOffset !== branchOffset) {
-        return { ok: false, code: 'REGION_VERIFY_FAILED', error: 'CLI 地区补丁内存校验失败，停止处理' };
-      }
-      patchedHooks.push('ValidateAndOnboardAccount');
-    } else {
-      const { branchOffset, patchedWord, currentWord } = pre.regionUnlock;
-      if (
-        !Number.isInteger(branchOffset) ||
-        branchOffset < 0 ||
-        branchOffset + 4 > buf.length ||
-        !Number.isInteger(patchedWord) ||
-        buf.readUInt32LE(branchOffset) !== currentWord
-      ) {
-        return { ok: false, code: 'REGION_SITE_CHANGED', error: 'CLI 地区分支与分析结果不一致，停止处理' };
-      }
-      buf.writeUInt32LE(patchedWord >>> 0, branchOffset);
-      const verified = analyzeRegionUnlock(buf);
-      if (!verified.ok || verified.status !== 'patched' || verified.branchOffset !== branchOffset) {
-        return { ok: false, code: 'REGION_VERIFY_FAILED', error: 'CLI 地区补丁内存校验失败，停止处理' };
-      }
-      patchedHooks.push('ValidateAndOnboardAccount');
+    const isElf = pre.format === 'ELF64';
+    const { branchOffset, patchedBytes } = pre.regionUnlock;
+    // ARM64 Mach-O patches a single 4-byte instruction word; x86-64 patches 2 or 6 bytes.
+    const currentBytes =
+      pre.regionUnlock.currentBytes ||
+      (Number.isInteger(pre.regionUnlock.currentWord)
+        ? (() => {
+            const b = Buffer.alloc(4);
+            b.writeUInt32LE(pre.regionUnlock.currentWord >>> 0, 0);
+            return b;
+          })()
+        : null);
+    const nextBytes =
+      patchedBytes ||
+      (Number.isInteger(pre.regionUnlock.patchedWord)
+        ? (() => {
+            const b = Buffer.alloc(4);
+            b.writeUInt32LE(pre.regionUnlock.patchedWord >>> 0, 0);
+            return b;
+          })()
+        : null);
+
+    if (
+      !Number.isInteger(branchOffset) ||
+      branchOffset < 0 ||
+      !Buffer.isBuffer(currentBytes) ||
+      !Buffer.isBuffer(nextBytes) ||
+      currentBytes.length !== nextBytes.length ||
+      branchOffset + nextBytes.length > buf.length ||
+      !buf.subarray(branchOffset, branchOffset + currentBytes.length).equals(currentBytes)
+    ) {
+      return { ok: false, code: 'REGION_SITE_CHANGED', error: 'CLI 地区分支与分析结果不一致，停止处理' };
     }
+    nextBytes.copy(buf, branchOffset);
+    const verified = isElf ? analyzeElfRegionUnlock(buf) : analyzeRegionUnlock(buf);
+    if (!verified.ok || verified.status !== 'patched' || verified.branchOffset !== branchOffset) {
+      return { ok: false, code: 'REGION_VERIFY_FAILED', error: 'CLI 地区补丁内存校验失败，停止处理' };
+    }
+    patchedHooks.push('ValidateAndOnboardAccount');
   }
 
   const afterSha = sha256Buffer(buf);
