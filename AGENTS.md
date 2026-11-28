@@ -6,7 +6,7 @@
 
 ## 1. 项目概述
 
-- **运行环境**：macOS Apple Silicon (`arm64`)，Node.js `>=22.4.0`（`agy` CLI 地区解锁同时支持 Linux `x86-64` / `arm64`）。
+- **运行环境**：macOS Apple Silicon (`arm64`) 与 Intel (`x86_64`)，Node.js `>=22.4.0`（`agy` CLI 地区解锁同时支持 Linux `x86-64` / `arm64`）。
 - **核心机制**：默认从官方更新源拉取/复用单槽位缓存最新 Antigravity（或通过 `--local` / `--from` 读取本地只读 `/Applications/Antigravity.app` / `.orig`），构建独立增强版桌面客户端 `/Applications/哈基米.app`。
 - **身份复用**：保留内部 `CFBundleIdentifier` (`com.google.antigravity`) 与主可执行文件名 `Antigravity`，以与官方客户端共享 Google 登录态、历史会话及用户数据目录，同时严格隔离应用二进制本身。
 
@@ -47,6 +47,9 @@ npm run doctor
 # 安全沙盒构建验证（仅在 /tmp 目录构建并执行 codesign --verify --strict，不改 /Applications 与用户目录）
 bash ./build-hakimi.sh --stage-only
 bash ./build-hakimi.sh --stage-only --local
+# 目标架构默认按 uname -m 推导（Apple Silicon -> arm64，Intel -> x64），亦可显式指定或交叉构建
+bash ./build-hakimi.sh --stage-only --arch x64
+bash ./build-hakimi.sh --stage-only --arch arm64
 
 # 构建并安装到 /Applications/哈基米.app（由用户在独立终端按需执行）
 # 默认一步到位：拉取/复用官方最新 + 覆盖安装 + 解锁本机 agy CLI + 自动打开/重启
@@ -75,14 +78,14 @@ npm run unlock:cli
 - `payload/dist/`：
   - `asar-engine.js`：纯 Node ASAR 读写引擎、`computeAsarHeaderSha256()`、`getHakimiAppPath()`、`assertNotOfficialAntigravityApp()`。
   - `hakimi-asar-packer.js`：自包含 ASAR 打包器（以 Buffer 读写内置载荷以兼容 Electron 虚拟 `app.asar` 自举、注入 Markdown `singleTilde` 修复并校验 `markdownFixReady`、包装接管 `dist/updater.js` 并保留 `dist/updater.orig.js`）。
-  - `hakimi-builder.js`：官方 `app-update.yml`/`latest-arm64-mac.yml` 解析与白名单 HTTPS 拉取（兼容仅含 `version` 的极简清单及去 `x-app-version` 重拉）、`SHA-512` 与 Google Developer ID 代码签名校验、基于公开 `github.com` Web 端点（`commits/main.atom` + Git Smart HTTP `info/refs` 兜底、Atom 快路径与 `maxBytes` 受限 `compare/*.patch` 双向祖先探测，零 `api.github.com` 调用）的 `main` 提交对比与 tarball 拉取、`hakimi-build-meta.json` 读写、APFS 沙盒试构建（`ELECTRON_RUN_AS_NODE=1`）及启动 Orphan GC。
+  - `hakimi-builder.js`：官方 `app-update.yml`/`latest-<arch>-mac.yml`（`arm64` / `x64`，由 `normalizeMacArch()` 归一化）解析与白名单 HTTPS 拉取（兼容仅含 `version` 的极简清单及去 `x-app-version` 重拉）、`SHA-512` 与 Google Developer ID 代码签名校验、基于公开 `github.com` Web 端点（`commits/main.atom` + Git Smart HTTP `info/refs` 兜底、Atom 快路径与 `maxBytes` 受限 `compare/*.patch` 双向祖先探测，零 `api.github.com` 调用）的 `main` 提交对比与 tarball 拉取、`hakimi-build-meta.json` 读写、APFS 沙盒试构建（`ELECTRON_RUN_AS_NODE=1`）及启动 Orphan GC。
   - `hakimi-icon-manager.js`：自包含 macOS 图标转换、实时预览渲染（支持圆角遮罩切换）、ASAR `icon.png` 替换、默认图标自动快照与多源还原（只读官方包 → 单槽 `clean-base` 缓存 → 本地快照）、APFS CoW 沙盒校验及复用的脱离式冷替换编排（`scripts/build-macos-icon.js` 与 `scripts/replace-asar-icon.js` 均委托于本模块）。
   - `hakimi-updater.js`：双源静默检测与沙盒试构建状态机、不兼容版本跳过与仅哈基米升级回退（缺少官方底包 URL 时去 `x-app-version` 重拉完整清单）、`dist/updater.js` 接管桥接及 macOS 菜单栏更新项同步。
   - `hakimi-upgrade-helper.js`：零外部依赖的脱离式冷替换工作进程（仅用 Node 内置模块），负责官方包守卫、零存活退出屏障、`SingletonLock` 清理、同盘 APFS 原子替换（`.prev` 失败自动回滚）、单槽位 `clean-base` 缓存晋升与干净环境 `open -n` 拉起（同时服务于双源自更新与应用内换图标，通过 `job.resultPath` 隔离结果回执）。
-  - `binary-utils.js`：公共 Go `.gopclntab` 符号定位与 ARM64 `ValidateAndOnboardAccount` 分析工具。
+  - `binary-utils.js`：公共 Go `.gopclntab` 符号定位与架构自适应 `ValidateAndOnboardAccount` 分析工具（`analyzeArm64RegionInRange` / `analyzeX64RegionInRange` / `analyzeRegionInRangeByArch` / `normalizeRegionArch`）。
   - `modular-installer.js` / `modules-config.js`：`app.asar` 注入代码生成（含 Markdown `remark-gfm` `singleTilde: false` 预加载钩子 `generateMarkdownPreloadCode`）与状态目录持久化工具（含 `cleanupStaleSingletonLock()`、`inspectDiskModules().markdownFixReady` 与语义化 `checkAppVersionSync()`）。
-  - `meter-region-unlock.js`：自适应 Mach-O `__TEXT` + Go `.gopclntab`（`0xFFFFFFF1` / `0xFFFFFFF0`）符号解析器，定位 `authclient.ValidateAndOnboardAccount` 并修补 `"free-tier"` 分支。
-  - `meter-cli-unlock.js`（与 `unlock/agy-cli/agy-patch.py`）：macOS ARM64 Mach-O 与 Linux ELF64（`x86-64` PIE & `arm64`）`agy` CLI 自适应地区解锁。
+  - `meter-region-unlock.js`：自适应 Mach-O `__TEXT` + Go `.gopclntab`（`0xFFFFFFF1` / `0xFFFFFFF0`）符号解析器（`cputype` 支持 `arm64` `0x0100000c` 与 `x86_64` `0x01000007`，fat Mach-O 明确拒绝），定位 `authclient.ValidateAndOnboardAccount` 并修补 `"free-tier"` 分支；Go `minLC` 按架构取 `0x04` / `0x01`，补丁按架构写入 `b`（4B）或 `nop;jmp`（6B）/`jmp rel8`（2B）。
+  - `meter-cli-unlock.js`（与 `unlock/agy-cli/agy-patch.py`）：macOS Mach-O（`arm64` / `x86_64`）与 Linux ELF64（`x86-64` PIE & `arm64`）`agy` CLI 自适应地区解锁；补丁按架构写入 4 字节指令字或 2/6 字节 x86 分支。
   - `meter-enhance.js`：仅限 `哈基米.app` 副本的后台 `language_server` 进程检测与重启辅助模块。
   - `meter-ssh.js`：Remote SSH 远端 Linux ELF64（`x86-64` & `arm64`，含 PIE `.rela.dyn` `firstmoduledata` 解析）自适应地区解锁、`bootstrapScript.js` POSIX `sh` 装饰器、远端会话内存注册表及 Electron `session.fetch` 代理通道。
   - `meter-account-cold-helper.js`：零外部依赖的脱离式冷切账号工作进程与公共钥匙串原语（仅用 Node 内置模块），负责零存活退出屏障、`SingletonLock` 清理、钥匙串原子换盘、账号局部残留清理、已保存账号引导状态还原、钥匙串身份/档位解析（区分 `Google AI Ultra 5x` / `20x`，以凭据内嵌身份为准防跨号覆盖）与干净环境 `open -n` 拉起。
@@ -95,7 +98,7 @@ npm run unlock:cli
   - `icon-manager.test.js`：应用内换图标预览（圆角遮罩/原图直出/透明轮廓/`.icns`）、官方路径守卫、APFS 沙盒 `codesign --verify --strict`、多源恢复默认图标（官方包/自动快照/单槽 zip）、冷替换结果隔离与渲染层配置卡片/SSH 隐藏测试。
   - `account-switcher.test.js`：macOS 钥匙串冷切引擎、零 `-w` 元数据探测、`Google AI Ultra 5x`/`20x` 档位识别、跨账号身份错配防护（`keychainLiveMismatch` / Vault 防覆盖）、`agy` CLI 拦截、账号局部残留清理与引导状态还原、退出屏障、独立 helper 零依赖运行与官方包守卫测试。
   - `message-fork.test.js`：`buildForkConversationRequest`、`buildForkedConversationTitle`（`[Fork]`/`[Fork N]` 递增防叠前缀）、`handleForkSession` IPC（含 `ForkConversation` + `UpdateConversationAnnotations`）、回复操作栏按钮挂载与槽位对齐、React Fiber `stepIndex` 解析、方案 A 单击/Shift+点击/右键双项菜单、旁路提问/Battle/原生按钮/已清理轮次/运行中过滤与 `disposeMessageFork` 清理测试。
-  - `arm64-patches.test.js`：Mach-O / `.gopclntab` / ARM64 地区解锁与官方路径守卫测试。
+  - `arm64-patches.test.js` / `x64-macho-patches.test.js`：Mach-O / `.gopclntab` 地区解锁与官方路径守卫测试（前者覆盖 arm64，后者覆盖 Intel `x86_64`：`jne`→`nop;jmp`、`jne rel8`→`jmp rel8`、fat Mach-O 拒绝、歧义/篡改拒绝及 CLI 解锁路径）。
   - `asar-and-pruning.test.js`：语法校验、裁剪符号与零外发请求拦截扫描、DOM 结构与顶栏不变量、Markdown `remark-gfm` 单波浪线修复、热力图惰性渲染与隐藏标签页暂停轮询校验、ASAR 打包/图标替换、官方路径守卫、`doctor` 与重启退出屏障测试。
   - `cli-linux-elf.test.js` / `cli-region-unlock.test.js`：Linux ELF64（`x86-64` PIE & `arm64`）与 Python3 `agy-patch.py` 一致性及 CLI 地区解锁契约测试。
   - `model-quota.test.js`：模型额度分桶解析、左下角侧栏停靠/折叠记忆、Effort 速切、快捷键持久化与轮次后 10 分钟冷却刷新测试。
@@ -121,10 +124,10 @@ npm run unlock:cli
    - `#ag-model-quota-host` 与 `#ag-accounts-host` 均为独立 Shadow DOM 宿主，不得嵌套在顶栏 `#ag-context-meter` 内部；左下角额度卡片停靠在左侧栏导航内「设置」页脚正上方。
    - **轻量采集与纯 Token 统计**：本项目只统计**纯 Token 用量**，不新增任何金额/计价估算逻辑；历史看板 52 周热力图保持惰性渲染（`#panel-tokens` 隐藏时仅置脏标记不构建 DOM），`restoreSettingsFromHost()` 仅在启动时调用一次，空闲同步保持 120s 节流且在 `document.hidden === true` 时暂停，采集端保持 `TOKEN_HISTORY_CACHE_TTL_MS = 60000` 与归档 `size+mtime` 缓存。
    - **消息级 Fork 与 Markdown 修复边界**：`src/renderer/message-fork.js` 仅在非 `/btw` 旁路提问、非 Battle 模式且无原生 Fork 按钮的 `[data-testid="cascade-system-message-toolbar"]` 按钮组紧邻「复制」挂载（不向侧边栏注入按钮），通过宿主 React Fiber 读取该轮精确 `stepIndex`（历史轮次步号未确认时绝不误退回 `-1`），经 `context-meter:fork-session` 调用本地 `ForkConversation` / `UpdateConversationAnnotations`（兼容本机与 SSH 窗口，单击当前工作区、`Shift+点击` 新建 Worktree、右键双项菜单）；Markdown `remark-gfm` `singleTilde: false` 预加载钩子仅作用于本地回环主框架（`top === self`），打包后由 `inspectDiskModules().markdownFixReady` 校验。
-4. **macOS Apple Silicon 签名、Inode 缓存与重启黑屏陷阱**
+4. **macOS 签名、Inode 缓存与重启黑屏陷阱（arm64 / x86_64 通用）**
    - 替换/重打包 `app.asar` 后必须同步更新 `Info.plist` 中 `ElectronAsarIntegrity['Resources/app.asar'].hash`（由 `computeAsarHeaderSha256()` 计算），否则 Electron 启动会校验崩溃。
    - 签名参数不可混用：`Contents/Resources/bin/language_server` 需加 `--options runtime --entitlements`；外层 `/Applications/哈基米.app` **绝对不能**加 `--options runtime`（否则 Library Validation 会拒绝加载 Google 签名的 `Electron Framework`）。
-   - 修改 `Contents/MacOS/Antigravity` 或重签名前需先 `cp -p` + `mv -f` 刷新主可执行文件 inode，避免 Apple Silicon 内核 `cs_blob` 缓存旧签名引发 `SIGKILL`。
+   - 修改 `Contents/MacOS/Antigravity` 或重签名前需先 `cp -p` + `mv -f` 刷新主可执行文件 inode，避免内核（Apple Silicon `cs_blob` 缓存 / Intel 旧 mmap 页）复用旧签名引发 `SIGKILL`。
    - 自动重启已运行 `.app` 时必须经过零存活退出屏障（主进程先行优雅 `SIGTERM` -> 全进程 `SIGTERM` -> 强制 `SIGKILL` + `cleanupStaleSingletonLock()`）后再用清理过环境变量的 `open -n "$APP"` 拉起，否则 `open` 会向濒死的旧 Electron 主进程发送 `activate` 导致空白黑屏窗口。
 5. **Remote SSH 远端引导与窗口隔离约束**
    - `meter-ssh.js` 注入 `dist/remote/bootstrapScript.js` 的 POSIX `sh` 代码必须在 `set -u` 下安全运行，且**严禁向 stdout 打印任何内容**（否则会破坏 Antigravity 的 `parseBootstrapLine` 通信协议）；远端补丁日志统一写入 `$agy_datadir/hakimi-patch.log`，失败必须 fail-open 并写 `.hakimi_skip` 防止无限重启循环。

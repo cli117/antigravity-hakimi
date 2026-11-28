@@ -1,5 +1,5 @@
 #!/bin/bash
-# 哈基米.app 独立构建脚本（专注 macOS Apple Silicon ARM64；Linux 下自动直跑 agy CLI 解锁）
+# 哈基米.app 独立构建脚本（专注 macOS，支持 Apple Silicon arm64 与 Intel x86_64；Linux 下自动直跑 agy CLI 解锁）
 #
 # 功能说明：
 #   1. 默认直接从官方更新源拉取/复用单槽位缓存最新 Antigravity（校验 SHA-512 与 Google 签名）构建 /Applications/哈基米.app，
@@ -38,6 +38,8 @@ PATCH_CLI=1
 CLI_STRICT=0
 CLI_ONLY=0
 CLI_BIN=""
+# 目标架构：auto 时按本机 uname -m 推导（arm64 / x64），也可用 --arch 显式指定
+TARGET_ARCH="auto"
 
 usage() {
   cat <<'EOF'
@@ -62,9 +64,10 @@ usage() {
   --no-restart, --no-open         构建完成后不自动退出/重启或自动打开目标应用
   --no-cli                        跳过本机 agy CLI 地区解锁联动
   --no-overwrite                  若输出 .app 路径已存在则报错退出而不覆盖
-  --cli-only                      仅对本机 agy CLI 执行地区解锁，跳过 macOS 桌面应用构建（支持 Linux x86-64/arm64 与 macOS arm64）
+  --cli-only                      仅对本机 agy CLI 执行地区解锁，跳过 macOS 桌面应用构建（支持 Linux x86-64/arm64 与 macOS arm64/x86_64）
   --cli-bin <path>                指定 agy 二进制路径并严格校验解锁
   --client-lang <zh-CN|en>        桌面端界面语言 (首次写入配置默认为 zh-CN)
+  --arch <auto|arm64|x64>         目标架构 (默认 auto：Apple Silicon 取 arm64，Intel 取 x64；显式指定可交叉构建)
   --force, -r, --restart, --patch-cli
                                   向下兼容参数（现均已默认开启；显式传 --patch-cli 时 CLI 解锁失败会返回非 0）
   -h, --help                      显示本帮助信息
@@ -148,6 +151,11 @@ while [[ $# -gt 0 ]]; do
       CLIENT_LANG="$2"
       shift 2
       ;;
+    --arch)
+      require_arg "$@"
+      TARGET_ARCH="$2"
+      shift 2
+      ;;
     -i|--icon)
       require_arg "$@"
       ICON_PATH="$2"
@@ -188,6 +196,16 @@ if [[ -n "$CLIENT_LANG" ]]; then
   esac
 fi
 
+# 架构别名归一化（x86_64/amd64 -> x64，aarch64 -> arm64），再校验取值
+case "$TARGET_ARCH" in
+  x86_64|amd64|X64|x86-64) TARGET_ARCH="x64" ;;
+  aarch64|ARM64)           TARGET_ARCH="arm64" ;;
+esac
+case "$TARGET_ARCH" in
+  auto|arm64|x64) ;;
+  *) echo "无效 --arch: $TARGET_ARCH (可选: auto | arm64 | x64)" >&2; exit 2 ;;
+esac
+
 run_cli_unlock() {
   if command -v node >/dev/null 2>&1; then
     local cli_args=(--apply)
@@ -208,6 +226,16 @@ run_cli_unlock() {
 }
 
 HOST_OS="$(uname -s)"
+HOST_ARCH="$(uname -m)"
+
+# auto 架构：Apple Silicon 取 arm64，其余（x86_64 Intel）取 x64
+if [[ "$TARGET_ARCH" == "auto" ]]; then
+  case "$HOST_ARCH" in
+    x86_64|amd64|i386) TARGET_ARCH="x64" ;;
+    *)                 TARGET_ARCH="arm64" ;;
+  esac
+fi
+
 if [[ $CLI_ONLY -eq 1 ]]; then
   echo "==> [CLI] 对本机 agy CLI 执行地区解锁"
   run_cli_unlock
@@ -281,9 +309,13 @@ PROMOTE_ZIP_VERSION=""
 PROMOTE_ZIP_SHA512=""
 
 if [[ "$SOURCE_MODE" == "auto" || "$SOURCE_MODE" == "latest" ]]; then
+  echo "==> [源获取] 目标架构: ${TARGET_ARCH}（本机 ${HOST_ARCH}）"
+  if [[ "$TARGET_ARCH" == "x64" && "$HOST_ARCH" == "arm64" ]] || [[ "$TARGET_ARCH" == "arm64" && "$HOST_ARCH" == "x86_64" ]]; then
+    echo "⚠️  正在交叉构建（目标 ${TARGET_ARCH} / 本机 ${HOST_ARCH}）：产物只能在与目标架构一致或更高级的机器上运行。" >&2
+  fi
   echo "==> [源获取] 正在从官方更新源检查并获取最新 Antigravity（优先复用本地单槽位缓存，校验 SHA-512 与 Google 签名）..."
   FETCH_OUT="$WORK/fetched-official"
-  FETCH_CMD=(node "$SCRIPT_DIR/payload/dist/hakimi-builder.js" fetch-official --out-app-dir "$FETCH_OUT" --json)
+  FETCH_CMD=(node "$SCRIPT_DIR/payload/dist/hakimi-builder.js" fetch-official --out-app-dir "$FETCH_OUT" --arch "$TARGET_ARCH" --json)
   if [[ $STAGE_ONLY -eq 0 ]]; then
     FETCH_CMD+=(--keep-zip-out "$WORK/official-verified.zip")
   fi
@@ -332,6 +364,26 @@ fi
 [[ -d "$SRC" ]] || { echo "找不到只读源应用: $SRC" >&2; exit 1; }
 [[ -f "$SRC/Contents/Resources/app.asar" ]] || { echo "源应用缺少 Contents/Resources/app.asar: $SRC" >&2; exit 1; }
 [[ -f "$SRC/Contents/Resources/bin/language_server" ]] || { echo "源应用缺少 Contents/Resources/bin/language_server: $SRC" >&2; exit 1; }
+
+# 校验本地源架构与目标架构一致（避免在 Intel 机上误用 arm64 底包，反之亦然）
+SRC_ARCH="$(node -e '
+const fs = require("fs");
+const buf = Buffer.alloc(8);
+const fd = fs.openSync(process.argv[1], "r");
+fs.readSync(fd, buf, 0, 8, 0);
+fs.closeSync(fd);
+const magic = buf.readUInt32LE(0);
+if (magic !== 0xfeedfacf) { process.stdout.write("unknown"); process.exit(0); }
+const cpu = buf.readUInt32LE(4);
+process.stdout.write(cpu === 0x0100000c ? "arm64" : cpu === 0x01000007 ? "x64" : "unknown");
+' "$SRC/Contents/MacOS/Antigravity" 2>/dev/null || echo unknown)"
+if [[ "$SRC_ARCH" != "unknown" && "$SRC_ARCH" != "$TARGET_ARCH" ]]; then
+  echo "源应用架构为 ${SRC_ARCH}，与目标架构 ${TARGET_ARCH} 不一致: $SRC" >&2
+  if [[ "$SOURCE_MODE" == "local" || "$SOURCE_MODE" == "from" ]]; then
+    echo "提示: --local / --from 指向的官方包只能是当前机器架构；如需 Intel 版本请去掉 --local 由官方更新源拉取 --arch x64。" >&2
+  fi
+  exit 1
+fi
 
 SRC_VERSION="$(node -e '
 const path = require("path");
@@ -479,7 +531,7 @@ META_ARGS=(
 [[ -n "$HAKIMI_GIT_DATE" ]] && META_ARGS+=(--commit-date "$HAKIMI_GIT_DATE")
 node "$SCRIPT_DIR/payload/dist/hakimi-builder.js" "${META_ARGS[@]}" >/dev/null
 
-# 刷新主二进制 inode，避免 Apple Silicon cs_blob 缓存旧内核签名导致 SIGKILL
+# 刷新主二进制 inode，避免内核缓存旧页签名（Apple Silicon cs_blob 缓存 / Intel 旧 mmap）导致启动即 SIGKILL
 MAIN_EXEC="$STAGE/Contents/MacOS/Antigravity"
 cp -p "$MAIN_EXEC" "$MAIN_EXEC.tmp_inode"
 mv -f "$MAIN_EXEC.tmp_inode" "$MAIN_EXEC"
